@@ -170,11 +170,16 @@ body
 
 @media (max-width: 1200px)
 {
+
+     .body
+    {
+        margin: 10%;
+        align-items: center;
+    }
     
     .cabecalho
     {
         padding: 10%;
-        margin: 5%;
     }
 
     .cabecalho__menu
