@@ -136,6 +136,7 @@ body
 .apresentacao__imagem
 {
     margin: 10%;
+    padding: 2%;
     display: flex;
     border: 10px solid var(--cor-terciaria);
     justify-contente: center;
