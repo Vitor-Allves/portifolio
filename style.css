@@ -138,6 +138,7 @@ body
     margin: 10%;
     display: flex;
     border: 10px solid var(--cor-terciaria);
+    justify-contente: center;
 }
 
 
