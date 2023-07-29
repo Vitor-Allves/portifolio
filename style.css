@@ -34,14 +34,16 @@ body
 {
     display: flex;
     gap: 80px;
+   flex-wrap: wrap;
 }
 
 .cabecalho__menu__link
 {
     font-family: var(--fonte-primaria);
-    font-size: 24px;
+    font-size: 1.5rem;
     font-weight: 600;
     color: var(--cor-secundaria);
+   
     text-align: center;
     border: 2px solid var(--cor-terciaria);
     border-radius: 10px;
@@ -69,7 +71,7 @@ body
 
 .apresentacao__conteudo
 {
-    width: 615px;
+    width: 600;
     display: flex;
     flex-direction: column;
     gap: 40px;
@@ -136,10 +138,8 @@ body
 .apresentacao__imagem
 {
     margin: 10%;
-    padding: 2%;
     display: flex;
     border: 10px solid var(--cor-terciaria);
-    justify-contente: center;
 }
 
 
@@ -170,17 +170,15 @@ body
 
 @media (max-width: 1200px)
 {
-
-     .body
+    .body
     {
-        margin: 10%;
+        margin: 5%;
         align-items: center;
-        justify-content: center;
     }
-    
     .cabecalho
     {
-        padding: 10%;
+        padding: 5%;
+        
     }
 
     .cabecalho__menu
@@ -193,7 +191,16 @@ body
         padding: 5%;
         width: auto;
        
-    }   
+    }  
+        
+    .cabecalho__menu__link
+    {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        gap: 32px;
+    }
     /* .apresentacao__conteudo
     {
         width: auto;
