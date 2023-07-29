@@ -138,9 +138,10 @@ body
 .apresentacao__imagem
 {
     margin: 10%;
-    display: flex;
+ 
+     display: flex;
     border: 10px solid var(--cor-terciaria);
-}
+} 
 
 
 
@@ -172,12 +173,12 @@ body
 {
     .body
     {
-        margin: 5%;
+        margin: 10%;
         align-items: center;
     }
     .cabecalho
     {
-        padding: 5%;
+        padding: 10%;
         
     }
 
@@ -192,6 +193,19 @@ body
         width: auto;
        
     }  
+        .apresentacao__conteudo__titulo
+    {
+        padding: 5%;
+        font-size: 2.25rem;
+        font-family: var(--fonte-primaria);
+    }
+
+    .apresentacao__conteudo__texto
+    {
+        padding: 5%;
+        font-size: 1.5rem;
+        font-family: var(--fonte-secundaria);
+    }
         
     .cabecalho__menu__link
     {
