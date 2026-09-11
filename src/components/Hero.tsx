@@ -40,7 +40,7 @@ export default function Hero() {
           width={1024}
           height={1024}
           priority
-          className="h-auto w-full opacity-[0.06] sm:opacity-[0.07] lg:opacity-[0.09]"
+          className="h-auto w-full opacity-100"
         />
       </motion.div>
 
