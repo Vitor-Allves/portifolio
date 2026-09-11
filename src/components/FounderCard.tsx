@@ -1,4 +1,5 @@
-import Image from "next/image";
+const WIDTHS = [640, 1024, 1600, 2160];
+const CARD_SIZES = "(min-width: 1024px) 320px, (min-width: 640px) 288px, 256px";
 
 type FounderCardProps = {
   name: string;
@@ -8,9 +9,14 @@ type FounderCardProps = {
   bio: string[];
   linkedin: string;
   instagram: string;
-  imageSrc?: string;
+  imageBase?: string;
+  imageObjectPosition?: string;
   align?: "left" | "right";
 };
+
+function srcSet(imageBase: string, ext: "avif" | "webp") {
+  return WIDTHS.map((w) => `/founders/${imageBase}-${w}.${ext} ${w}w`).join(", ");
+}
 
 export default function FounderCard({
   name,
@@ -20,7 +26,8 @@ export default function FounderCard({
   bio,
   linkedin,
   instagram,
-  imageSrc,
+  imageBase,
+  imageObjectPosition = "50% 10%",
   align = "left",
 }: FounderCardProps) {
   return (
@@ -29,15 +36,20 @@ export default function FounderCard({
         align === "right" ? "sm:items-end sm:text-right" : "sm:items-start sm:text-left"
       } items-center text-center gap-7`}
     >
-      <div className="relative h-64 w-52 sm:h-72 sm:w-60 rounded-2xl overflow-hidden border border-navy-700/15 bg-navy-950">
-        {imageSrc ? (
-          <Image
-            src={imageSrc}
-            alt={`Retrato de ${name}`}
-            fill
-            className="object-cover object-top"
-            sizes="(min-width: 640px) 240px, 208px"
-          />
+      <div className="relative w-64 sm:w-72 lg:w-80 aspect-[4/5] rounded-2xl overflow-hidden border border-navy-700/15 bg-navy-950 shadow-[0_20px_45px_-25px_rgba(15,30,51,0.45)]">
+        {imageBase ? (
+          <picture>
+            <source type="image/avif" srcSet={srcSet(imageBase, "avif")} sizes={CARD_SIZES} />
+            <source type="image/webp" srcSet={srcSet(imageBase, "webp")} sizes={CARD_SIZES} />
+            <img
+              src={`/founders/${imageBase}-1024.webp`}
+              alt={`Retrato de ${name}`}
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: imageObjectPosition }}
+            />
+          </picture>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-marble-navy bg-grid-lines">
             <span className="font-serif text-6xl text-silver-400/70">
@@ -45,7 +57,7 @@ export default function FounderCard({
             </span>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-navy-950/70 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-navy-950/60 via-transparent to-transparent" />
         <div className="absolute inset-0 border border-white/10 rounded-2xl" />
       </div>
 

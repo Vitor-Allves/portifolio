@@ -25,19 +25,13 @@ export default function Founders() {
 
         <div className="grid sm:grid-cols-2 gap-16 sm:gap-10 items-start relative">
           <FounderCard {...FOUNDERS.joao} name={FOUNDERS.joao.shortName} align="right" />
-
-          <div
-            className="hidden sm:flex absolute left-1/2 top-24 -translate-x-1/2 flex-col items-center gap-2 z-10"
-            aria-hidden="true"
-          >
-            <span className="h-24 w-px bg-gradient-to-b from-transparent via-navy-700/25 to-transparent" />
-            <span className="rounded-full border border-navy-700/25 bg-ice-50 px-4 py-2 text-[10px] tracking-[0.16em] uppercase text-navy-600 whitespace-nowrap">
-              Estratégia + Execução
-            </span>
-            <span className="h-24 w-px bg-gradient-to-b from-transparent via-navy-700/25 to-transparent" />
-          </div>
-
           <FounderCard {...FOUNDERS.vitor} name={FOUNDERS.vitor.shortName} align="left" />
+        </div>
+
+        <div className="mt-14 flex justify-center">
+          <span className="rounded-full border border-navy-700/25 bg-white px-5 py-2.5 text-[11px] tracking-[0.16em] uppercase text-navy-600 whitespace-nowrap">
+            Estratégia + Execução
+          </span>
         </div>
       </div>
     </section>

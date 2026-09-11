@@ -33,7 +33,8 @@ export const FOUNDERS = {
       "https://www.linkedin.com/in/jo%C3%A3o-guilherme-rodrigues-do-nascimento-7a5440127/",
     instagram: "https://www.instagram.com/joaoo.guilherme/",
     initials: "JG",
-    imageSrc: "/founders/joao-guilherme.webp",
+    imageBase: "joao-guilherme",
+    imageObjectPosition: "50% 15%",
     bio: [
       "Formado em Administração de Empresas, com atuação relacionada a marketing digital e gestão de tráfego.",
       "Sua perspectiva combina administração, marketing, aquisição, performance, gestão e visão empresarial.",
@@ -48,7 +49,8 @@ export const FOUNDERS = {
     linkedin: "https://www.linkedin.com/in/vitor-santos-b58196164/",
     instagram: "https://www.instagram.com/vittor.saantos/",
     initials: "VS",
-    imageSrc: "/founders/vitor-santos.webp",
+    imageBase: "vitor-santos",
+    imageObjectPosition: "50% 10%",
     bio: [
       "Trajetória profissional que combina liderança, gestão operacional, estratégia, análise de dados, performance e gestão de pessoas.",
       "Passou por diferentes níveis de operação e gestão, construindo uma visão orientada a processos, indicadores, pessoas, estratégia e resultado.",
