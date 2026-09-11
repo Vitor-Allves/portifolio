@@ -31,9 +31,10 @@ export default function ContactForm() {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
+    const nome = data.get("nome");
 
     const summary = [
-      `Nome: ${data.get("nome")}`,
+      `Nome: ${nome}`,
       `Empresa: ${data.get("empresa")}`,
       `Cargo: ${data.get("cargo")}`,
       `E-mail: ${data.get("email")}`,
@@ -46,21 +47,25 @@ export default function ContactForm() {
 
     setSubmitted(true);
 
-    window.open(
-      `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(summary)}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
+    const subject = `Contato pelo site — ${nome}`;
+    window.location.href = `mailto:${CONTACT.email}?subject=${encodeURIComponent(
+      subject
+    )}&body=${encodeURIComponent(summary)}`;
   }
 
   if (submitted) {
     return (
       <div className="rounded-2xl border border-navy-700/15 bg-white p-10 sm:p-14 text-center">
         <p className="font-serif text-2xl sm:text-3xl text-navy-950">
-          Recebemos suas informações.
+          Agradecemos seu interesse e entraremos em contato.
         </p>
         <p className="mt-3 text-navy-700/80 font-light">
-          O próximo movimento começa com uma boa conversa.
+          Seu aplicativo de e-mail deve abrir com a mensagem pronta para
+          envio — se isso não acontecer, escreva diretamente para{" "}
+          <a href={`mailto:${CONTACT.email}`} className="underline">
+            {CONTACT.email}
+          </a>
+          .
         </p>
       </div>
     );

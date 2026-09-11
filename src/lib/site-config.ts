@@ -1,6 +1,4 @@
 // Centralized site content configuration.
-// Update CONTACT.whatsapp / CONTACT.email / CONTACT.phone with the real
-// Legado Enterprise channels before this site goes live.
 
 export const SITE_URL = "https://www.legadoenterprise.com.br";
 
@@ -12,8 +10,8 @@ export const BRAND = {
 };
 
 export const CONTACT = {
-  whatsapp: "5511999999999", // TODO: replace with the real Legado Enterprise WhatsApp number (digits only, country code first)
-  email: "contato@legadoenterprise.com.br", // TODO: confirm real inbox
+  whatsapp: "5515991928585", // +55 15 99192-8585
+  email: "vitor.santos@legadoenterprisemkt.com",
   whatsappMessage:
     "Olá! Quero entender onde estão as próximas oportunidades de crescimento da minha empresa.",
 };
