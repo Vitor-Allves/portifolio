@@ -20,6 +20,9 @@ export default function CaseStudy() {
             <p className="text-[12px] tracking-[0.3em] uppercase text-navy-500 mb-5">
               Resultados
             </p>
+            <p className="font-serif text-lg sm:text-xl text-navy-600 italic mb-2">
+              É assim que medimos.
+            </p>
             <h2 className="font-serif text-balance text-4xl sm:text-5xl lg:text-6xl leading-[1.1] text-navy-950">
               Quando estratégia encontra execução.
             </h2>

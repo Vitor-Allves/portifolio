@@ -52,9 +52,15 @@ export default function Header() {
 
         <a
           href="#contato"
-          className="hidden lg:inline-flex items-center gap-2 border border-silver-400/40 text-silver-200 text-[13px] tracking-[0.12em] uppercase px-5 py-2.5 rounded-full hover:bg-silver-400 hover:text-navy-950 hover:border-silver-400 transition-all duration-300"
+          className="group hidden lg:inline-flex items-center gap-2 bg-white text-navy-700 text-[13px] font-medium tracking-[0.12em] uppercase px-5 py-2.5 rounded-full hover:bg-silver-200 active:bg-silver-300 transition-colors duration-300"
         >
           Vamos conversar
+          <span
+            className="inline-block transition-transform duration-300 group-hover:translate-x-1"
+            aria-hidden="true"
+          >
+            →
+          </span>
         </a>
 
         <button
@@ -98,7 +104,7 @@ export default function Header() {
           <a
             href="#contato"
             onClick={() => setMenuOpen(false)}
-            className="mt-8 text-center border border-silver-400/40 text-silver-100 text-sm tracking-[0.12em] uppercase px-5 py-4 rounded-full"
+            className="mt-8 text-center bg-white text-navy-700 font-medium text-sm tracking-[0.12em] uppercase px-5 py-4 rounded-full active:bg-silver-300 transition-colors duration-300"
           >
             Vamos conversar
           </a>

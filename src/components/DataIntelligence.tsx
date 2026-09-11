@@ -1,20 +1,14 @@
 "use client";
 
-import { motion } from "framer-motion";
 import Reveal from "./Reveal";
 
-const funnel = [
-  { label: "Alcance", value: 100 },
-  { label: "Interesse", value: 68 },
-  { label: "Consideração", value: 41 },
-  { label: "Conversão", value: 19 },
-];
+const funnel = ["Alcance", "Interesse", "Consideração", "Conversão"];
 
 const metrics = [
-  { label: "CAC", hint: "custo de aquisição" },
-  { label: "ROAS", hint: "retorno sobre investimento" },
-  { label: "Taxa de conversão", hint: "eficiência do funil" },
-  { label: "Oportunidades", hint: "potencial identificado" },
+  { label: "CAC", hint: "Custo de aquisição" },
+  { label: "ROAS", hint: "Retorno sobre investimento" },
+  { label: "Conversão", hint: "Eficiência do funil" },
+  { label: "Oportunidades", hint: "Potencial identificado" },
 ];
 
 export default function DataIntelligence() {
@@ -46,51 +40,48 @@ export default function DataIntelligence() {
                 apresenta maior potencial.
               </p>
             </Reveal>
+            <Reveal delay={0.3}>
+              <p className="mt-10 font-serif text-lg sm:text-xl text-silver-300 italic">
+                É assim que pensamos.
+              </p>
+            </Reveal>
           </div>
 
           <div className="lg:col-span-7">
             <Reveal delay={0.15}>
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-6 sm:p-8">
+                <p className="text-[10px] tracking-[0.2em] uppercase text-silver-500 mb-4">
+                  Indicadores acompanhados durante a estratégia
+                </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
                   {metrics.map((m) => (
                     <div
                       key={m.label}
                       className="rounded-xl border border-white/10 bg-navy-900/60 p-4"
                     >
-                      <p className="text-[10px] tracking-[0.15em] uppercase text-silver-500">
-                        {m.hint}
-                      </p>
-                      <p className="mt-2 font-serif text-lg sm:text-xl text-silver-100">
+                      <p className="font-serif text-lg sm:text-xl text-silver-100">
                         {m.label}
+                      </p>
+                      <p className="mt-1.5 text-[10px] sm:text-[11px] tracking-[0.04em] text-silver-500">
+                        {m.hint}
                       </p>
                     </div>
                   ))}
                 </div>
 
                 <p className="text-[11px] tracking-[0.2em] uppercase text-silver-500 mb-5">
-                  Funil de aquisição — leitura conceitual
+                  Representação do fluxo de análise
                 </p>
-                <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
                   {funnel.map((step, i) => (
-                    <div key={step.label}>
-                      <div className="flex justify-between text-xs sm:text-sm text-silver-300 mb-1.5">
-                        <span>{step.label}</span>
-                        <span className="text-silver-500">{step.value}%</span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          whileInView={{ width: `${step.value}%` }}
-                          viewport={{ once: true, margin: "-15% 0px" }}
-                          transition={{
-                            duration: 1.1,
-                            delay: i * 0.15,
-                            ease: [0.16, 1, 0.3, 1],
-                          }}
-                          className="h-full rounded-full bg-gradient-to-r from-silver-500 to-silver-200"
-                        />
-                      </div>
-                    </div>
+                    <span key={step} className="flex items-center gap-3">
+                      <span className="rounded-full border border-white/15 px-4 py-2 text-xs sm:text-sm tracking-[0.05em] text-silver-200">
+                        {step}
+                      </span>
+                      {i < funnel.length - 1 && (
+                        <span className="text-silver-600 text-xs">→</span>
+                      )}
+                    </span>
                   ))}
                 </div>
               </div>

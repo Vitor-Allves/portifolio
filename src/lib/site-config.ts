@@ -4,6 +4,16 @@
 
 export const SITE_URL = "https://www.legadoenterprise.com.br";
 
+// Official brand mark. Drop the real files at these paths under /public —
+// a light-on-dark version (used in the header/footer, which are always on
+// a dark background) and, if available, a dark-on-light version for any
+// spot the mark sits on a light background. Falls back gracefully to the
+// wordmark-only treatment in Logo.tsx if a file is missing.
+export const BRAND = {
+  logoLight: "/brand/legado-logo-light.png",
+  logoDark: "/brand/legado-logo-dark.png",
+};
+
 export const CONTACT = {
   whatsapp: "5511999999999", // TODO: replace with the real Legado Enterprise WhatsApp number (digits only, country code first)
   email: "contato@legadoenterprise.com.br", // TODO: confirm real inbox
