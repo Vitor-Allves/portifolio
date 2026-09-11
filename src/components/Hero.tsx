@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
+import Logo from "./Logo";
 import { CONTACT } from "@/lib/site-config";
 
 const HeroField = dynamic(() => import("./HeroField"), { ssr: false });
@@ -27,6 +28,15 @@ export default function Hero() {
       />
 
       <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 lg:px-10 pt-28 pb-16">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="mb-10 sm:mb-12"
+        >
+          <Logo variant="light" size="lg" />
+        </motion.div>
+
         <motion.p
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
