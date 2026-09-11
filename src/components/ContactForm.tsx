@@ -1,9 +1,7 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
-
-const GENERIC_ERROR =
-  "Não foi possível enviar suas informações. Tente novamente em alguns instantes.";
+import { useState, type FormEvent } from "react";
+import { CONTACT } from "@/lib/site-config";
 
 const revenueOptions = [
   "Até R$ 50 mil/mês",
@@ -26,58 +24,75 @@ const fieldClass =
   "w-full rounded-lg border border-navy-700/20 bg-white px-4 py-3.5 text-sm text-navy-950 placeholder:text-navy-400 focus:border-navy-600 focus:outline-none transition-colors";
 const labelClass = "block text-[11px] tracking-[0.14em] uppercase text-navy-600 mb-2";
 
+function fallback(value: FormDataEntryValue | null) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length > 0 ? text : "Não informado";
+}
+
+function buildWhatsAppMessage(data: FormData) {
+  const now = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date());
+
+  return [
+    "NOVO CONTATO — SITE LEGADO ENTERPRISE",
+    "",
+    `Nome: ${fallback(data.get("nome"))}`,
+    "",
+    `Empresa: ${fallback(data.get("empresa"))}`,
+    "",
+    `Cargo: ${fallback(data.get("cargo"))}`,
+    "",
+    `E-mail: ${fallback(data.get("email"))}`,
+    "",
+    `WhatsApp: ${fallback(data.get("whatsapp"))}`,
+    "",
+    `Site / Instagram: ${fallback(data.get("site"))}`,
+    "",
+    `Faturamento aproximado: ${fallback(data.get("faturamento"))}`,
+    "",
+    `Principal objetivo: ${fallback(data.get("objetivo"))}`,
+    "",
+    "Mensagem:",
+    fallback(data.get("mensagem")),
+    "",
+    "Origem:",
+    "www.legadoenterprise.com.br",
+    "",
+    "Data:",
+    now,
+  ].join("\n");
+}
+
 export default function ContactForm() {
   const [submitted, setSubmitted] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmitting) return;
-
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    setIsSubmitting(true);
+    const nome = String(data.get("nome") || "").trim();
+    const empresa = String(data.get("empresa") || "").trim();
+    const email = String(data.get("email") || "").trim();
+    const whatsapp = String(data.get("whatsapp") || "").trim();
+
+    if (!nome || !empresa || !email || !whatsapp) {
+      setErrorMessage("Preencha nome, empresa, e-mail e WhatsApp antes de enviar.");
+      return;
+    }
+
     setErrorMessage(null);
 
-    try {
-      const res = await fetch("/api/lead", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nome: data.get("nome"),
-          empresa: data.get("empresa"),
-          cargo: data.get("cargo"),
-          email: data.get("email"),
-          whatsapp: data.get("whatsapp"),
-          site: data.get("site"),
-          faturamento: data.get("faturamento"),
-          objetivo: data.get("objetivo"),
-          mensagem: data.get("mensagem"),
-          hp_field: data.get("hp_field"),
-        }),
-      });
+    const message = buildWhatsAppMessage(data);
+    const url = `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
 
-      let result: { ok?: boolean; message?: string } = {};
-      try {
-        result = await res.json();
-      } catch {
-        result = {};
-      }
-
-      if (res.ok && result.ok) {
-        setSubmitted(true);
-        form.reset();
-      } else {
-        setErrorMessage(result.message || GENERIC_ERROR);
-      }
-    } catch {
-      setErrorMessage(GENERIC_ERROR);
-    } finally {
-      setIsSubmitting(false);
-    }
+    setSubmitted(true);
+    form.reset();
   }
 
   if (submitted) {
@@ -86,27 +101,25 @@ export default function ContactForm() {
         <p className="font-serif text-2xl sm:text-3xl text-navy-950">
           Agradecemos seu interesse e entraremos em contato.
         </p>
+        <p className="mt-3 text-navy-700/80 font-light">
+          Seu WhatsApp deve abrir com a mensagem pronta para envio — se isso não
+          acontecer, escreva diretamente para{" "}
+          <a
+            href={`https://wa.me/${CONTACT.whatsapp}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            +55 15 99192-8585
+          </a>
+          .
+        </p>
       </div>
     );
   }
 
   return (
-    <form
-      ref={formRef}
-      onSubmit={handleSubmit}
-      className="grid sm:grid-cols-2 gap-5"
-      noValidate
-    >
-      <div className="hidden" aria-hidden="true">
-        <label htmlFor="hp_field">Não preencher este campo</label>
-        <input
-          id="hp_field"
-          name="hp_field"
-          type="text"
-          tabIndex={-1}
-          autoComplete="off"
-        />
-      </div>
+    <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 gap-5" noValidate>
       <div className="sm:col-span-1">
         <label htmlFor="nome" className={labelClass}>
           Nome
@@ -195,10 +208,9 @@ export default function ContactForm() {
       <div className="sm:col-span-2 mt-2">
         <button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full sm:w-auto inline-flex items-center justify-center bg-navy-950 text-white text-sm tracking-[0.12em] uppercase font-medium px-10 py-4 rounded-full hover:bg-navy-800 transition-colors duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full sm:w-auto inline-flex items-center justify-center bg-navy-950 text-white text-sm tracking-[0.12em] uppercase font-medium px-10 py-4 rounded-full hover:bg-navy-800 transition-colors duration-300"
         >
-          {isSubmitting ? "Enviando..." : "Quero conversar sobre minha empresa"}
+          Quero conversar sobre minha empresa
         </button>
       </div>
     </form>
