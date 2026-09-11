@@ -35,8 +35,8 @@ export default function FounderCard({
             src={imageSrc}
             alt={`Retrato de ${name}`}
             fill
-            className="object-cover grayscale-[15%]"
-            sizes="240px"
+            className="object-cover object-top"
+            sizes="(min-width: 640px) 240px, 208px"
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-marble-navy bg-grid-lines">

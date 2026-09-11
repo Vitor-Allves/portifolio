@@ -4,14 +4,11 @@
 
 export const SITE_URL = "https://www.legadoenterprise.com.br";
 
-// Official brand mark. Drop the real files at these paths under /public —
-// a light-on-dark version (used in the header/footer, which are always on
-// a dark background) and, if available, a dark-on-light version for any
-// spot the mark sits on a light background. Falls back gracefully to the
-// wordmark-only treatment in Logo.tsx if a file is missing.
+// Official brand mark (navy mark + wordmark on a transparent background,
+// drawn in dark ink — legible on light surfaces, needs a light plate
+// behind it when placed on a dark surface like the header/footer).
 export const BRAND = {
-  logoLight: "/brand/legado-logo-light.png",
-  logoDark: "/brand/legado-logo-dark.png",
+  logo: "/brand/logo-legado.png",
 };
 
 export const CONTACT = {
@@ -36,6 +33,7 @@ export const FOUNDERS = {
       "https://www.linkedin.com/in/jo%C3%A3o-guilherme-rodrigues-do-nascimento-7a5440127/",
     instagram: "https://www.instagram.com/joaoo.guilherme/",
     initials: "JG",
+    imageSrc: "/founders/joao-guilherme.webp",
     bio: [
       "Formado em Administração de Empresas, com atuação relacionada a marketing digital e gestão de tráfego.",
       "Sua perspectiva combina administração, marketing, aquisição, performance, gestão e visão empresarial.",
@@ -50,6 +48,7 @@ export const FOUNDERS = {
     linkedin: "https://www.linkedin.com/in/vitor-santos-b58196164/",
     instagram: "https://www.instagram.com/vittor.saantos/",
     initials: "VS",
+    imageSrc: "/founders/vitor-santos.webp",
     bio: [
       "Trajetória profissional que combina liderança, gestão operacional, estratégia, análise de dados, performance e gestão de pessoas.",
       "Passou por diferentes níveis de operação e gestão, construindo uma visão orientada a processos, indicadores, pessoas, estratégia e resultado.",
