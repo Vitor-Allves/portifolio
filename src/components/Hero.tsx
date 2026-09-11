@@ -31,7 +31,7 @@ export default function Hero() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1.6, delay: 0.2 }}
-        className="pointer-events-none absolute right-[-8%] top-1/2 z-0 w-[85vw] -translate-y-1/2 sm:right-[-6%] sm:w-[60vw] md:w-[46vw] lg:right-[-4%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
+        className="pointer-events-none absolute right-[2%] top-1/2 z-0 w-[85vw] -translate-y-1/2 sm:right-[4%] sm:w-[60vw] md:w-[46vw] lg:right-[6%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
         aria-hidden="true"
       >
         <Image
