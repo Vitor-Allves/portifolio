@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* Brand core */
-  --color-navy-950: #060b14;
-  --color-navy-900: #0a1526;
-  --color-navy-850: #0d1c33;
-  --color-navy-800: #10233d;
+  /* Brand core — navy-950 through navy-800 sampled directly from the
+     official logo's gradient (public/brand/logo-legado.png) and lightened
+     one notch further, so dark sections read as a deep institutional blue
+     rather than near-black. navy-700 is the brand's specified azul-marinho
+     and stays exact. */
+  --color-navy-950: #0e1f3d;
+  --color-navy-900: #14294d;
+  --color-navy-850: #1a3159;
+  --color-navy-800: #1c3660;
   --color-navy-700: #1f3a63;
   --color-navy-600: #2c4c7c;
   --color-navy-500: #3d5f92;
