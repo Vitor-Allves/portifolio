@@ -1,0 +1,68 @@
+// Centralized site content configuration.
+
+export const SITE_URL = "https://www.legadoenterprise.com.br";
+
+// Official brand mark (navy mark + wordmark on a transparent background,
+// drawn in dark ink — legible on light surfaces, needs a light plate
+// behind it when placed on a dark surface like the header/footer).
+export const BRAND = {
+  logo: "/brand/logo-legado.png",
+};
+
+export const CONTACT = {
+  whatsapp: "5515991928585", // +55 15 99192-8585
+  email: "vitor.santos@legadoenterprisemkt.com",
+  whatsappMessage:
+    "Olá! Quero entender onde estão as próximas oportunidades de crescimento da minha empresa.",
+};
+
+export const SOCIAL = {
+  linkedinCompany: "https://www.linkedin.com/company/legado-enterprise/", // TODO: confirm company page
+  instagramCompany: "https://www.instagram.com/legadoenterprise/", // TODO: confirm handle
+};
+
+export const FOUNDERS = {
+  joao: {
+    name: "João Guilherme Rodrigues do Nascimento",
+    shortName: "João Guilherme",
+    role: "Sócio-Fundador & CEO",
+    roleLong: "Chief Executive Officer",
+    linkedin:
+      "https://www.linkedin.com/in/jo%C3%A3o-guilherme-rodrigues-do-nascimento-7a5440127/",
+    instagram: "https://www.instagram.com/joaoo.guilherme/",
+    initials: "JG",
+    imageBase: "joao-guilherme",
+    imageObjectPosition: "50% 15%",
+    bio: [
+      "Formado em Administração de Empresas, com atuação relacionada a marketing digital e gestão de tráfego.",
+      "Sua perspectiva combina administração, marketing, aquisição, performance, gestão e visão empresarial.",
+      "Na Legado Enterprise, como CEO, sua atuação está diretamente conectada ao direcionamento estratégico da empresa, gestão, marketing, posicionamento e crescimento.",
+    ],
+  },
+  vitor: {
+    name: "Vitor Santos",
+    shortName: "Vitor Santos",
+    role: "Sócio-Fundador & CGO",
+    roleLong: "Chief Growth Officer",
+    linkedin: "https://www.linkedin.com/in/vitor-santos-b58196164/",
+    instagram: "https://www.instagram.com/vittor.saantos/",
+    initials: "VS",
+    imageBase: "vitor-santos",
+    imageObjectPosition: "50% 10%",
+    bio: [
+      "Trajetória profissional que combina liderança, gestão operacional, estratégia, análise de dados, performance e gestão de pessoas.",
+      "Passou por diferentes níveis de operação e gestão, construindo uma visão orientada a processos, indicadores, pessoas, estratégia e resultado.",
+      "Na Legado Enterprise, como CGO, sua atuação está diretamente conectada ao crescimento da empresa, estratégia, inteligência de negócios, desenvolvimento de oportunidades e evolução das operações.",
+    ],
+  },
+};
+
+export const NAV_ITEMS = [
+  { label: "Início", href: "#inicio" },
+  { label: "Legado", href: "#legado" },
+  { label: "Match Point", href: "#match-point" },
+  { label: "Soluções", href: "#solucoes" },
+  { label: "Resultados", href: "#resultados" },
+  { label: "Sócios", href: "#socios" },
+  { label: "Contato", href: "#contato" },
+];

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://www.legadoenterprise.com.br/sitemap.xml

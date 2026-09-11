@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Brand core */
+  --color-navy-950: #060b14;
+  --color-navy-900: #0a1526;
+  --color-navy-850: #0d1c33;
+  --color-navy-800: #10233d;
+  --color-navy-700: #1f3a63;
+  --color-navy-600: #2c4c7c;
+  --color-navy-500: #3d5f92;
+  --color-navy-400: #6b84ab;
+
+  --color-petrol-900: #071c22;
+  --color-petrol-800: #0b2a32;
+
+  --color-silver-100: #f2f3f5;
+  --color-silver-200: #e7e9ec;
+  --color-silver-300: #dde0e4;
+  --color-silver-400: #bfc3c9;
+  --color-silver-500: #9ba0a8;
+  --color-silver-600: #767c86;
+
+  --color-ice-50: #f8f9fb;
+  --color-ice-100: #f1f3f6;
+
+  --color-white: #ffffff;
+  --color-black: #04070c;
+
+  --font-serif: var(--font-cormorant), "Cormorant Garamond", serif;
+  --font-sans: var(--font-manrope), "Manrope", sans-serif;
+
+  --animate-fade-up: fade-up 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-marquee: marquee 40s linear infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}
+
+:root {
+  --background: var(--color-ice-50);
+  --foreground: var(--color-navy-950);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-navy-700);
+  color: var(--color-white);
+}
+
+/* Focus visibility for keyboard navigation (WCAG) */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-silver-400);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+/* Discrete grid texture used as a background layer across dark sections */
+.bg-grid-lines {
+  background-image:
+    linear-gradient(to right, rgba(191, 195, 201, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(191, 195, 201, 0.06) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+/* Extremely discrete marble-like sheen, used sparingly on premium surfaces */
+.bg-marble-navy {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(191, 195, 201, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 110%, rgba(191, 195, 201, 0.05), transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 40%, rgba(255, 255, 255, 0.015) 60%, transparent 100%);
+}
+
+.bg-marble-ice {
+  background-image:
+    radial-gradient(ellipse 70% 50% at 15% 0%, rgba(31, 58, 99, 0.04), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(31, 58, 99, 0.03), transparent 60%);
+}
