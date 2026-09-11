@@ -2,11 +2,16 @@
 
 export const SITE_URL = "https://www.legadoenterprise.com.br";
 
-// Official brand mark (navy mark + wordmark on a transparent background,
-// drawn in dark ink — legible on light surfaces, needs a light plate
-// behind it when placed on a dark surface like the header/footer).
+// Official brand marks.
 export const BRAND = {
+  // Navy mark + wordmark on a transparent background, drawn in dark ink —
+  // legible on light surfaces, needs a light plate behind it when placed
+  // on a dark surface like the header/footer.
   logo: "/brand/logo-legado.png",
+  // Same mark redrawn in white on a transparent background — for direct,
+  // plate-free use as a watermark/background element on dark surfaces
+  // (e.g. the hero), where a boxed light plate would compete for attention.
+  logoWhite: "/brand/logo-legado-white.png",
 };
 
 export const CONTACT = {

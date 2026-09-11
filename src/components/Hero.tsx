@@ -2,8 +2,8 @@
 
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
-import Logo from "./Logo";
-import { CONTACT } from "@/lib/site-config";
+import Image from "next/image";
+import { BRAND, CONTACT } from "@/lib/site-config";
 
 const HeroField = dynamic(() => import("./HeroField"), { ssr: false });
 
@@ -27,16 +27,24 @@ export default function Hero() {
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 lg:px-10 pt-28 pb-16">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="mb-10 sm:mb-12"
-        >
-          <Logo variant="light" size="lg" />
-        </motion.div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1.6, delay: 0.2 }}
+        className="pointer-events-none absolute right-[-8%] top-1/2 z-0 w-[85vw] -translate-y-1/2 sm:right-[-6%] sm:w-[60vw] md:w-[46vw] lg:right-[-4%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
+        aria-hidden="true"
+      >
+        <Image
+          src={BRAND.logoWhite}
+          alt=""
+          width={1024}
+          height={1024}
+          priority
+          className="h-auto w-full opacity-[0.06] sm:opacity-[0.07] lg:opacity-[0.09]"
+        />
+      </motion.div>
 
+      <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 lg:px-10 pt-28 pb-16">
         <motion.p
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
