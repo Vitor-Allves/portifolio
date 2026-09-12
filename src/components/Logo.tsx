@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { BRAND } from "@/lib/site-config";
 
 type LogoProps = {
@@ -22,20 +21,31 @@ const PLATE_PADDING = {
   lg: "px-4 py-3 sm:px-5 sm:py-3.5",
 };
 
+// This mark is never displayed past ~96px tall (the "lg" ceiling), so it's
+// served from small pre-sized WebP variants instead of the 1024px master
+// (195KB) that used to ship on every page load regardless of display size.
+const DISPLAY_SIZES = {
+  sm: "56px",
+  lg: "96px",
+};
+
 export default function Logo({
   variant = "light",
   size = "sm",
   className = "",
 }: LogoProps) {
   const image = (
-    <Image
-      src={BRAND.logo}
-      alt="Legado Enterprise"
-      width={512}
-      height={512}
-      priority
-      className={`${IMAGE_SIZE[size]} w-auto object-contain`}
-    />
+    <picture>
+      <img
+        src={BRAND.logoSmall320}
+        srcSet={`${BRAND.logoSmall160} 160w, ${BRAND.logoSmall320} 320w`}
+        sizes={DISPLAY_SIZES[size]}
+        alt="Legado Enterprise"
+        width={320}
+        height={320}
+        className={`${IMAGE_SIZE[size]} w-auto object-contain`}
+      />
+    </picture>
   );
 
   if (variant === "dark") {

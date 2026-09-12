@@ -22,14 +22,19 @@ export default function HeroField() {
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
+    // Below this width the node count is already at its floor, so the
+    // O(n²) connecting-line pass is pure cost for very little visible
+    // effect on a small screen — skip it there and just draw the dots.
+    const isMobile = window.matchMedia("(max-width: 639px)").matches;
 
     let width = 0;
     let height = 0;
     let dpr = Math.min(window.devicePixelRatio || 1, 2);
     let nodes: Node[] = [];
     let raf = 0;
+    let running = true;
 
-    const COUNT_BASE = 70;
+    const COUNT_BASE = isMobile ? 36 : 70;
 
     function resize() {
       if (!canvas) return;
@@ -41,7 +46,7 @@ export default function HeroField() {
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const count = Math.max(
-        28,
+        isMobile ? 18 : 28,
         Math.min(COUNT_BASE, Math.round((width * height) / 18000))
       );
       nodes = Array.from({ length: count }, () => ({
@@ -64,23 +69,25 @@ export default function HeroField() {
         if (n.y < 0 || n.y > height) n.vy *= -1;
       }
 
-      const maxDist = Math.min(180, width / 6);
+      if (!isMobile) {
+        const maxDist = Math.min(180, width / 6);
 
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i];
-          const b = nodes[j];
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < maxDist) {
-            const opacity = (1 - dist / maxDist) * 0.16;
-            ctx.strokeStyle = `rgba(191, 195, 201, ${opacity})`;
-            ctx.lineWidth = 0.6;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i];
+            const b = nodes[j];
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < maxDist) {
+              const opacity = (1 - dist / maxDist) * 0.16;
+              ctx.strokeStyle = `rgba(191, 195, 201, ${opacity})`;
+              ctx.lineWidth = 0.6;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
           }
         }
       }
@@ -93,7 +100,7 @@ export default function HeroField() {
         ctx.fill();
       }
 
-      if (!reduceMotion) {
+      if (!reduceMotion && running) {
         raf = requestAnimationFrame(draw);
       }
     }
@@ -104,8 +111,19 @@ export default function HeroField() {
     const onResize = () => resize();
     window.addEventListener("resize", onResize);
 
+    // Don't burn CPU/battery animating a canvas nobody is looking at.
+    const onVisibility = () => {
+      running = !document.hidden;
+      if (running && !reduceMotion) {
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(draw);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", onVisibility);
       cancelAnimationFrame(raf);
     };
   }, []);

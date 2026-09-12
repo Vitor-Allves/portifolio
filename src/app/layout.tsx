@@ -3,6 +3,7 @@ import { Cormorant_Garamond, Manrope } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { SITE_URL } from "@/lib/site-config";
+import MotionProvider from "@/components/MotionProvider";
 
 const cormorant = Cormorant_Garamond({
   variable: "--font-cormorant",
@@ -110,7 +111,7 @@ export default function RootLayout({
       className={`${cormorant.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-ice-50 text-navy-950">
-        {children}
+        <MotionProvider>{children}</MotionProvider>
         <Script
           id="organization-schema"
           type="application/ld+json"

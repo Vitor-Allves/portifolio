@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
+import { m, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 
 const stages = [
   {
@@ -115,12 +115,12 @@ export default function MatchPoint() {
 
           <div className="relative mt-6 sm:mt-10">
             <div className="relative h-px w-full bg-white/10 overflow-hidden rounded-full">
-              <motion.div
+              <m.div
                 style={{ scaleX: lineScale }}
                 className="absolute inset-y-0 left-0 w-full origin-left bg-silver-400"
               />
             </div>
-            <motion.div
+            <m.div
               style={{ left: ballX }}
               className="absolute -top-1.5 h-4 w-4 -translate-x-1/2 rounded-full bg-white shadow-[0_0_16px_2px_rgba(255,255,255,0.4)]"
               aria-hidden="true"

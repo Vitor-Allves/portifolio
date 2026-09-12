@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import Reveal from "./Reveal";
 import { CONTACT } from "@/lib/site-config";
 
@@ -8,7 +8,7 @@ export default function FinalCTA() {
   return (
     <section className="relative bg-navy-950 text-white py-32 sm:py-44 overflow-hidden">
       <div className="absolute inset-0 bg-marble-navy" aria-hidden="true" />
-      <motion.div
+      <m.div
         initial={{ scaleX: 0 }}
         whileInView={{ scaleX: 1 }}
         viewport={{ once: true }}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import Reveal from "./Reveal";
 
 const solutions = [
@@ -71,7 +71,7 @@ export default function Solutions() {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-navy-950/10 rounded-2xl overflow-hidden">
           {solutions.map((solution, i) => (
-            <motion.button
+            <m.button
               key={solution.title}
               type="button"
               onMouseEnter={() => setActive(i)}
@@ -92,7 +92,7 @@ export default function Solutions() {
                 <h3 className="font-serif text-xl sm:text-2xl text-navy-950 mt-8 group-hover:text-navy-700 transition-colors">
                   {solution.title}
                 </h3>
-                <motion.p
+                <m.p
                   initial={false}
                   animate={{
                     height: active === i ? "auto" : 0,
@@ -102,13 +102,13 @@ export default function Solutions() {
                   className="mt-3 text-sm text-navy-700/80 font-light leading-relaxed overflow-hidden"
                 >
                   {solution.description}
-                </motion.p>
+                </m.p>
               </div>
               <span
                 className="pointer-events-none absolute bottom-0 left-0 h-0.5 w-0 bg-navy-700 transition-all duration-500 group-hover:w-full"
                 aria-hidden="true"
               />
-            </motion.button>
+            </m.button>
           ))}
         </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import Reveal from "./Reveal";
 
 const floatingWords = [
@@ -26,7 +26,7 @@ export default function About() {
         aria-hidden="true"
       >
         {floatingWords.map((word, i) => (
-          <motion.div
+          <m.div
             key={word}
             initial={{ x: i % 2 === 0 ? "-100%" : "100%" }}
             whileInView={{ x: i % 2 === 0 ? "0%" : "0%" }}
@@ -35,7 +35,7 @@ export default function About() {
             className="whitespace-nowrap font-serif text-[10vw] leading-none tracking-tight text-navy-700"
           >
             {word} — {word} — {word}
-          </motion.div>
+          </m.div>
         ))}
       </div>
 

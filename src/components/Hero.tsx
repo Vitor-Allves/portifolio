@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import dynamic from "next/dynamic";
 import { BRAND, CONTACT } from "@/lib/site-config";
 
@@ -22,11 +22,11 @@ export default function Hero() {
         aria-hidden="true"
       />
       <div
-        className="pointer-events-none absolute -top-1/3 left-1/2 h-[70vw] w-[70vw] -translate-x-1/2 rounded-full bg-navy-700/25 blur-[140px]"
+        className="pointer-events-none absolute -top-1/3 left-1/2 h-[70vw] w-[70vw] -translate-x-1/2 rounded-full bg-navy-700/25 blur-[70px] sm:blur-[140px]"
         aria-hidden="true"
       />
 
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1.6, delay: 0.2 }}
@@ -39,36 +39,36 @@ export default function Hero() {
           <source media="(min-width: 1024px)" srcSet={BRAND.logoWhite} />
           <img alt="" className="h-auto w-full opacity-100" />
         </picture>
-      </motion.div>
+      </m.div>
 
       <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 lg:px-10 pt-28 pb-16">
-        <motion.p
+        <m.p
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.1 }}
           className="text-[12px] sm:text-sm tracking-[0.35em] uppercase text-silver-400 mb-8"
         >
           Estratégia · Inteligência · Crescimento
-        </motion.p>
+        </m.p>
 
         <h1 className="font-serif text-balance text-[2.4rem] leading-[1.12] sm:text-6xl sm:leading-[1.1] lg:text-[5.2rem] lg:leading-[1.05] max-w-5xl">
-          <motion.span
+          <m.span
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.9, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="block"
           >
             Empresas não precisam
-          </motion.span>
-          <motion.span
+          </m.span>
+          <m.span
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.9, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className="block"
           >
             de mais ações.
-          </motion.span>
-          <motion.span
+          </m.span>
+          <m.span
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.9, delay: 0.55, ease: [0.16, 1, 0.3, 1] }}
@@ -77,17 +77,17 @@ export default function Hero() {
             Precisam saber{" "}
             <span className="text-white not-italic relative">
               onde agir.
-              <motion.span
+              <m.span
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 1, delay: 1.1, ease: [0.16, 1, 0.3, 1] }}
                 className="absolute -bottom-1 left-0 h-px w-full origin-left bg-silver-400/70"
               />
             </span>
-          </motion.span>
+          </m.span>
         </h1>
 
-        <motion.p
+        <m.p
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.8 }}
@@ -95,9 +95,9 @@ export default function Hero() {
         >
           Estratégia, posicionamento, aquisição e inteligência trabalhando na
           mesma direção para transformar decisões em crescimento.
-        </motion.p>
+        </m.p>
 
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.95 }}
@@ -119,9 +119,9 @@ export default function Hero() {
           >
             Conheça a Legado
           </a>
-        </motion.div>
+        </m.div>
 
-        <motion.div
+        <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1, delay: 1.3 }}
@@ -137,7 +137,7 @@ export default function Hero() {
           ))}
           <span className="text-silver-600">=</span>
           <span className="text-white font-medium">EVOLUÇÃO</span>
-        </motion.div>
+        </m.div>
       </div>
 
       <div

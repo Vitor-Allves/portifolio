@@ -8,6 +8,11 @@ export const BRAND = {
   // legible on light surfaces, needs a light plate behind it when placed
   // on a dark surface like the header/footer.
   logo: "/brand/logo-legado.png",
+  // Pre-sized WebP variants of the same mark, for the small header/footer
+  // lockup — never displayed past ~96px tall, so there's no reason to ship
+  // the 1024px/195KB master there.
+  logoSmall160: "/brand/logo-legado-160.webp",
+  logoSmall320: "/brand/logo-legado-320.webp",
   // Same mark redrawn in white on a transparent background — for direct,
   // plate-free use as a watermark/background element on dark surfaces
   // (e.g. the hero), where a boxed light plate would compete for attention.
