@@ -30,13 +30,13 @@ export default function Hero() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1.6, delay: 0.2 }}
-        className="pointer-events-none absolute right-[2%] top-1/2 z-0 hidden w-[85vw] -translate-y-1/2 sm:block sm:right-[4%] sm:w-[60vw] md:w-[46vw] lg:right-[6%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
+        className="pointer-events-none absolute right-[2%] top-1/2 z-0 hidden w-[85vw] -translate-y-1/2 lg:block lg:right-[6%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
         aria-hidden="true"
       >
         {/* <picture>'s media-gated <source> keeps this asset out of the
-            mobile network payload entirely, not just visually hidden. */}
+            mobile/tablet network payload entirely, not just visually hidden. */}
         <picture>
-          <source media="(min-width: 640px)" srcSet={BRAND.logoWhite} />
+          <source media="(min-width: 1024px)" srcSet={BRAND.logoWhite} />
           <img alt="" className="h-auto w-full opacity-100" />
         </picture>
       </motion.div>
