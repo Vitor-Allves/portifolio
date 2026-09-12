@@ -23,6 +23,7 @@ export default function Header() {
   }, [menuOpen]);
 
   return (
+    <>
     <header
       className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
         scrolled
@@ -88,28 +89,34 @@ export default function Header() {
           </svg>
         </button>
       </div>
-
-      {menuOpen && (
-        <div className="lg:hidden fixed inset-0 top-[64px] bg-navy-950/98 backdrop-blur-xl px-6 py-10 flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              onClick={() => setMenuOpen(false)}
-              className="text-2xl font-serif text-silver-100 py-4 border-b border-white/5"
-            >
-              {item.label}
-            </a>
-          ))}
-          <a
-            href="#contato"
-            onClick={() => setMenuOpen(false)}
-            className="mt-8 text-center bg-white text-navy-700 font-medium text-sm tracking-[0.12em] uppercase px-5 py-4 rounded-full active:bg-silver-300 transition-colors duration-300"
-          >
-            Vamos conversar
-          </a>
-        </div>
-      )}
     </header>
+
+    {/* Rendered as a sibling of <header>, not a child: the header gets
+        backdrop-blur once scrolled, and a backdrop-filter on an ancestor
+        creates a new containing block for fixed-position descendants —
+        that silently shrank this panel to the header's own height instead
+        of the viewport whenever it was opened past the top of the page. */}
+    {menuOpen && (
+      <div className="lg:hidden fixed inset-0 top-[64px] z-50 bg-navy-950 px-6 py-10 flex flex-col gap-1 overflow-y-auto">
+        {NAV_ITEMS.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            onClick={() => setMenuOpen(false)}
+            className="text-2xl font-serif text-silver-100 py-4 border-b border-white/5"
+          >
+            {item.label}
+          </a>
+        ))}
+        <a
+          href="#contato"
+          onClick={() => setMenuOpen(false)}
+          className="mt-8 text-center bg-white text-navy-700 font-medium text-sm tracking-[0.12em] uppercase px-5 py-4 rounded-full active:bg-silver-300 transition-colors duration-300"
+        >
+          Vamos conversar
+        </a>
+      </div>
+    )}
+    </>
   );
 }
