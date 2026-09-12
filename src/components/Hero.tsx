@@ -2,12 +2,11 @@
 
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import { BRAND, CONTACT } from "@/lib/site-config";
 
 const HeroField = dynamic(() => import("./HeroField"), { ssr: false });
 
-const equationParts = ["ESTRATÉGIA", "INTELIGÊNCIA", "EXECUÇÃO", "EVOLUÇÃO"];
+const equationParts = ["ESTRATÉGIA", "INTELIGÊNCIA", "EXECUÇÃO"];
 
 export default function Hero() {
   return (
@@ -31,17 +30,15 @@ export default function Hero() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1.6, delay: 0.2 }}
-        className="pointer-events-none absolute right-[2%] top-1/2 z-0 w-[85vw] -translate-y-1/2 sm:right-[4%] sm:w-[60vw] md:w-[46vw] lg:right-[6%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
+        className="pointer-events-none absolute right-[2%] top-1/2 z-0 hidden w-[85vw] -translate-y-1/2 sm:block sm:right-[4%] sm:w-[60vw] md:w-[46vw] lg:right-[6%] lg:w-[38vw] xl:w-[34vw] xl:max-w-[720px]"
         aria-hidden="true"
       >
-        <Image
-          src={BRAND.logoWhite}
-          alt=""
-          width={1024}
-          height={1024}
-          priority
-          className="h-auto w-full opacity-100"
-        />
+        {/* <picture>'s media-gated <source> keeps this asset out of the
+            mobile network payload entirely, not just visually hidden. */}
+        <picture>
+          <source media="(min-width: 640px)" srcSet={BRAND.logoWhite} />
+          <img alt="" className="h-auto w-full opacity-100" />
+        </picture>
       </motion.div>
 
       <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 lg:px-10 pt-28 pb-16">
