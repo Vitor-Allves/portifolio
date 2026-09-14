@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
-import type { DailySpend } from "@/lib/meta-ads-types";
 import { formatCurrencyBRL, formatCompactNumber, formatShortDate } from "@/lib/format";
 
 type SpendTrendChartProps = {
-  dailySpend: DailySpend[];
+  // Already aggregated (summed per date) by the caller for whichever
+  // accounts are currently selected in the client filter.
+  dailySpend: { date: string; spend: number }[];
 };
 
 const LINE_COLOR = "var(--color-petrol-800)";

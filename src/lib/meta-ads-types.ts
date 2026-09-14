@@ -37,19 +37,14 @@ export type CampaignInsight = {
   reach: number;
 };
 
-export type DailySpend = { date: string; spend: number };
+// Tagged per account (not pre-summed) so the client can re-aggregate
+// whichever subset of accounts the client filter has selected.
+export type DailySpend = { accountId: string; date: string; spend: number };
 
 export type DashboardData = {
   datePreset: DatePreset;
   accounts: MetaAdAccount[];
   campaigns: CampaignInsight[];
   dailySpend: DailySpend[];
-  totals: {
-    spend: number;
-    impressions: number;
-    clicks: number;
-    ctr: number;
-    cpc: number;
-  };
   generatedAt: string;
 };
