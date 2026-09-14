@@ -98,6 +98,47 @@ ela não ficou presa no filtro de contas desativadas/fechadas — o código só
 ignora contas com status `DISABLED` ou `CLOSED`, todo o resto (incluindo
 período de carência, pendente de acerto, etc.) é considerado.
 
+## 6b. Contas "pertencentes a indivíduos" (quando "Atribuir parceiro" não aparece)
+
+Algumas contas de anúncio de clientes nunca foram vinculadas a um Business
+Manager — na tela de Configurações de Negócios elas aparecem marcadas como
+**"Isto é pertencente a indivíduos"**, e o botão **Atribuir parceiro** fica
+desabilitado. Isso é uma trava da própria Meta (esse fluxo só existe entre
+Empresas), não depende do seu nível de permissão: mesmo um admin do seu
+próprio Business Manager não consegue habilitá-lo por essa tela.
+
+Duas saídas:
+
+1. **Pedir para o dono da conta compartilhar via Ads Manager pessoal dele**
+   (não pelo Business Settings): ele entra em `Ads Manager → Configurações
+   da Conta → Funções da Conta de Anúncio` e adiciona parceiro/negócio por
+   lá, informando o `META_BUSINESS_ID`. Se conseguir, a conta passa a
+   funcionar exatamente como as demais (seção 6 acima) — sem mudança de
+   código.
+2. **Quando isso não é viável** (dono não localizado, não retorna, etc.),
+   peça para o dono adicionar uma pessoa (`Atribuir pessoas`, que costuma
+   ficar disponível mesmo numa conta de indivíduo) com a permissão
+   "Visualizar desempenho" — pode ser um perfil pessoal dedicado à
+   integração. Gere então, com esse perfil, um token de acesso de usuário
+   (não de sistema) com o escopo `ads_read`, transformado em token de longa
+   duração (~60 dias) pelo fluxo padrão de troca de token da Meta.
+
+   Adicione esse token à variável `META_EXTRA_ACCOUNTS`, como um array JSON:
+
+   ```
+   META_EXTRA_ACCOUNTS=[{"accountId":"act_1004378573655122","token":"EAAxxxxx..."}]
+   ```
+
+   Pode ter mais de uma entrada nesse array, uma por conta. Cada conta ali
+   é buscada com o próprio token, sem depender do `META_BUSINESS_ID`.
+
+   **Atenção:** diferente do token de Usuário do Sistema (que pode ser
+   gerado sem expiração), um token de usuário pessoal expira — normalmente
+   em até 60 dias — e precisa ser renovado manualmente nessa mesma variável
+   quando isso acontecer. Se o dashboard parar de trazer só essa conta
+   específica (as outras continuando normais), o token expirado é a causa
+   mais provável.
+
 ## Observações importantes
 
 - **Revisão do app / verificação de negócio.** Para ler dados de contas de

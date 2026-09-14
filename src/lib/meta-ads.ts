@@ -148,8 +148,36 @@ function requireConfig() {
   return { accessToken: accessToken!, businessId: businessId! };
 }
 
-async function graphGet<T>(path: string, params: Record<string, string>): Promise<T> {
-  const { accessToken } = requireConfig();
+type ExtraAccountConfig = { accountId: string; token: string };
+
+// Ad accounts that can't be shared with the Business (e.g. Meta-flagged
+// "pertencente a indivíduos" accounts, where "Atribuir parceiro" is
+// unavailable) are added here instead: each with its own personal-profile
+// access token, scoped to just that one account via "Atribuir pessoas".
+// See docs/meta-ads-setup.md — unlike the System User token above, these
+// expire and need periodic renewal.
+function parseExtraAccounts(): ExtraAccountConfig[] {
+  const raw = process.env.META_EXTRA_ACCOUNTS;
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error("not an array");
+    return parsed.filter(
+      (a): a is ExtraAccountConfig =>
+        typeof a?.accountId === "string" && typeof a?.token === "string"
+    );
+  } catch (err) {
+    console.error("[meta-ads] META_EXTRA_ACCOUNTS is not valid JSON — ignoring", err);
+    return [];
+  }
+}
+
+async function graphGet<T>(
+  path: string,
+  params: Record<string, string>,
+  tokenOverride?: string
+): Promise<T> {
+  const accessToken = tokenOverride ?? requireConfig().accessToken;
   const url = new URL(`${GRAPH_API_BASE}${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
@@ -213,6 +241,21 @@ export async function listAdAccounts(): Promise<MetaAdAccount[]> {
     byId.set(account.id, { id: account.id, name: account.name ?? account.id });
   }
 
+  for (const extra of parseExtraAccounts()) {
+    if (byId.has(extra.accountId)) continue;
+    try {
+      const node = await graphGet<AdAccountNode>(
+        `/${extra.accountId}`,
+        { fields: "id,name,account_status" },
+        extra.token
+      );
+      if (node.account_status !== undefined && DEAD_STATUSES.has(node.account_status)) continue;
+      byId.set(node.id, { id: node.id, name: node.name ?? node.id });
+    } catch (err) {
+      console.error(`[meta-ads] failed to fetch extra account ${extra.accountId}`, err);
+    }
+  }
+
   return [...byId.values()];
 }
 
@@ -239,11 +282,15 @@ function normalizeStatus(raw: string | undefined): CampaignStatus {
 // Insights rows don't carry campaign metadata (objective, status) — that
 // lives on the Campaign node itself, so it's a separate call per account,
 // merged into the insights rows by campaign_id below.
-async function getCampaignMeta(account: MetaAdAccount): Promise<Map<string, CampaignMeta>> {
-  const data = await graphGet<{ data: CampaignMetaNode[] }>(`/${account.id}/campaigns`, {
-    fields: "id,objective,effective_status",
-    limit: "500",
-  });
+async function getCampaignMeta(
+  account: MetaAdAccount,
+  token?: string
+): Promise<Map<string, CampaignMeta>> {
+  const data = await graphGet<{ data: CampaignMetaNode[] }>(
+    `/${account.id}/campaigns`,
+    { fields: "id,objective,effective_status", limit: "500" },
+    token
+  );
 
   const map = new Map<string, CampaignMeta>();
   for (const row of data.data ?? []) {
@@ -266,14 +313,19 @@ type CampaignInsightNode = {
 async function getAccountCampaignInsights(
   account: MetaAdAccount,
   period: Period,
-  metaByCampaignId: Map<string, CampaignMeta>
+  metaByCampaignId: Map<string, CampaignMeta>,
+  token?: string
 ): Promise<CampaignInsight[]> {
-  const data = await graphGet<{ data: CampaignInsightNode[] }>(`/${account.id}/insights`, {
-    level: "campaign",
-    ...periodParams(period),
-    fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach",
-    limit: "500",
-  });
+  const data = await graphGet<{ data: CampaignInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "campaign",
+      ...periodParams(period),
+      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach",
+      limit: "500",
+    },
+    token
+  );
 
   return (data.data ?? []).map((row) => {
     const meta = metaByCampaignId.get(row.campaign_id ?? "");
@@ -298,14 +350,22 @@ async function getAccountCampaignInsights(
 
 type DailyInsightNode = { date_start?: string; spend?: string; impressions?: string; clicks?: string };
 
-async function getAccountDailySeries(account: MetaAdAccount, period: Period): Promise<DailyMetrics[]> {
-  const data = await graphGet<{ data: DailyInsightNode[] }>(`/${account.id}/insights`, {
-    level: "account",
-    ...periodParams(period),
-    time_increment: "1",
-    fields: "spend,impressions,clicks",
-    limit: "500",
-  });
+async function getAccountDailySeries(
+  account: MetaAdAccount,
+  period: Period,
+  token?: string
+): Promise<DailyMetrics[]> {
+  const data = await graphGet<{ data: DailyInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      time_increment: "1",
+      fields: "spend,impressions,clicks",
+      limit: "500",
+    },
+    token
+  );
 
   return (data.data ?? [])
     .filter((row) => row.date_start)
@@ -324,25 +384,25 @@ type AccountInsightNode = { reach?: string };
 // time_increment breakdown — this is what keeps Meta's dedup intact. Reach
 // summed from the per-day series or from per-campaign rows would count the
 // same person again for every day or campaign that reached them.
-async function getAccountReach(account: MetaAdAccount, period: Period): Promise<number> {
-  const data = await graphGet<{ data: AccountInsightNode[] }>(`/${account.id}/insights`, {
-    level: "account",
-    ...periodParams(period),
-    fields: "reach",
-    limit: "1",
-  });
+async function getAccountReach(account: MetaAdAccount, period: Period, token?: string): Promise<number> {
+  const data = await graphGet<{ data: AccountInsightNode[] }>(
+    `/${account.id}/insights`,
+    { level: "account", ...periodParams(period), fields: "reach", limit: "1" },
+    token
+  );
   return Number(data.data?.[0]?.reach ?? 0);
 }
 
 async function fetchAccountPeriodData(
   account: MetaAdAccount,
-  period: Period
+  period: Period,
+  token?: string
 ): Promise<{ campaigns: CampaignInsight[]; daily: DailyMetrics[]; reach: number }> {
-  const meta = await getCampaignMeta(account).catch(() => new Map<string, CampaignMeta>());
+  const meta = await getCampaignMeta(account, token).catch(() => new Map<string, CampaignMeta>());
   const [campaigns, daily, reach] = await Promise.all([
-    getAccountCampaignInsights(account, period, meta),
-    getAccountDailySeries(account, period),
-    getAccountReach(account, period),
+    getAccountCampaignInsights(account, period, meta, token),
+    getAccountDailySeries(account, period, token),
+    getAccountReach(account, period, token),
   ]);
   return { campaigns, daily, reach };
 }
@@ -356,7 +416,13 @@ async function fetchAllAccounts(
   accountReach: AccountReach[];
   partialAccounts: AccountRef[];
 }> {
-  const settled = await Promise.allSettled(accounts.map((a) => fetchAccountPeriodData(a, period)));
+  const extraAccounts = parseExtraAccounts();
+  const tokenFor = (accountId: string) =>
+    extraAccounts.find((a) => a.accountId === accountId)?.token;
+
+  const settled = await Promise.allSettled(
+    accounts.map((a) => fetchAccountPeriodData(a, period, tokenFor(a.id)))
+  );
 
   const campaigns: CampaignInsight[] = [];
   const daily: DailyMetrics[] = [];
