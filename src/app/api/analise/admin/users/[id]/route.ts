@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
 import { isFullAdmin } from "@/lib/session-scope";
-import { revokeClientAccess } from "@/lib/client-access";
+import { revokeInternalUser } from "@/lib/internal-users";
 import { DbConfigError } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -22,16 +22,13 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    await revokeClientAccess(id);
+    await revokeInternalUser(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof DbConfigError) {
-      return NextResponse.json(
-        { error: "Banco de dados não configurado." },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: "Banco de dados não configurado." }, { status: 503 });
     }
-    console.error("[api/analise/admin/clients/:id] DELETE", err);
+    console.error("[api/analise/admin/users/:id] DELETE", err);
     return NextResponse.json({ error: "Não foi possível revogar o acesso." }, { status: 500 });
   }
 }

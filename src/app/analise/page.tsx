@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
+import { isFullAdmin } from "@/lib/session-scope";
 import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
@@ -23,8 +24,16 @@ export default async function AnalisePage() {
   }
 
   const allowedAccountIds = scope.kind === "client" ? scope.accountIds : undefined;
-  const clientLabel = scope.kind === "client" ? scope.label : null;
   const clientPermissions = scope.kind === "client" ? scope.permissions : null;
+  // Header subtitle: a client's business name, or — for a named internal
+  // login — who's signed in. The legacy shared admin password has no
+  // identity to show, so it falls back to the header's own default text.
+  const viewerLabel =
+    scope.kind === "client"
+      ? scope.label
+      : scope.userName
+        ? `${scope.userName} · ${scope.role === "admin" ? "Administrador" : "Analista"}`
+        : null;
   const dbConfigured = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
@@ -50,8 +59,8 @@ export default async function AnalisePage() {
   return (
     <Dashboard
       initialData={data}
-      isAdmin={scope.kind === "admin"}
-      clientLabel={clientLabel}
+      isAdmin={isFullAdmin(scope)}
+      clientLabel={viewerLabel}
       clientPermissions={clientPermissions}
       dbConfigured={dbConfigured}
     />

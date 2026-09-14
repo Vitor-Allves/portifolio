@@ -3,11 +3,14 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
+import { isFullAdmin } from "@/lib/session-scope";
 import { listAdAccounts, MetaApiError } from "@/lib/meta-ads";
 import { listClientAccess } from "@/lib/client-access";
+import { listInternalUsers } from "@/lib/internal-users";
 import { DbConfigError } from "@/lib/db";
 import AnaliseHeader from "@/components/analise/AnaliseHeader";
 import AdminClientsPanel from "@/components/analise/AdminClientsPanel";
+import AdminUsersPanel from "@/components/analise/AdminUsersPanel";
 
 export const metadata: Metadata = {
   title: "Clientes — Análise de Campanhas",
@@ -18,7 +21,7 @@ export default async function AnaliseAdminPage() {
   const token = (await cookies()).get(ANALISE_SESSION_COOKIE)?.value;
   const scope = verifySessionToken(token);
   if (!scope) redirect("/analise/login");
-  if (scope.kind !== "admin") redirect("/analise");
+  if (!isFullAdmin(scope)) redirect("/analise");
 
   let accounts: Awaited<ReturnType<typeof listAdAccounts>> = [];
   let accountsError: string | null = null;
@@ -33,9 +36,10 @@ export default async function AnaliseAdminPage() {
   }
 
   let clients: Awaited<ReturnType<typeof listClientAccess>> = [];
+  let internalUsers: Awaited<ReturnType<typeof listInternalUsers>> = [];
   let dbNotConfigured = false;
   try {
-    clients = await listClientAccess();
+    [clients, internalUsers] = await Promise.all([listClientAccess(), listInternalUsers()]);
   } catch (err) {
     if (err instanceof DbConfigError) {
       dbNotConfigured = true;
@@ -76,11 +80,21 @@ export default async function AnaliseAdminPage() {
             </p>
           </div>
         ) : (
-          <AdminClientsPanel
-            accounts={accounts}
-            accountsError={accountsError}
-            initialClients={clients}
-          />
+          <>
+            <AdminClientsPanel
+              accounts={accounts}
+              accountsError={accountsError}
+              initialClients={clients}
+            />
+
+            <h2 className="font-sans text-2xl font-semibold text-intel-text mb-1 mt-14">
+              Equipe Legado
+            </h2>
+            <p className="text-sm text-intel-text-dim mb-8">
+              Crie um login para cada pessoa do time, com nível de acesso próprio.
+            </p>
+            <AdminUsersPanel initialUsers={internalUsers} />
+          </>
         )}
       </div>
     </main>

@@ -7,6 +7,7 @@ import {
   createSessionToken,
 } from "@/lib/analise-session-node";
 import { matchClientPassword } from "@/lib/client-access";
+import { matchInternalUser } from "@/lib/internal-users";
 import type { SessionScope } from "@/lib/session-scope";
 
 export const runtime = "nodejs";
@@ -29,10 +30,26 @@ function clientKey(req: NextRequest): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 }
 
-async function resolveScope(password: string): Promise<SessionScope | null> {
+async function resolveScope(email: string | null, password: string): Promise<SessionScope | null> {
+  // An email means "I'm on the Legado team" — look up a named internal
+  // login and stop there; it never falls through to the client/legacy
+  // checks below, so a mistyped team email can't accidentally match a
+  // client's password.
+  if (email) {
+    try {
+      const match = await matchInternalUser(email, password);
+      if (match) {
+        return { kind: "admin", role: match.role, userId: match.id, userName: match.name };
+      }
+    } catch (err) {
+      console.error("[analise/login] internal user lookup failed", err);
+    }
+    return null;
+  }
+
   const adminPassword = process.env.ANALYTICS_DASHBOARD_PASSWORD;
   if (adminPassword && safeEqual(password, adminPassword)) {
-    return { kind: "admin" };
+    return { kind: "admin", role: "admin" };
   }
 
   // Client credentials live in Postgres (see docs/client-access-setup.md).
@@ -41,7 +58,14 @@ async function resolveScope(password: string): Promise<SessionScope | null> {
   try {
     const match = await matchClientPassword(password);
     if (match) {
-      return { kind: "client", accountIds: match.accountIds, label: match.label, permissions: match.permissions };
+      return {
+        kind: "client",
+        accountIds: match.accountIds,
+        label: match.label,
+        permissions: match.permissions,
+        userId: match.userId,
+        userName: match.userName,
+      };
     }
   } catch (err) {
     console.error("[analise/login] client credential lookup failed", err);
@@ -60,9 +84,11 @@ export async function POST(req: NextRequest) {
   }
 
   let password: unknown;
+  let email: unknown;
   try {
-    const body = (await req.json()) as { password?: unknown };
+    const body = (await req.json()) as { password?: unknown; email?: unknown };
     password = body.password;
+    email = body.email;
   } catch {
     return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   }
@@ -70,10 +96,14 @@ export async function POST(req: NextRequest) {
   if (typeof password !== "string" || password.length === 0) {
     return NextResponse.json({ error: "Senha incorreta." }, { status: 401 });
   }
+  const cleanEmail = typeof email === "string" && email.trim().length > 0 ? email.trim() : null;
 
-  const scope = await resolveScope(password);
+  const scope = await resolveScope(cleanEmail, password);
   if (!scope) {
-    return NextResponse.json({ error: "Senha incorreta." }, { status: 401 });
+    return NextResponse.json(
+      { error: cleanEmail ? "E-mail ou senha incorretos." : "Senha incorreta." },
+      { status: 401 }
+    );
   }
 
   let token: string;
