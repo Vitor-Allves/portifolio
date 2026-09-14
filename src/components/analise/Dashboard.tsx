@@ -15,7 +15,7 @@ import KpiCard from "./KpiCard";
 import TrendChart, { type TrendMetric } from "./TrendChart";
 import SpendDistributionChart from "./SpendDistributionChart";
 import RankingChart from "./RankingChart";
-import DemographicAnalysis from "./DemographicAnalysis";
+import BreakdownAnalysis, { AGE_ORDER, GENDER_ORDER, GENDER_LABEL, unknownAsNaoInformado } from "./BreakdownAnalysis";
 import CampaignsTable from "./CampaignsTable";
 import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
@@ -239,6 +239,12 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
   const filteredAudience = useMemo(
     () => data.audience.filter((a) => accountIds.has(a.accountId)),
     [data.audience, accountIds]
+  );
+
+  // Region is also account-level only, same scoping as the audience segments above.
+  const filteredRegions = useMemo(
+    () => data.regions.filter((r) => accountIds.has(r.accountId)),
+    [data.regions, accountIds]
   );
 
   // Flat, cross-campaign views for the Campanhas page's "Conjuntos" and
@@ -605,22 +611,38 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
 
                     <div className="grid lg:grid-cols-2 gap-4">
                       <m.div custom={11} initial="hidden" animate="visible" variants={fadeUp}>
-                        <DemographicAnalysis
+                        <BreakdownAnalysis
                           title="Público por idade"
-                          dimension="age"
-                          audience={filteredAudience}
                           barColor="var(--color-intel-cyan)"
+                          segments={filteredAudience}
+                          bucketKey={(s) => s.age}
+                          bucketLabel={unknownAsNaoInformado}
+                          order={AGE_ORDER}
+                          defaultMetric="linkClicks"
                         />
                       </m.div>
                       <m.div custom={12} initial="hidden" animate="visible" variants={fadeUp}>
-                        <DemographicAnalysis
+                        <BreakdownAnalysis
                           title="Público por gênero"
-                          dimension="gender"
-                          audience={filteredAudience}
                           barColor="var(--color-intel-violet)"
+                          segments={filteredAudience}
+                          bucketKey={(s) => s.gender}
+                          bucketLabel={(k) => GENDER_LABEL[k] ?? k}
+                          order={GENDER_ORDER}
+                          defaultMetric="linkClicks"
                         />
                       </m.div>
                     </div>
+
+                    <m.div custom={13} initial="hidden" animate="visible" variants={fadeUp}>
+                      <BreakdownAnalysis
+                        title="Público por região"
+                        barColor="var(--color-intel-cyan)"
+                        segments={filteredRegions}
+                        bucketKey={(s) => s.region}
+                        defaultMetric="reach"
+                      />
+                    </m.div>
                   </div>
                 )}
 

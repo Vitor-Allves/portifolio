@@ -147,6 +147,20 @@ export type AudienceSegment = {
   reach: number;
 };
 
+// Meta's region breakdown (state-level for Brazil, e.g. "São Paulo"),
+// fetched the same way as AudienceSegment — one call per account, safe to
+// sum across regions for the same reason age/gender buckets are: each
+// reached person is attributed to exactly one region.
+export type RegionSegment = {
+  accountId: string;
+  region: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  reach: number;
+};
+
 export type DashboardData = {
   period: Period;
   // The concrete since/until this period resolved to — presets are
@@ -159,6 +173,7 @@ export type DashboardData = {
   daily: DailyMetrics[];
   accountReach: AccountReach[];
   audience: AudienceSegment[];
+  regions: RegionSegment[];
   // Same shape as the primary period, for the "compare to previous period"
   // filter — omitted entirely when comparison wasn't requested.
   comparison: {
