@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
-import type { DashboardData, DatePreset } from "@/lib/meta-ads-types";
+import type { DashboardData, Period } from "@/lib/meta-ads-types";
 import { formatCurrencyBRL, formatInteger } from "@/lib/format";
 import DateRangeFilter from "./DateRangeFilter";
 import ClientFilter from "./ClientFilter";
@@ -30,25 +30,29 @@ function allAccountIds(data: DashboardData): Set<string> {
 
 export default function Dashboard({ initialData }: DashboardProps) {
   const [data, setData] = useState(initialData);
-  const [datePreset, setDatePreset] = useState<DatePreset>(initialData.datePreset);
+  const [period, setPeriod] = useState<Period>(initialData.period);
   const [selectedAccountIds, setSelectedAccountIds] = useState(() => allAccountIds(initialData));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function handleDatePresetChange(preset: DatePreset) {
-    setDatePreset(preset);
+  function handlePeriodChange(nextPeriod: Period) {
+    setPeriod(nextPeriod);
     setError(null);
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/meta-ads/campaigns/?date_preset=${preset}`);
+        const query =
+          nextPeriod.kind === "preset"
+            ? `date_preset=${nextPeriod.preset}`
+            : `since=${nextPeriod.range.since}&until=${nextPeriod.range.until}`;
+        const res = await fetch(`/api/meta-ads/campaigns/?${query}`);
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           setError(body?.error ?? "Não foi possível carregar os dados.");
           return;
         }
-        const next = (await res.json()) as DashboardData;
-        setData(next);
-        setSelectedAccountIds(allAccountIds(next));
+        const nextData = (await res.json()) as DashboardData;
+        setData(nextData);
+        setSelectedAccountIds(allAccountIds(nextData));
       } catch {
         setError("Falha de conexão ao buscar os dados.");
       }
@@ -87,7 +91,7 @@ export default function Dashboard({ initialData }: DashboardProps) {
   return (
     <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
-        <DateRangeFilter value={datePreset} onChange={handleDatePresetChange} disabled={isPending} />
+        <DateRangeFilter value={period} onChange={handlePeriodChange} disabled={isPending} />
         {data.accounts.length > 1 && (
           <ClientFilter
             accounts={data.accounts}

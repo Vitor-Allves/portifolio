@@ -19,6 +19,32 @@ export function isValidDatePreset(value: string): value is DatePreset {
   return DATE_PRESETS.some((p) => p.value === value);
 }
 
+// Custom range is capped so a single daily-breakdown insights call (one row
+// per day, one page, no pagination handled) never needs more than one page.
+export const MAX_CUSTOM_RANGE_DAYS = 366;
+
+export type DateRange = { since: string; until: string }; // "YYYY-MM-DD"
+
+/** What period the dashboard is showing: one of the fixed presets, or a manually picked range. */
+export type Period = { kind: "preset"; preset: DatePreset } | { kind: "custom"; range: DateRange };
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isValidIsoDate(value: string): boolean {
+  if (!ISO_DATE_RE.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+export function isValidDateRange(range: DateRange): boolean {
+  if (!isValidIsoDate(range.since) || !isValidIsoDate(range.until)) return false;
+  const since = new Date(`${range.since}T00:00:00Z`).getTime();
+  const until = new Date(`${range.until}T00:00:00Z`).getTime();
+  if (since > until) return false;
+  const spanDays = (until - since) / (24 * 60 * 60 * 1000) + 1;
+  return spanDays <= MAX_CUSTOM_RANGE_DAYS;
+}
+
 export type MetaAdAccount = {
   id: string; // "act_123..."
   name: string;
@@ -42,7 +68,7 @@ export type CampaignInsight = {
 export type DailySpend = { accountId: string; date: string; spend: number };
 
 export type DashboardData = {
-  datePreset: DatePreset;
+  period: Period;
   accounts: MetaAdAccount[];
   campaigns: CampaignInsight[];
   dailySpend: DailySpend[];

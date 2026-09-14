@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
-import { getDashboardData, MetaConfigError, MetaApiError } from "@/lib/meta-ads";
+import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
 import AnaliseHeader from "@/components/analise/AnaliseHeader";
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const DEFAULT_PRESET = "last_30d" as const;
+const DEFAULT_PERIOD: Period = { kind: "preset", preset: "last_30d" };
 
 export default async function AnalisePage() {
   // Defense in depth: middleware already gates this route, but a page-level
@@ -29,7 +29,7 @@ export default async function AnalisePage() {
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
   let loadError: unknown = null;
   try {
-    data = await getDashboardData(DEFAULT_PRESET, allowedAccountIds);
+    data = await getDashboardData(DEFAULT_PERIOD, allowedAccountIds);
   } catch (err) {
     console.error("[analise] failed to load dashboard data", err);
     loadError = err;
