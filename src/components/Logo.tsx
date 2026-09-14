@@ -3,8 +3,11 @@ import { BRAND } from "@/lib/site-config";
 type LogoProps = {
   /** "light" = on a dark surface (header, footer, hero): the mark gets a
    * light plate behind it, since the file itself is drawn in dark ink.
-   * "dark" = already on a light surface: render the file directly. */
-  variant?: "light" | "dark";
+   * "dark" = already on a light surface: render the file directly.
+   * "onDark" = a dark surface where a plate would be wrong (e.g. the
+   * Legado Intelligence dashboard's near-black background) — renders the
+   * pre-made white-ink export directly, no plate. */
+  variant?: "light" | "dark" | "onDark";
   /** "sm" = compact header lockup. "lg" = larger institutional placement,
    * e.g. the hero's first fold. */
   size?: "sm" | "lg";
@@ -47,6 +50,18 @@ export default function Logo({
       />
     </picture>
   );
+
+  if (variant === "onDark") {
+    return (
+      <img
+        src={BRAND.logoWhite}
+        alt="Legado Enterprise"
+        width={320}
+        height={320}
+        className={`${IMAGE_SIZE[size]} w-auto object-contain ${className}`}
+      />
+    );
+  }
 
   if (variant === "dark") {
     return <span className={className}>{image}</span>;

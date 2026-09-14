@@ -22,15 +22,15 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
   }
 
   return (
-    <header className="border-b border-navy-700/10 bg-white">
+    <header className="border-b border-white/[0.06] bg-intel-surface-1/80 backdrop-blur-sm">
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Logo variant="dark" size="sm" />
+          <Logo variant="onDark" size="sm" className="!h-8" />
           <div>
-            <p className="font-serif text-lg text-navy-950 leading-tight">
-              Análise de Campanhas
+            <p className="font-sans text-[15px] font-semibold text-intel-text leading-tight">
+              Legado Intelligence
             </p>
-            <p className="text-xs text-navy-500">
+            <p className="text-xs text-intel-text-dim">
               {clientLabel ?? "Gerenciador de Anúncios — Meta"}
             </p>
           </div>
@@ -39,7 +39,7 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
           {isAdmin && (
             <Link
               href="/analise/admin/"
-              className="text-[13px] tracking-[0.1em] uppercase text-navy-600 hover:text-navy-950 transition-colors"
+              className="text-[13px] tracking-[0.1em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200"
             >
               Clientes
             </Link>
@@ -48,7 +48,7 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
             type="button"
             onClick={handleLogout}
             disabled={loggingOut}
-            className="text-[13px] tracking-[0.1em] uppercase text-navy-600 hover:text-navy-950 transition-colors disabled:opacity-60"
+            className="text-[13px] tracking-[0.1em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200 disabled:opacity-60"
           >
             {loggingOut ? "Saindo..." : "Sair"}
           </button>

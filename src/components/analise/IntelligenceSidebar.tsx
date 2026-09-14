@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Logo from "@/components/Logo";
 
 export type SectionId = "overview" | "campaigns" | "insights" | "reports" | "integrations";
 
@@ -13,12 +14,8 @@ export const SECTIONS: { id: SectionId; label: string }[] = [
 ];
 
 const ICONS: Record<SectionId, React.ReactNode> = {
-  overview: (
-    <path d="M3 13h4v7H3v-7Zm7-9h4v16h-4V4Zm7 5h4v11h-4V9Z" />
-  ),
-  campaigns: (
-    <path d="M4 4h16v3H4V4Zm0 6.5h16v3H4v-3ZM4 17h10v3H4v-3Z" />
-  ),
+  overview: <path d="M3 13h4v7H3v-7Zm7-9h4v16h-4V4Zm7 5h4v11h-4V9Z" />,
+  campaigns: <path d="M4 4h16v3H4V4Zm0 6.5h16v3H4v-3ZM4 17h10v3H4v-3Z" />,
   insights: (
     <path d="M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2Zm-2 18h4a1 1 0 0 1-1 2h-2a1 1 0 0 1-1-2Z" />
   ),
@@ -36,68 +33,142 @@ type IntelligenceSidebarProps = {
   isAdmin: boolean;
   mobileOpen: boolean;
   onCloseMobile: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
-function SidebarContent({ active, onSelect, isAdmin, onNavigate }: {
+function NavButton({
+  section,
+  isActive,
+  collapsed,
+  onClick,
+}: {
+  section: (typeof SECTIONS)[number];
+  isActive: boolean;
+  collapsed: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={isActive ? "page" : undefined}
+      title={collapsed ? section.label : undefined}
+      className={`group relative w-full flex items-center gap-3 rounded-lg py-2.5 text-[13px] tracking-[0.01em] transition-colors duration-200 ${
+        collapsed ? "justify-center px-0" : "px-3"
+      } ${
+        isActive
+          ? "bg-white/[0.06] text-intel-text"
+          : "text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2.5px] rounded-full bg-intel-cyan transition-opacity duration-200 shadow-[0_0_6px_var(--color-intel-cyan)] ${
+          isActive ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+        className={`shrink-0 transition-colors duration-200 ${isActive ? "text-intel-cyan" : ""}`}
+      >
+        {ICONS[section.id]}
+      </svg>
+      {!collapsed && <span>{section.label}</span>}
+    </button>
+  );
+}
+
+function SidebarContent({
+  active,
+  onSelect,
+  isAdmin,
+  onNavigate,
+  collapsed,
+  onToggleCollapsed,
+  showCollapseToggle,
+}: {
   active: SectionId;
   onSelect: (section: SectionId) => void;
   isAdmin: boolean;
   onNavigate: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  showCollapseToggle: boolean;
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="px-6 pt-7 pb-6 border-b border-white/10">
-        <p className="font-sans text-base font-semibold tracking-tight text-white">Legado Intelligence</p>
-        <p className="mt-1 text-[12px] leading-snug text-silver-400">
-          Inteligência de marketing e performance
-        </p>
+      <div className={`pt-6 pb-5 border-b border-white/[0.06] ${collapsed ? "px-3" : "px-5"}`}>
+        {collapsed ? (
+          <img src="/icon.png" alt="Legado" width={28} height={28} className="mx-auto" />
+        ) : (
+          <>
+            <Logo variant="onDark" size="sm" className="!h-9" />
+            <p className="mt-2 text-[10px] tracking-[0.18em] uppercase text-intel-text-dim">
+              Intelligence
+            </p>
+          </>
+        )}
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1" aria-label="Navegação principal">
-        {SECTIONS.map((section) => {
-          const isActive = section.id === active;
-          return (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => {
-                onSelect(section.id);
-                onNavigate();
-              }}
-              aria-current={isActive ? "page" : undefined}
-              className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] tracking-[0.01em] transition-colors duration-150 ${
-                isActive
-                  ? "bg-white/10 text-white font-medium"
-                  : "text-silver-400 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-                className="shrink-0"
-              >
-                {ICONS[section.id]}
-              </svg>
-              <span>{section.label}</span>
-            </button>
-          );
-        })}
+      <nav className="flex-1 py-4 px-2.5 space-y-0.5" aria-label="Navegação principal">
+        {SECTIONS.map((section) => (
+          <NavButton
+            key={section.id}
+            section={section}
+            isActive={section.id === active}
+            collapsed={collapsed}
+            onClick={() => {
+              onSelect(section.id);
+              onNavigate();
+            }}
+          />
+        ))}
       </nav>
 
       {isAdmin && (
-        <div className="px-3 pb-4">
+        <div className="px-2.5 pb-2">
           <Link
             href="/analise/admin/"
-            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] text-silver-400 hover:bg-white/5 hover:text-white transition-colors duration-150"
+            title={collapsed ? "Acessos de clientes" : undefined}
+            className={`w-full flex items-center gap-3 rounded-lg py-2.5 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-200 ${
+              collapsed ? "justify-center px-0" : "px-3"
+            }`}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="shrink-0">
               <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-8 1.66-8 5v1h16v-1c0-3.34-4.7-5-8-5Z" />
             </svg>
-            <span>Acessos de clientes</span>
+            {!collapsed && <span>Acessos de clientes</span>}
           </Link>
+        </div>
+      )}
+
+      {showCollapseToggle && (
+        <div className="px-2.5 pb-4 pt-1 border-t border-white/[0.06]">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+            className={`w-full flex items-center gap-3 rounded-lg py-2 text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-200 ${
+              collapsed ? "justify-center px-0" : "px-3"
+            }`}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+              className={`shrink-0 transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`}
+            >
+              <path d="M15 6L9 12L15 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {!collapsed && <span className="text-[12px]">Recolher</span>}
+          </button>
         </div>
       )}
     </div>
@@ -110,11 +181,25 @@ export default function IntelligenceSidebar({
   isAdmin,
   mobileOpen,
   onCloseMobile,
+  collapsed,
+  onToggleCollapsed,
 }: IntelligenceSidebarProps) {
   return (
     <>
-      <aside className="hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col bg-navy-950 sticky top-0 h-screen">
-        <SidebarContent active={active} onSelect={onSelect} isAdmin={isAdmin} onNavigate={() => {}} />
+      <aside
+        className={`hidden lg:flex lg:shrink-0 lg:flex-col bg-intel-surface-1 border-r border-white/[0.06] sticky top-0 h-screen transition-[width] duration-200 ${
+          collapsed ? "lg:w-[76px]" : "lg:w-60"
+        }`}
+      >
+        <SidebarContent
+          active={active}
+          onSelect={onSelect}
+          isAdmin={isAdmin}
+          onNavigate={() => {}}
+          collapsed={collapsed}
+          onToggleCollapsed={onToggleCollapsed}
+          showCollapseToggle
+        />
       </aside>
 
       {mobileOpen && (
@@ -123,10 +208,18 @@ export default function IntelligenceSidebar({
             type="button"
             aria-label="Fechar menu"
             onClick={onCloseMobile}
-            className="absolute inset-0 bg-navy-950/50"
+            className="absolute inset-0 bg-black/60"
           />
-          <aside className="absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-navy-950 shadow-2xl">
-            <SidebarContent active={active} onSelect={onSelect} isAdmin={isAdmin} onNavigate={onCloseMobile} />
+          <aside className="absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-intel-surface-1 border-r border-white/[0.06] shadow-2xl">
+            <SidebarContent
+              active={active}
+              onSelect={onSelect}
+              isAdmin={isAdmin}
+              onNavigate={onCloseMobile}
+              collapsed={false}
+              onToggleCollapsed={onToggleCollapsed}
+              showCollapseToggle={false}
+            />
           </aside>
         </div>
       )}

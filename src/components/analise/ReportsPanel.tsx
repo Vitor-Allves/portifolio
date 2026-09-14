@@ -81,9 +81,9 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-navy-700/10 bg-white p-6">
-        <h3 className="text-sm font-medium text-navy-950 mb-1">Exportar dados do período</h3>
-        <p className="text-[12px] text-navy-500 mb-5">
+      <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
+        <h3 className="text-[13px] font-medium text-intel-text mb-1">Exportar dados do período</h3>
+        <p className="text-[12px] text-intel-text-dim mb-5">
           Os arquivos refletem os filtros ativos no painel — {periodLabel}.
         </p>
 
@@ -92,7 +92,7 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
             type="button"
             onClick={exportCampaigns}
             disabled={campaigns.length === 0}
-            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-navy-950 text-white hover:bg-navy-800 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Exportar campanhas (CSV)
           </button>
@@ -100,17 +100,17 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
             type="button"
             onClick={exportAccountSummary}
             disabled={campaigns.length === 0}
-            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full border border-navy-700/20 text-navy-700 hover:border-navy-600/40 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full border border-white/10 text-intel-text-dim hover:border-white/25 hover:text-intel-text transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Exportar resumo por conta (CSV)
           </button>
         </div>
-        {campaigns.length === 0 && <p className="mt-3 text-[12px] text-navy-400">Sem campanhas no período para exportar.</p>}
+        {campaigns.length === 0 && <p className="mt-3 text-[12px] text-intel-text-dim">Sem campanhas no período para exportar.</p>}
       </div>
 
-      <div className="rounded-2xl border border-navy-700/15 bg-silver-100/60 p-6">
-        <p className="text-[13px] font-medium text-navy-950 mb-2">O que ainda depende de integração adicional</p>
-        <ul className="text-[12px] text-navy-600 leading-relaxed list-disc pl-4 space-y-1">
+      <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
+        <p className="text-[13px] font-medium text-intel-text mb-2">O que ainda depende de integração adicional</p>
+        <ul className="text-[12px] text-intel-text-dim leading-relaxed list-disc pl-4 space-y-1">
           <li>Relatórios agendados por e-mail ou PDF automático — depende de um serviço de envio (ex.: e-mail transacional) ainda não configurado.</li>
           <li>Histórico de relatórios gerados anteriormente — depende de armazenamento dedicado a relatórios, além do banco de acessos de clientes já existente.</li>
         </ul>

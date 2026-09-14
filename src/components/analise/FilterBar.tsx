@@ -6,6 +6,7 @@ import { formatShortDate } from "@/lib/format";
 import MultiSelectFilter, { type FilterOption } from "./MultiSelectFilter";
 import PeriodFilter from "./PeriodFilter";
 import ComparisonToggle from "./ComparisonToggle";
+import { INTEL_CHIP } from "./intel-styles";
 
 type Chip = { key: string; label: string; onRemove: () => void };
 
@@ -171,7 +172,7 @@ export default function FilterBar({
         <button
           type="button"
           onClick={clearAll}
-          className="text-[12px] tracking-[0.06em] uppercase text-navy-500 hover:text-navy-950 transition-colors px-2"
+          className="text-[11.5px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200 px-2"
         >
           Limpar filtros
         </button>
@@ -186,7 +187,7 @@ export default function FilterBar({
           type="button"
           onClick={() => setMobileOpen((v) => !v)}
           aria-expanded={mobileOpen}
-          className="flex items-center gap-2 text-[13px] px-4 py-2 rounded-full border border-navy-700/15 bg-white text-navy-700"
+          className="flex items-center gap-2 text-[13px] px-4 py-2 rounded-full border border-white/10 bg-intel-surface-2 text-intel-text-dim"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
@@ -202,11 +203,7 @@ export default function FilterBar({
         <ul className="flex flex-wrap gap-2 mt-3" aria-label="Filtros ativos">
           {chips.map((chip) => (
             <li key={chip.key}>
-              <button
-                type="button"
-                onClick={chip.onRemove}
-                className="flex items-center gap-1.5 text-[12px] px-3 py-1 rounded-full bg-silver-100 text-navy-700 hover:bg-silver-200 transition-colors"
-              >
+              <button type="button" onClick={chip.onRemove} className={INTEL_CHIP}>
                 {chip.label}
                 <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                   <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
