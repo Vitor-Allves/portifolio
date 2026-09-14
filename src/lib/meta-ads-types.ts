@@ -83,6 +83,13 @@ export type DailyMetrics = {
 
 export type AccountRef = { id: string; name: string };
 
+// One number per account for the whole period — NOT the sum of each
+// campaign's own `reach`, and not the sum of daily reach either. Meta's
+// "reach" is already deduplicated (estimated unique people) within a single
+// insights call, but only within that one call's scope: summing per-campaign
+// or per-day reach would double-count anyone reached more than once.
+export type AccountReach = { accountId: string; reach: number };
+
 export type DashboardData = {
   period: Period;
   // The concrete since/until this period resolved to — presets are
@@ -91,12 +98,14 @@ export type DashboardData = {
   accounts: MetaAdAccount[];
   campaigns: CampaignInsight[];
   daily: DailyMetrics[];
+  accountReach: AccountReach[];
   // Same shape as the primary period, for the "compare to previous period"
   // filter — omitted entirely when comparison wasn't requested.
   comparison: {
     period: DateRange;
     campaigns: CampaignInsight[];
     daily: DailyMetrics[];
+    accountReach: AccountReach[];
   } | null;
   // Accounts that failed to load for this request (transient Meta error,
   // token not yet propagated, ...) — surfaced so the UI can distinguish

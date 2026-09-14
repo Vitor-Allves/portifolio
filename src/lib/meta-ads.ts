@@ -23,6 +23,7 @@ import type {
   DailyMetrics,
   DashboardData,
   AccountRef,
+  AccountReach,
 } from "./meta-ads-types";
 export {
   DATE_PRESETS,
@@ -317,26 +318,49 @@ async function getAccountDailySeries(account: MetaAdAccount, period: Period): Pr
     }));
 }
 
+type AccountInsightNode = { reach?: string };
+
+// A single call over the whole period, at account level, with no
+// time_increment breakdown — this is what keeps Meta's dedup intact. Reach
+// summed from the per-day series or from per-campaign rows would count the
+// same person again for every day or campaign that reached them.
+async function getAccountReach(account: MetaAdAccount, period: Period): Promise<number> {
+  const data = await graphGet<{ data: AccountInsightNode[] }>(`/${account.id}/insights`, {
+    level: "account",
+    ...periodParams(period),
+    fields: "reach",
+    limit: "1",
+  });
+  return Number(data.data?.[0]?.reach ?? 0);
+}
+
 async function fetchAccountPeriodData(
   account: MetaAdAccount,
   period: Period
-): Promise<{ campaigns: CampaignInsight[]; daily: DailyMetrics[] }> {
+): Promise<{ campaigns: CampaignInsight[]; daily: DailyMetrics[]; reach: number }> {
   const meta = await getCampaignMeta(account).catch(() => new Map<string, CampaignMeta>());
-  const [campaigns, daily] = await Promise.all([
+  const [campaigns, daily, reach] = await Promise.all([
     getAccountCampaignInsights(account, period, meta),
     getAccountDailySeries(account, period),
+    getAccountReach(account, period),
   ]);
-  return { campaigns, daily };
+  return { campaigns, daily, reach };
 }
 
 async function fetchAllAccounts(
   accounts: MetaAdAccount[],
   period: Period
-): Promise<{ campaigns: CampaignInsight[]; daily: DailyMetrics[]; partialAccounts: AccountRef[] }> {
+): Promise<{
+  campaigns: CampaignInsight[];
+  daily: DailyMetrics[];
+  accountReach: AccountReach[];
+  partialAccounts: AccountRef[];
+}> {
   const settled = await Promise.allSettled(accounts.map((a) => fetchAccountPeriodData(a, period)));
 
   const campaigns: CampaignInsight[] = [];
   const daily: DailyMetrics[] = [];
+  const accountReach: AccountReach[] = [];
   const partialAccounts: AccountRef[] = [];
 
   settled.forEach((result, i) => {
@@ -351,12 +375,13 @@ async function fetchAllAccounts(
     }
     campaigns.push(...result.value.campaigns);
     daily.push(...result.value.daily);
+    accountReach.push({ accountId: accounts[i].id, reach: result.value.reach });
   });
 
   campaigns.sort((a, b) => b.spend - a.spend);
   daily.sort((a, b) => a.date.localeCompare(b.date));
 
-  return { campaigns, daily, partialAccounts };
+  return { campaigns, daily, accountReach, partialAccounts };
 }
 
 /**
@@ -386,6 +411,7 @@ export async function getDashboardData(
       accounts: [],
       campaigns: [],
       daily: [],
+      accountReach: [],
       comparison: null,
       partialAccounts: [],
       generatedAt: new Date().toISOString(),
@@ -398,7 +424,12 @@ export async function getDashboardData(
   if (options.compare) {
     const prevRange = previousEquivalentRange(resolvedRange);
     const prev = await fetchAllAccounts(accounts, { kind: "custom", range: prevRange });
-    comparison = { period: prevRange, campaigns: prev.campaigns, daily: prev.daily };
+    comparison = {
+      period: prevRange,
+      campaigns: prev.campaigns,
+      daily: prev.daily,
+      accountReach: prev.accountReach,
+    };
   }
 
   return {
@@ -407,6 +438,7 @@ export async function getDashboardData(
     accounts,
     campaigns: current.campaigns,
     daily: current.daily,
+    accountReach: current.accountReach,
     comparison,
     partialAccounts: current.partialAccounts,
     generatedAt: new Date().toISOString(),
