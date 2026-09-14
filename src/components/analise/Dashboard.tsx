@@ -8,6 +8,8 @@ import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange } from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
+import { OBJECTIVE_NONE_KEY, filterCampaignsByIds } from "@/lib/campaign-filters";
+import { fetchDashboardData, DashboardFetchError } from "@/lib/dashboard-fetch";
 import IntelligenceSidebar, { SECTIONS, type SectionId } from "./IntelligenceSidebar";
 import IntelligenceTopBar from "./IntelligenceTopBar";
 import FilterBar from "./FilterBar";
@@ -40,7 +42,7 @@ const fadeUp: Variants = {
   }),
 };
 
-const NONE_KEY = "__none__";
+const NONE_KEY = OBJECTIVE_NONE_KEY;
 
 function allIds<T extends { id: string }>(items: T[]): Set<string> {
   return new Set(items.map((i) => i.id));
@@ -152,26 +154,11 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
     setError(null);
     startTransition(async () => {
       try {
-        const params = new URLSearchParams();
-        if (nextPeriod.kind === "preset") {
-          params.set("date_preset", nextPeriod.preset);
-        } else {
-          params.set("since", nextPeriod.range.since);
-          params.set("until", nextPeriod.range.until);
-        }
-        if (nextCompare) params.set("compare", "1");
-
-        const res = await fetch(`/api/meta-ads/campaigns/?${params.toString()}`);
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          setError(body?.error ?? "Não foi possível carregar os dados.");
-          return;
-        }
-        const nextData = (await res.json()) as DashboardData;
+        const nextData = await fetchDashboardData(nextPeriod, nextCompare);
         setData(nextData);
         resetFilters(nextData);
-      } catch {
-        setError("Falha de conexão ao buscar os dados.");
+      } catch (err) {
+        setError(err instanceof DashboardFetchError ? err.message : "Falha de conexão ao buscar os dados.");
       }
     });
   }
@@ -191,32 +178,13 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
     [data.campaigns]
   );
 
-  // Only campaigns with at least one ad set matching the Conjunto filter —
-  // and only once that filter has actually been narrowed. Left as a no-op
-  // when every ad set is selected (the default), so a campaign whose ad
-  // sets failed to load isn't silently hidden just because the filter
-  // technically "requires" a match it never got the data to make.
-  const adSetFilterActive = adSetOptions.length > 0 && adSetIds.size !== adSetOptions.length;
-  const campaignIdsWithSelectedAdSet = useMemo(() => {
-    if (!adSetFilterActive) return null;
-    const set = new Set<string>();
-    for (const a of data.adSets) {
-      if (adSetIds.has(a.adSetId)) set.add(a.campaignId);
-    }
-    return set;
-  }, [data.adSets, adSetIds, adSetFilterActive]);
-
+  // Shared with the report-template generation flow (ReportsPanel.tsx) via
+  // campaign-filters.ts, so a generated report's campaign selection always
+  // matches what the same filters would show on screen — including the
+  // Conjunto filter's "only narrows once actually narrowed" nuance.
   const filteredCampaigns = useMemo(
-    () =>
-      data.campaigns.filter(
-        (c) =>
-          accountIds.has(c.accountId) &&
-          campaignIds.has(c.campaignId) &&
-          objectiveIds.has(c.objective ?? NONE_KEY) &&
-          statusIds.has(c.status) &&
-          (campaignIdsWithSelectedAdSet === null || campaignIdsWithSelectedAdSet.has(c.campaignId))
-      ),
-    [data.campaigns, accountIds, campaignIds, objectiveIds, statusIds, campaignIdsWithSelectedAdSet]
+    () => filterCampaignsByIds(data.campaigns, data.adSets, { accountIds, campaignIds, adSetIds, objectiveIds, statusIds }),
+    [data.campaigns, data.adSets, accountIds, campaignIds, adSetIds, objectiveIds, statusIds]
   );
 
   const filteredAdSets = useMemo(() => {
@@ -669,7 +637,26 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                 )}
 
                 {section === "reports" && !hiddenSectionIds.has("reports") && (
-                  <ReportsPanel campaigns={filteredCampaigns} periodLabel={insights.periodLabel} />
+                  <ReportsPanel
+                    campaigns={filteredCampaigns}
+                    periodLabel={insights.periodLabel}
+                    totalReach={totalReach}
+                    clientLabel={clientLabel}
+                    isAdmin={isAdmin}
+                    dbConfigured={dbConfigured}
+                    period={period}
+                    compare={compare}
+                    accountIds={accountIds}
+                    accountOptions={accountOptions}
+                    campaignIds={campaignIds}
+                    campaignOptions={campaignOptions}
+                    adSetIds={adSetIds}
+                    adSetOptions={adSetOptions}
+                    objectiveIds={objectiveIds}
+                    objectiveOptions={objectiveOptions}
+                    statusIds={statusIds}
+                    statusOptions={statusOptions}
+                  />
                 )}
 
                 {section === "integrations" && !hiddenSectionIds.has("integrations") && (

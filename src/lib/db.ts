@@ -99,6 +99,20 @@ async function ensureSchema(): Promise<void> {
       revoked_at TIMESTAMPTZ
     )
   `);
+
+  // Admin-authored, named filter presets for the Relatórios tab — "filters"
+  // holds a ReportFilters (period, compare, and account/campaign/ad set/
+  // objective/status id lists, each `null` meaning "no restriction" rather
+  // than a frozen list). Not security-sensitive like a login credential, so
+  // deleting one is a real DELETE rather than a soft revoke.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS report_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      filters JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 }
 
 /** Runs schema setup once per warm instance, then returns the pool. */
