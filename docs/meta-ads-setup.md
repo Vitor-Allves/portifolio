@@ -32,6 +32,11 @@ alguém troca a senha ou sai da empresa.
      dashboard.
    - Conceda a permissão **Visualizar desempenho** (ou "Analista"/"ads_read")
      — não é necessário dar permissão de edição/gastar.
+5. Ainda em **Adicionar ativos**, troque a aba para **Apps** e adicione o
+   app criado no passo 1 (com qualquer nível de acesso). Esse passo é fácil
+   de esquecer, mas é obrigatório: sem o app atribuído ao usuário do
+   sistema, a tela de geração de token no passo seguinte mostra **"Nenhuma
+   permissão disponível"** e não deixa marcar nenhum escopo.
 
 ## 3. Gerar o token de acesso
 
