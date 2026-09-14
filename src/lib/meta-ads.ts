@@ -294,12 +294,6 @@ export async function listAdAccounts(): Promise<MetaAdAccount[]> {
   return accounts;
 }
 
-/** Which configured business's token can read this account, or null if it isn't visible to any of them. Reuses the same 15-minute-cached account listing as the rest of the dashboard, so this doesn't add a fresh Graph API round trip on every call. */
-export async function getAccessTokenForAccount(accountId: string): Promise<string | null> {
-  const { tokenByAccountId } = await fetchAllBusinessAccounts();
-  return tokenByAccountId.get(accountId) ?? null;
-}
-
 type CampaignMetaNode = { id?: string; objective?: string; effective_status?: string };
 type CampaignMeta = { objective: string | null; status: CampaignStatus };
 
@@ -390,10 +384,13 @@ type AdSetMetaNode = { id?: string; name?: string; effective_status?: string };
 type AdSetMeta = { name: string; status: CampaignStatus };
 
 // Same pattern as getCampaignMeta: an ad set's name/status live on the ad
-// set node itself, not on its insights row.
-async function getAdSetMeta(campaignId: string, accessToken: string): Promise<Map<string, AdSetMeta>> {
+// set node itself, not on its insights row. Fetched once per account (every
+// ad set across every campaign in that account), not once per campaign —
+// same shape as getCampaignMeta, so ad sets scale with account count, not
+// campaign count.
+async function getAdSetMeta(account: MetaAdAccount, accessToken: string): Promise<Map<string, AdSetMeta>> {
   const data = await graphGet<{ data: AdSetMetaNode[] }>(
-    `/${campaignId}/adsets`,
+    `/${account.id}/adsets`,
     { fields: "id,name,effective_status", limit: "500" },
     accessToken
   );
@@ -409,6 +406,7 @@ async function getAdSetMeta(campaignId: string, accessToken: string): Promise<Ma
 type AdSetInsightNode = {
   adset_id?: string;
   adset_name?: string;
+  campaign_id?: string;
   spend?: string;
   impressions?: string;
   clicks?: string;
@@ -416,33 +414,36 @@ type AdSetInsightNode = {
   reach?: string;
 };
 
-/** Ad sets within one campaign, fetched on demand — see AdSetInsight for why this isn't part of the main dashboard payload. */
-export async function getCampaignAdSets(
-  campaignId: string,
+// One call per account (level: "adset"), exactly like getAccountCampaignInsights
+// is one call per account at level: "campaign" — Meta returns every ad set
+// across every campaign in the account in a single response, each row
+// tagged with its own campaign_id, so this doesn't multiply with campaign
+// count the way a per-campaign call would.
+async function getAccountAdSetInsights(
+  account: MetaAdAccount,
   period: Period,
+  metaByAdSetId: Map<string, AdSetMeta>,
   accessToken: string
 ): Promise<AdSetInsight[]> {
-  const [meta, insights] = await Promise.all([
-    getAdSetMeta(campaignId, accessToken).catch(() => new Map<string, AdSetMeta>()),
-    graphGet<{ data: AdSetInsightNode[] }>(
-      `/${campaignId}/insights`,
-      {
-        level: "adset",
-        ...periodParams(period),
-        fields: "adset_id,adset_name,spend,impressions,clicks,inline_link_clicks,reach",
-        limit: "500",
-      },
-      accessToken
-    ),
-  ]);
+  const data = await graphGet<{ data: AdSetInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "adset",
+      ...periodParams(period),
+      fields: "adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,reach",
+      limit: "500",
+    },
+    accessToken
+  );
 
-  const adSets = (insights.data ?? []).map((row) => {
-    const m = meta.get(row.adset_id ?? "");
+  return (data.data ?? []).map((row) => {
+    const meta = metaByAdSetId.get(row.adset_id ?? "");
     return {
       adSetId: row.adset_id ?? "",
-      adSetName: row.adset_name ?? m?.name ?? "Conjunto sem nome",
-      campaignId,
-      status: m?.status ?? "OTHER",
+      adSetName: row.adset_name ?? meta?.name ?? "Conjunto sem nome",
+      campaignId: row.campaign_id ?? "",
+      accountId: account.id,
+      status: meta?.status ?? "OTHER",
       spend: Number(row.spend ?? 0),
       impressions: Number(row.impressions ?? 0),
       clicks: Number(row.clicks ?? 0),
@@ -450,9 +451,6 @@ export async function getCampaignAdSets(
       reach: Number(row.reach ?? 0),
     };
   });
-
-  adSets.sort((a, b) => b.spend - a.spend);
-  return adSets;
 }
 
 type DailyInsightNode = { date_start?: string; spend?: string; impressions?: string; clicks?: string };
@@ -504,14 +502,18 @@ async function fetchAccountPeriodData(
   account: MetaAdAccount,
   period: Period,
   accessToken: string
-): Promise<{ campaigns: CampaignInsight[]; daily: DailyMetrics[]; reach: number }> {
-  const meta = await getCampaignMeta(account, accessToken).catch(() => new Map<string, CampaignMeta>());
-  const [campaigns, daily, reach] = await Promise.all([
-    getAccountCampaignInsights(account, period, meta, accessToken),
+): Promise<{ campaigns: CampaignInsight[]; adSets: AdSetInsight[]; daily: DailyMetrics[]; reach: number }> {
+  const [campaignMeta, adSetMeta] = await Promise.all([
+    getCampaignMeta(account, accessToken).catch(() => new Map<string, CampaignMeta>()),
+    getAdSetMeta(account, accessToken).catch(() => new Map<string, AdSetMeta>()),
+  ]);
+  const [campaigns, adSets, daily, reach] = await Promise.all([
+    getAccountCampaignInsights(account, period, campaignMeta, accessToken),
+    getAccountAdSetInsights(account, period, adSetMeta, accessToken),
     getAccountDailySeries(account, period, accessToken),
     getAccountReach(account, period, accessToken),
   ]);
-  return { campaigns, daily, reach };
+  return { campaigns, adSets, daily, reach };
 }
 
 async function fetchAllAccounts(
@@ -520,6 +522,7 @@ async function fetchAllAccounts(
   tokenByAccountId: Map<string, string>
 ): Promise<{
   campaigns: CampaignInsight[];
+  adSets: AdSetInsight[];
   daily: DailyMetrics[];
   accountReach: AccountReach[];
   partialAccounts: AccountRef[];
@@ -529,6 +532,7 @@ async function fetchAllAccounts(
   );
 
   const campaigns: CampaignInsight[] = [];
+  const adSets: AdSetInsight[] = [];
   const daily: DailyMetrics[] = [];
   const accountReach: AccountReach[] = [];
   const partialAccounts: AccountRef[] = [];
@@ -544,14 +548,16 @@ async function fetchAllAccounts(
       return;
     }
     campaigns.push(...result.value.campaigns);
+    adSets.push(...result.value.adSets);
     daily.push(...result.value.daily);
     accountReach.push({ accountId: accounts[i].id, reach: result.value.reach });
   });
 
   campaigns.sort((a, b) => b.spend - a.spend);
+  adSets.sort((a, b) => b.spend - a.spend);
   daily.sort((a, b) => a.date.localeCompare(b.date));
 
-  return { campaigns, daily, accountReach, partialAccounts };
+  return { campaigns, adSets, daily, accountReach, partialAccounts };
 }
 
 /**
@@ -581,6 +587,7 @@ export async function getDashboardData(
       resolvedRange,
       accounts: [],
       campaigns: [],
+      adSets: [],
       daily: [],
       accountReach: [],
       comparison: null,
@@ -598,6 +605,7 @@ export async function getDashboardData(
     comparison = {
       period: prevRange,
       campaigns: prev.campaigns,
+      adSets: prev.adSets,
       daily: prev.daily,
       accountReach: prev.accountReach,
     };
@@ -608,6 +616,7 @@ export async function getDashboardData(
     resolvedRange,
     accounts,
     campaigns: current.campaigns,
+    adSets: current.adSets,
     daily: current.daily,
     accountReach: current.accountReach,
     comparison,

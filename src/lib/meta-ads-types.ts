@@ -83,14 +83,14 @@ export type DailyMetrics = {
 
 export type AccountRef = { id: string; name: string };
 
-// Fetched on demand (when a campaign's detail panel is opened), not as part
-// of the main dashboard payload — one extra Graph API call per campaign
-// would multiply the dashboard's request count by the ad set count for data
-// most sessions never drill into.
+// Fetched at account level (one call per account, like CampaignInsight) and
+// included directly in the main dashboard payload — a first-class dimension
+// alongside campaigns, not a separate on-demand lookup.
 export type AdSetInsight = {
   adSetId: string;
   adSetName: string;
   campaignId: string;
+  accountId: string;
   status: CampaignStatus;
   spend: number;
   impressions: number;
@@ -113,6 +113,7 @@ export type DashboardData = {
   resolvedRange: DateRange;
   accounts: MetaAdAccount[];
   campaigns: CampaignInsight[];
+  adSets: AdSetInsight[];
   daily: DailyMetrics[];
   accountReach: AccountReach[];
   // Same shape as the primary period, for the "compare to previous period"
@@ -120,6 +121,7 @@ export type DashboardData = {
   comparison: {
     period: DateRange;
     campaigns: CampaignInsight[];
+    adSets: AdSetInsight[];
     daily: DailyMetrics[];
     accountReach: AccountReach[];
   } | null;
