@@ -38,6 +38,9 @@ export type FilterBarProps = {
   statusIds: Set<string>;
   onStatusIdsChange: (next: Set<string>) => void;
 
+  /** Filter keys ("campaign" | "adSet" | "objective" | "status" | "compare") hidden by the client's configured permissions — the admin always sees an empty set. */
+  hiddenFilterIds: Set<string>;
+
   disabled?: boolean;
 };
 
@@ -62,6 +65,7 @@ export default function FilterBar({
   statusOptions,
   statusIds,
   onStatusIdsChange,
+  hiddenFilterIds,
   disabled,
 }: FilterBarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -84,11 +88,11 @@ export default function FilterBar({
     });
   }
 
-  if (compare) {
+  if (!hiddenFilterIds.has("compare") && compare) {
     chips.push({ key: "compare", label: "Comparando com período anterior", onRemove: () => onCompareChange(false) });
   }
 
-  if (campaignOptions.length > 0 && campaignIds.size !== campaignOptions.length) {
+  if (!hiddenFilterIds.has("campaign") && campaignOptions.length > 0 && campaignIds.size !== campaignOptions.length) {
     chips.push({
       key: "campaigns",
       label: `Campanha: ${campaignIds.size} de ${campaignOptions.length}`,
@@ -96,7 +100,7 @@ export default function FilterBar({
     });
   }
 
-  if (adSetOptions.length > 0 && adSetIds.size !== adSetOptions.length) {
+  if (!hiddenFilterIds.has("adSet") && adSetOptions.length > 0 && adSetIds.size !== adSetOptions.length) {
     chips.push({
       key: "adsets",
       label: `Conjunto: ${adSetIds.size} de ${adSetOptions.length}`,
@@ -104,7 +108,7 @@ export default function FilterBar({
     });
   }
 
-  if (objectiveOptions.length > 0 && objectiveIds.size !== objectiveOptions.length) {
+  if (!hiddenFilterIds.has("objective") && objectiveOptions.length > 0 && objectiveIds.size !== objectiveOptions.length) {
     chips.push({
       key: "objectives",
       label: `Objetivo: ${objectiveIds.size} de ${objectiveOptions.length}`,
@@ -112,7 +116,7 @@ export default function FilterBar({
     });
   }
 
-  if (statusOptions.length > 0 && statusIds.size !== statusOptions.length) {
+  if (!hiddenFilterIds.has("status") && statusOptions.length > 0 && statusIds.size !== statusOptions.length) {
     chips.push({
       key: "statuses",
       label: `Status: ${statusIds.size} de ${statusOptions.length}`,
@@ -148,9 +152,11 @@ export default function FilterBar({
 
       <PeriodFilter value={period} onChange={onPeriodChange} disabled={disabled} />
 
-      <ComparisonToggle checked={compare} onChange={onCompareChange} disabled={disabled} />
+      {!hiddenFilterIds.has("compare") && (
+        <ComparisonToggle checked={compare} onChange={onCompareChange} disabled={disabled} />
+      )}
 
-      {campaignOptions.length > 1 && (
+      {!hiddenFilterIds.has("campaign") && campaignOptions.length > 1 && (
         <MultiSelectFilter
           placeholder="Campanha"
           allLabel="Todas as campanhas"
@@ -162,7 +168,7 @@ export default function FilterBar({
         />
       )}
 
-      {adSetOptions.length > 1 && (
+      {!hiddenFilterIds.has("adSet") && adSetOptions.length > 1 && (
         <MultiSelectFilter
           placeholder="Conjunto"
           allLabel="Todos os conjuntos"
@@ -174,7 +180,7 @@ export default function FilterBar({
         />
       )}
 
-      {objectiveOptions.length > 1 && (
+      {!hiddenFilterIds.has("objective") && objectiveOptions.length > 1 && (
         <MultiSelectFilter
           placeholder="Objetivo"
           allLabel="Todos os objetivos"
@@ -185,7 +191,7 @@ export default function FilterBar({
         />
       )}
 
-      {statusOptions.length > 1 && (
+      {!hiddenFilterIds.has("status") && statusOptions.length > 1 && (
         <MultiSelectFilter
           placeholder="Status"
           allLabel="Todos os status"

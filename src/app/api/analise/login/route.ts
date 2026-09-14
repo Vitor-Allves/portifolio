@@ -41,7 +41,7 @@ async function resolveScope(password: string): Promise<SessionScope | null> {
   try {
     const match = await matchClientPassword(password);
     if (match) {
-      return { kind: "client", accountIds: match.accountIds, label: match.label };
+      return { kind: "client", accountIds: match.accountIds, label: match.label, permissions: match.permissions };
     }
   } catch (err) {
     console.error("[analise/login] client credential lookup failed", err);

@@ -6,6 +6,7 @@ import { randomBytes, randomUUID, scrypt, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { getDb } from "./db";
 import type { ClientAccessSummary } from "./client-access-types";
+import { EMPTY_PERMISSIONS, sanitizePermissions, type ClientPermissions } from "./client-permissions";
 
 export type { ClientAccessSummary };
 
@@ -57,6 +58,7 @@ export type ClientAccessMatch = {
   id: string;
   label: string;
   accountIds: string[];
+  permissions: ClientPermissions;
 };
 
 export async function listClientAccess(): Promise<ClientAccessSummary[]> {
@@ -66,9 +68,10 @@ export async function listClientAccess(): Promise<ClientAccessSummary[]> {
     slug: string;
     label: string;
     account_ids: string[];
+    permissions: unknown;
     created_at: string;
   }>(
-    `SELECT id, slug, label, account_ids, created_at
+    `SELECT id, slug, label, account_ids, permissions, created_at
      FROM client_access
      WHERE revoked_at IS NULL
      ORDER BY created_at DESC`
@@ -78,6 +81,7 @@ export async function listClientAccess(): Promise<ClientAccessSummary[]> {
     slug: r.slug,
     label: r.label,
     accountIds: r.account_ids,
+    permissions: sanitizePermissions(r.permissions),
     createdAt: r.created_at,
   }));
 }
@@ -85,7 +89,8 @@ export async function listClientAccess(): Promise<ClientAccessSummary[]> {
 /** Creates a new client credential and returns the plaintext password — shown once, never stored. */
 export async function createClientAccess(
   label: string,
-  accountIds: string[]
+  accountIds: string[],
+  permissions: ClientPermissions = EMPTY_PERMISSIONS
 ): Promise<{ id: string; password: string }> {
   if (!label.trim()) throw new Error("Label is required");
   if (accountIds.length === 0) throw new Error("At least one account is required");
@@ -94,11 +99,12 @@ export async function createClientAccess(
   const id = randomUUID();
   const password = generatePassword();
   const passwordHash = await hashPassword(password);
+  const cleanPermissions = sanitizePermissions(permissions);
 
   await db.query(
-    `INSERT INTO client_access (id, slug, label, account_ids, password_hash)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [id, slugify(label), label.trim(), accountIds, passwordHash]
+    `INSERT INTO client_access (id, slug, label, account_ids, password_hash, permissions)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, slugify(label), label.trim(), accountIds, passwordHash, JSON.stringify(cleanPermissions)]
   );
 
   return { id, password };
@@ -119,15 +125,21 @@ export async function matchClientPassword(
     label: string;
     account_ids: string[];
     password_hash: string;
+    permissions: unknown;
   }>(
-    `SELECT id, label, account_ids, password_hash
+    `SELECT id, label, account_ids, password_hash, permissions
      FROM client_access
      WHERE revoked_at IS NULL`
   );
 
   for (const row of rows) {
     if (await verifyPassword(password, row.password_hash)) {
-      return { id: row.id, label: row.label, accountIds: row.account_ids };
+      return {
+        id: row.id,
+        label: row.label,
+        accountIds: row.account_ids,
+        permissions: sanitizePermissions(row.permissions),
+      };
     }
   }
   return null;

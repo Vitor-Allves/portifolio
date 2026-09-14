@@ -45,6 +45,14 @@ async function ensureSchema(): Promise<void> {
       revoked_at TIMESTAMPTZ
     )
   `);
+  // Added after the table already existed in some deployments — CREATE
+  // TABLE IF NOT EXISTS above won't add it retroactively, so it's a
+  // separate, idempotent statement. Defaults to "nothing hidden" (same
+  // filters/columns/sections a client already saw) for every existing row.
+  await db.query(`
+    ALTER TABLE client_access
+    ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
 }
 
 /** Runs schema setup once per warm instance, then returns the pool. */

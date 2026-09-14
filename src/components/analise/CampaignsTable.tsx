@@ -2,24 +2,17 @@
 
 import { Fragment, useMemo, useState } from "react";
 import type { AdSetInsight, CampaignInsight, CampaignStatus } from "@/lib/meta-ads-types";
+import type { CampaignColumnId } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } from "@/lib/format";
 import { ctr, cpc, cpm, pctChange } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { INTEL_INPUT, INTEL_POPOVER } from "./intel-styles";
 
-type ColumnId =
-  | "account"
-  | "status"
-  | "objective"
-  | "spend"
-  | "impressions"
-  | "clicks"
-  | "linkClicks"
-  | "ctr"
-  | "cpc"
-  | "cpm"
-  | "reach";
+// Kept in sync with client-permissions.ts's CAMPAIGN_COLUMN_OPTIONS by
+// reusing its id type directly — a hidden-column id from the admin form
+// can never fail to match a real column here.
+type ColumnId = CampaignColumnId;
 
 type Column = {
   id: ColumnId;
@@ -159,14 +152,18 @@ type CampaignsTableProps = {
   campaigns: CampaignInsight[];
   adSets: AdSetInsight[];
   comparisonByCampaignId: Map<string, CampaignInsight> | null;
+  /** Column ids hidden by the client's configured permissions — never offered in the column picker, regardless of defaultVisible. The admin always sees an empty set. */
+  hiddenColumnIds: Set<string>;
 };
 
-export default function CampaignsTable({ campaigns, adSets, comparisonByCampaignId }: CampaignsTableProps) {
+export default function CampaignsTable({ campaigns, adSets, comparisonByCampaignId, hiddenColumnIds }: CampaignsTableProps) {
+  const availableColumns = useMemo(() => COLUMNS.filter((c) => !hiddenColumnIds.has(c.id)), [hiddenColumnIds]);
+
   const [search, setSearch] = useState("");
   const [sortColumn, setSortColumn] = useState<ColumnId | "name">("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnId>>(
-    new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id))
+    () => new Set(availableColumns.filter((c) => c.defaultVisible).map((c) => c.id))
   );
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [detailCampaign, setDetailCampaign] = useState<CampaignInsight | null>(null);
@@ -233,13 +230,13 @@ export default function CampaignsTable({ campaigns, adSets, comparisonByCampaign
   }
 
   function exportCsv() {
-    const activeColumns = COLUMNS.filter((c) => visibleColumns.has(c.id));
+    const activeColumns = availableColumns.filter((c) => visibleColumns.has(c.id));
     const header = ["Campanha", ...activeColumns.map((c) => c.label)];
     const rows = sorted.map((c) => [c.campaignName, ...activeColumns.map((col) => col.render(c))]);
     downloadCsv(`campanhas-legado-intelligence-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows]);
   }
 
-  const activeColumns = COLUMNS.filter((c) => visibleColumns.has(c.id));
+  const activeColumns = availableColumns.filter((c) => visibleColumns.has(c.id));
   const th = "text-left text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2.5 px-3 select-none";
   const thNum = `${th} text-right`;
   const td = "py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]";
@@ -272,7 +269,7 @@ export default function CampaignsTable({ campaigns, adSets, comparisonByCampaign
             {columnPickerOpen && (
               <div className={`absolute right-0 z-20 mt-2 w-56 py-2 ${INTEL_POPOVER}`}>
                 <ul className="max-h-72 overflow-y-auto">
-                  {COLUMNS.map((c) => (
+                  {availableColumns.map((c) => (
                     <li key={c.id}>
                       <label className="flex items-center gap-2.5 px-4 py-1.5 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text cursor-pointer transition-colors duration-150">
                         <input
