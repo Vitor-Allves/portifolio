@@ -1,11 +1,11 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import type { AdSetInsight, CampaignInsight, CampaignStatus } from "@/lib/meta-ads-types";
+import type { AdInsight, AdSetInsight, CampaignInsight, CampaignStatus } from "@/lib/meta-ads-types";
 import type { CampaignColumnId } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } from "@/lib/format";
-import { ctr, cpc, cpm, pctChange } from "@/lib/metrics";
+import { ctr, cpc, cpm, costPerConversation, pctChange } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { INTEL_INPUT, INTEL_POPOVER } from "./intel-styles";
 
@@ -53,11 +53,22 @@ const COLUMNS: Column[] = [
   { id: "clicks", label: "Cliques (todos)", numeric: true, defaultVisible: true, value: (c) => c.clicks, render: (c) => formatInteger(c.clicks) },
   {
     id: "linkClicks",
-    label: "Conversão",
+    label: "Conversa iniciada",
     numeric: true,
-    defaultVisible: false,
+    defaultVisible: true,
     value: (c) => c.linkClicks,
     render: (c) => formatInteger(c.linkClicks),
+  },
+  {
+    id: "costPerConversation",
+    label: "Custo por conversa iniciada",
+    numeric: true,
+    defaultVisible: true,
+    value: (c) => costPerConversation(c),
+    render: (c) => {
+      const v = costPerConversation(c);
+      return v === null ? "—" : formatCurrencyBRL(v);
+    },
   },
   {
     id: "ctr",
@@ -151,12 +162,13 @@ function SortButton({
 type CampaignsTableProps = {
   campaigns: CampaignInsight[];
   adSets: AdSetInsight[];
+  ads: AdInsight[];
   comparisonByCampaignId: Map<string, CampaignInsight> | null;
   /** Column ids hidden by the client's configured permissions — never offered in the column picker, regardless of defaultVisible. The admin always sees an empty set. */
   hiddenColumnIds: Set<string>;
 };
 
-export default function CampaignsTable({ campaigns, adSets, comparisonByCampaignId, hiddenColumnIds }: CampaignsTableProps) {
+export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCampaignId, hiddenColumnIds }: CampaignsTableProps) {
   const availableColumns = useMemo(() => COLUMNS.filter((c) => !hiddenColumnIds.has(c.id)), [hiddenColumnIds]);
 
   const [search, setSearch] = useState("");
@@ -178,6 +190,19 @@ export default function CampaignsTable({ campaigns, adSets, comparisonByCampaign
     }
     return map;
   }, [adSets]);
+
+  const adSetNameById = useMemo(() => new Map(adSets.map((a) => [a.adSetId, a.adSetName])), [adSets]);
+
+  const adsByCampaignId = useMemo(() => {
+    const map = new Map<string, AdInsight[]>();
+    for (const ad of ads) {
+      const arr = map.get(ad.campaignId);
+      if (arr) arr.push(ad);
+      else map.set(ad.campaignId, [ad]);
+    }
+    for (const arr of map.values()) arr.sort((a, b) => b.spend - a.spend);
+    return map;
+  }, [ads]);
 
   function toggleExpanded(key: string) {
     setExpandedIds((prev) => {
@@ -415,6 +440,8 @@ export default function CampaignsTable({ campaigns, adSets, comparisonByCampaign
           campaign={detailCampaign}
           comparison={comparisonByCampaignId?.get(detailCampaign.campaignId) ?? null}
           adSets={adSetsByCampaignId.get(detailCampaign.campaignId) ?? []}
+          ads={adsByCampaignId.get(detailCampaign.campaignId) ?? []}
+          adSetNameById={adSetNameById}
           onClose={() => setDetailCampaign(null)}
         />
       )}
@@ -442,7 +469,14 @@ function AdSetList({ adSets }: { adSets: AdSetInsight[] }) {
             <span>Investimento: {formatCurrencyBRL(a.spend)}</span>
             <span>Impressões: {formatInteger(a.impressions)}</span>
             <span>Cliques: {formatInteger(a.clicks)}</span>
-            <span>Conversão: {formatInteger(a.linkClicks)}</span>
+            <span>Conversa iniciada: {formatInteger(a.linkClicks)}</span>
+            <span>
+              Custo/conversa:{" "}
+              {(() => {
+                const v = costPerConversation(a);
+                return v === null ? "—" : formatCurrencyBRL(v);
+              })()}
+            </span>
             <span>Alcance: {formatInteger(a.reach)}</span>
           </div>
         </li>
@@ -451,15 +485,21 @@ function AdSetList({ adSets }: { adSets: AdSetInsight[] }) {
   );
 }
 
+const MAX_TOP_ADS = 5;
+
 function CampaignDetailPanel({
   campaign,
   comparison,
   adSets,
+  ads,
+  adSetNameById,
   onClose,
 }: {
   campaign: CampaignInsight;
   comparison: CampaignInsight | null;
   adSets: AdSetInsight[];
+  ads: AdInsight[];
+  adSetNameById: Map<string, string>;
   onClose: () => void;
 }) {
   const rows: { label: string; current: string; previous?: string }[] = [
@@ -471,9 +511,19 @@ function CampaignDetailPanel({
     },
     { label: "Cliques (todos)", current: formatInteger(campaign.clicks), previous: comparison ? formatInteger(comparison.clicks) : undefined },
     {
-      label: "Conversão",
+      label: "Conversa iniciada",
       current: formatInteger(campaign.linkClicks),
       previous: comparison ? formatInteger(comparison.linkClicks) : undefined,
+    },
+    {
+      label: "Custo por conversa iniciada",
+      current: costPerConversation(campaign) === null ? "—" : formatCurrencyBRL(costPerConversation(campaign)!),
+      previous:
+        comparison !== null
+          ? costPerConversation(comparison) === null
+            ? "—"
+            : formatCurrencyBRL(costPerConversation(comparison)!)
+          : undefined,
     },
     {
       label: "CTR",
@@ -519,13 +569,52 @@ function CampaignDetailPanel({
         </dl>
 
         <p className="mt-6 text-[11px] leading-relaxed text-intel-text-dim/70">
-          “Cliques (todos)” é o campo clicks da Meta (todo tipo de clique no anúncio); “Conversão” é
-          inline_link_clicks — cliques que levam ao destino do anúncio, usado aqui como indicador de conversão.
+          “Cliques (todos)” é o campo clicks da Meta (todo tipo de clique no anúncio); “Conversa iniciada” é
+          inline_link_clicks — cliques que levam ao destino do anúncio, usado aqui como indicador de conversa
+          iniciada; “Custo por conversa iniciada” é o investimento dividido por esse número.
         </p>
 
         <div className="mt-6">
           <h5 className="text-[11px] tracking-[0.1em] uppercase text-intel-text-dim mb-3">Conjuntos de anúncios</h5>
           <AdSetList adSets={adSets} />
+        </div>
+
+        <div className="mt-6">
+          <h5 className="text-[11px] tracking-[0.1em] uppercase text-intel-text-dim mb-3">
+            Melhores anúncios {ads.length > MAX_TOP_ADS ? `(top ${MAX_TOP_ADS} de ${ads.length})` : ""}
+          </h5>
+          {ads.length === 0 ? (
+            <p className="text-[12px] text-intel-text-dim">Nenhum anúncio com dados neste período.</p>
+          ) : (
+            <ol className="space-y-2">
+              {ads.slice(0, MAX_TOP_ADS).map((ad, i) => (
+                <li key={ad.adId} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="flex items-start gap-2 min-w-0">
+                      <span className="shrink-0 text-[11px] tabular-nums text-intel-text-dim">{i + 1}</span>
+                      <span className="text-[13px] text-intel-text truncate">{ad.adName}</span>
+                    </span>
+                    <StatusBadge status={ad.status} />
+                  </div>
+                  <p className="mt-0.5 pl-[22px] text-[11px] text-intel-text-dim/70 truncate">
+                    {adSetNameById.get(ad.adSetId) ?? "Conjunto sem nome"}
+                  </p>
+                  <div className="mt-2 pl-[22px] flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-intel-text-dim tabular-nums">
+                    <span>Investimento: {formatCurrencyBRL(ad.spend)}</span>
+                    <span>Conversa iniciada: {formatInteger(ad.linkClicks)}</span>
+                    <span>
+                      Custo/conversa:{" "}
+                      {(() => {
+                        const v = costPerConversation(ad);
+                        return v === null ? "—" : formatCurrencyBRL(v);
+                      })()}
+                    </span>
+                    <span>Alcance: {formatInteger(ad.reach)}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       </div>
     </div>

@@ -6,7 +6,7 @@ import type { AdSetInsight, CampaignInsight, DashboardData, DailyMetrics, Period
 import type { ClientPermissions } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { sumTotals, ctr, cpc, cpm, pctChange } from "@/lib/metrics";
+import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange } from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
 import IntelligenceSidebar, { SECTIONS, type SectionId } from "./IntelligenceSidebar";
 import IntelligenceTopBar from "./IntelligenceTopBar";
@@ -15,6 +15,7 @@ import KpiCard from "./KpiCard";
 import TrendChart, { type TrendMetric } from "./TrendChart";
 import SpendDistributionChart from "./SpendDistributionChart";
 import RankingChart from "./RankingChart";
+import AudienceBreakdown from "./AudienceBreakdown";
 import CampaignsTable from "./CampaignsTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
 import StrategicInsightsCompact from "./StrategicInsightsCompact";
@@ -62,13 +63,20 @@ function uniqueAdSetOptions(adSets: AdSetInsight[]) {
 }
 
 function aggregateDaily(daily: DailyMetrics[], accountIds: Set<string>) {
-  const byDate = new Map<string, { spend: number; impressions: number; clicks: number }>();
+  const byDate = new Map<string, { spend: number; impressions: number; clicks: number; linkClicks: number; reach: number }>();
   for (const row of daily) {
     if (!accountIds.has(row.accountId)) continue;
-    const entry = byDate.get(row.date) ?? { spend: 0, impressions: 0, clicks: 0 };
+    const entry = byDate.get(row.date) ?? { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 };
     entry.spend += row.spend;
     entry.impressions += row.impressions;
     entry.clicks += row.clicks;
+    entry.linkClicks += row.linkClicks;
+    // Same day, possibly several accounts — summing here is the same
+    // documented cross-account caveat the Alcance KPI already has (not
+    // deduplicated between accounts). Never summed across DATES: each
+    // date is its own bucket, so this stays a same-day snapshot, not a
+    // running total — safe for a day-by-day trend line.
+    entry.reach += row.reach;
     byDate.set(row.date, entry);
   }
   return [...byDate.entries()]
@@ -76,7 +84,9 @@ function aggregateDaily(daily: DailyMetrics[], accountIds: Set<string>) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function sparklineFor(daily: { spend: number; impressions: number; clicks: number }[], metric: "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm") {
+type DailyAgg = { spend: number; impressions: number; clicks: number; linkClicks: number; reach: number };
+
+function sparklineFor(daily: DailyAgg[], metric: "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "costPerConversation" | "reach") {
   return daily.map((d) => {
     switch (metric) {
       case "spend":
@@ -91,6 +101,12 @@ function sparklineFor(daily: { spend: number; impressions: number; clicks: numbe
         return d.clicks > 0 ? d.spend / d.clicks : 0;
       case "cpm":
         return d.impressions > 0 ? (d.spend / d.impressions) * 1000 : 0;
+      case "linkClicks":
+        return d.linkClicks;
+      case "costPerConversation":
+        return d.linkClicks > 0 ? d.spend / d.linkClicks : 0;
+      case "reach":
+        return d.reach;
     }
   });
 }
@@ -207,6 +223,23 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
     return data.adSets.filter((a) => adSetIds.has(a.adSetId) && visibleCampaignIds.has(a.campaignId));
   }, [data.adSets, adSetIds, filteredCampaigns]);
 
+  // Same membership rule as filteredAdSets: an ad only shows if its own ad
+  // set is selected AND its campaign is still visible after every other
+  // filter — so an ad never appears "orphaned" under a campaign the rest of
+  // the filters have already hidden.
+  const filteredAds = useMemo(() => {
+    const visibleCampaignIds = new Set(filteredCampaigns.map((c) => c.campaignId));
+    return data.ads.filter((ad) => adSetIds.has(ad.adSetId) && visibleCampaignIds.has(ad.campaignId));
+  }, [data.ads, adSetIds, filteredCampaigns]);
+
+  // Audience demographics are account-level only (Meta doesn't break them
+  // down by campaign) — scoped by the account/client filter alone, same as
+  // the Alcance KPI.
+  const filteredAudience = useMemo(
+    () => data.audience.filter((a) => accountIds.has(a.accountId)),
+    [data.audience, accountIds]
+  );
+
   // Comparison is scoped only by the client (account) filter — never by the
   // campaign/objective/status filters, whose option lists are built from the
   // *current* period's campaign roster. A campaign that only ran in the
@@ -254,6 +287,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
   const totalCtr = ctr(totals);
   const totalCpc = cpc(totals);
   const totalCpm = cpm(totals);
+  const totalCostPerConversation = costPerConversation(totals);
 
   const insights = useMemo(
     () =>
@@ -308,6 +342,29 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
       tooltip: "Campo “clicks” da Meta: todo tipo de clique no anúncio, não apenas cliques no link de destino.",
     },
     {
+      label: "Conversa iniciada",
+      value: formatInteger(totals.linkClicks),
+      delta: compare ? (comparisonTotals ? pctChange(totals.linkClicks, comparisonTotals.linkClicks) : null) : undefined,
+      sparkline: sparklineFor(dailyFiltered, "linkClicks"),
+      tooltip: "Campo inline_link_clicks da Meta: cliques que levam ao destino do anúncio, usado como indicador de conversa iniciada.",
+    },
+    {
+      label: "Custo/Conversa",
+      value: totalCostPerConversation === null ? "—" : formatCurrencyBRL(totalCostPerConversation),
+      unavailableReason: totalCostPerConversation === null ? "Sem conversas iniciadas no período" : undefined,
+      delta:
+        compare && totalCostPerConversation !== null
+          ? comparisonTotals
+            ? (() => {
+                const prev = costPerConversation(comparisonTotals);
+                return prev === null ? null : pctChange(totalCostPerConversation, prev);
+              })()
+            : null
+          : undefined,
+      sparkline: sparklineFor(dailyFiltered, "costPerConversation"),
+      tooltip: "Custo por conversa iniciada = investimento total ÷ total de conversas iniciadas (inline_link_clicks).",
+    },
+    {
       label: "CTR",
       value: totalCtr === null ? "—" : formatPercent(totalCtr),
       unavailableReason: totalCtr === null ? "Sem impressões no período" : undefined,
@@ -359,6 +416,12 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
       label: "Alcance",
       value: formatInteger(totalReach),
       delta: compare ? (comparisonReach !== null ? pctChange(totalReach, comparisonReach) : null) : undefined,
+      // Each point here is that single day's own independent reach value —
+      // never summed into the card's total above (which comes from the
+      // separate, correctly-deduplicated whole-period fetch). Plotting a
+      // trend this way can't double-count anyone; only adding two days'
+      // numbers together would.
+      sparkline: sparklineFor(dailyFiltered, "reach"),
       tooltip:
         "Pessoas únicas estimadas pela Meta, somadas entre as contas selecionadas. É deduplicado dentro de cada conta, mas não entre contas diferentes — a mesma pessoa pode contar mais de uma vez se aparecer em mais de uma conta selecionada.",
     },
@@ -456,7 +519,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
               <div className={`transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-9 gap-4">
                       {kpis.map((kpi, i) => (
                         <m.div key={kpi.label} custom={i} initial="hidden" animate="visible" variants={fadeUp}>
                           <KpiCard {...kpi} />
@@ -497,6 +560,10 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                         <RankingChart campaigns={filteredCampaigns} />
                       </m.div>
                     </div>
+
+                    <m.div custom={11} initial="hidden" animate="visible" variants={fadeUp}>
+                      <AudienceBreakdown audience={filteredAudience} />
+                    </m.div>
                   </div>
                 )}
 
@@ -504,6 +571,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                   <CampaignsTable
                     campaigns={filteredCampaigns}
                     adSets={filteredAdSets}
+                    ads={filteredAds}
                     comparisonByCampaignId={comparisonByCampaignId}
                     hiddenColumnIds={hiddenColumnIds}
                   />

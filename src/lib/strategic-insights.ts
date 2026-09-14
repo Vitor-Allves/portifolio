@@ -7,7 +7,7 @@
 // upgrade of this block would require.
 
 import type { CampaignInsight } from "./meta-ads-types";
-import { sumTotals, ctr, cpc, pctChange, type Totals } from "./metrics";
+import { sumTotals, ctr, cpc, costPerConversation, pctChange, type Totals } from "./metrics";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent, formatShortDate } from "./format";
 
 export type InsightEvidence = { label: string; value: string };
@@ -72,6 +72,7 @@ export function computeStrategicInsights(input: {
   const totals = sumTotals(campaigns);
   const totalCtr = ctr(totals);
   const totalCpc = cpc(totals);
+  const totalCostPerConversation = costPerConversation(totals);
 
   const summary: InsightItem[] = [
     {
@@ -127,6 +128,7 @@ export function computeStrategicInsights(input: {
     const spendShare = totals.spend > 0 ? c.spend / totals.spend : 0;
     const cCtr = ctr(campaignTotals(c));
     const cCpc = cpc(campaignTotals(c));
+    const cCostPerConversation = costPerConversation(campaignTotals(c));
 
     if (
       cCpc !== null &&
@@ -141,6 +143,25 @@ export function computeStrategicInsights(input: {
         evidence: [
           { label: "CPC da campanha", value: formatCurrencyBRL(cCpc) },
           { label: "CPC médio do período", value: formatCurrencyBRL(totalCpc) },
+          { label: "Investimento da campanha", value: formatCurrencyBRL(c.spend) },
+        ],
+      });
+      flagged.add(c.campaignId);
+    }
+
+    if (
+      cCostPerConversation !== null &&
+      totalCostPerConversation !== null &&
+      spendShare >= MIN_SPEND_SHARE_FOR_CPC_SIGNAL &&
+      cCostPerConversation > totalCostPerConversation * 1.5
+    ) {
+      attention.push({
+        text: `${c.campaignName}: custo por conversa iniciada de ${formatCurrencyBRL(cCostPerConversation)}, ${formatSignedPercent(
+          pctChange(cCostPerConversation, totalCostPerConversation) ?? 0
+        )} em relação à média do período (${formatCurrencyBRL(totalCostPerConversation)}).`,
+        evidence: [
+          { label: "Custo/conversa da campanha", value: formatCurrencyBRL(cCostPerConversation) },
+          { label: "Custo/conversa médio do período", value: formatCurrencyBRL(totalCostPerConversation) },
           { label: "Investimento da campanha", value: formatCurrencyBRL(c.spend) },
         ],
       });
