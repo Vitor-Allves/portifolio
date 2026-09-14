@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
@@ -48,6 +49,12 @@ export default async function AnaliseAdminPage() {
     <main className="min-h-screen bg-ice-50">
       <AnaliseHeader isAdmin clientLabel={null} />
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
+        <Link
+          href="/analise/"
+          className="inline-flex items-center gap-1.5 text-[13px] tracking-[0.06em] uppercase text-navy-500 hover:text-navy-950 transition-colors mb-6"
+        >
+          <span aria-hidden="true">←</span> Voltar ao painel
+        </Link>
         <h1 className="font-serif text-2xl text-navy-950 mb-1">Acessos de clientes</h1>
         <p className="text-sm text-navy-500 mb-8">
           Crie um login separado para cada cliente ver apenas as próprias campanhas.

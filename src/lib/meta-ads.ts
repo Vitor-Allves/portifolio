@@ -15,13 +15,27 @@ const REVALIDATE_SECONDS = 15 * 60;
 
 import type {
   DatePreset,
+  Period,
   MetaAdAccount,
   CampaignInsight,
   DailySpend,
   DashboardData,
 } from "./meta-ads-types";
-export { DATE_PRESETS, isValidDatePreset } from "./meta-ads-types";
-export type { DatePreset, MetaAdAccount, CampaignInsight, DailySpend, DashboardData };
+export {
+  DATE_PRESETS,
+  isValidDatePreset,
+  isValidIsoDate,
+  isValidDateRange,
+  MAX_CUSTOM_RANGE_DAYS,
+} from "./meta-ads-types";
+export type { DatePreset, Period, MetaAdAccount, CampaignInsight, DailySpend, DashboardData };
+
+/** Graph API date params for either a named preset or a manually picked range. */
+function periodParams(period: Period): Record<string, string> {
+  return period.kind === "preset"
+    ? { date_preset: period.preset }
+    : { time_range: JSON.stringify({ since: period.range.since, until: period.range.until }) };
+}
 
 export class MetaApiError extends Error {
   constructor(
@@ -136,11 +150,11 @@ type CampaignInsightNode = {
 
 async function getAccountCampaignInsights(
   account: MetaAdAccount,
-  datePreset: DatePreset
+  period: Period
 ): Promise<CampaignInsight[]> {
   const data = await graphGet<{ data: CampaignInsightNode[] }>(`/${account.id}/insights`, {
     level: "campaign",
-    date_preset: datePreset,
+    ...periodParams(period),
     fields: "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,reach",
     limit: "500",
   });
@@ -163,11 +177,11 @@ type DailyInsightNode = { date_start?: string; spend?: string };
 
 async function getAccountDailySpend(
   account: MetaAdAccount,
-  datePreset: DatePreset
+  period: Period
 ): Promise<DailySpend[]> {
   const data = await graphGet<{ data: DailyInsightNode[] }>(`/${account.id}/insights`, {
     level: "account",
-    date_preset: datePreset,
+    ...periodParams(period),
     time_increment: "1",
     fields: "spend",
     limit: "500",
@@ -190,7 +204,7 @@ async function getAccountDailySpend(
  * fabricated numbers.
  */
 export async function getDashboardData(
-  datePreset: DatePreset,
+  period: Period,
   allowedAccountIds?: string[]
 ): Promise<DashboardData> {
   let accounts = await listAdAccounts();
@@ -201,7 +215,7 @@ export async function getDashboardData(
 
   if (accounts.length === 0) {
     return {
-      datePreset,
+      period,
       accounts: [],
       campaigns: [],
       dailySpend: [],
@@ -213,8 +227,8 @@ export async function getDashboardData(
   // transient Meta error) shouldn't take down the whole dashboard — settle
   // per account and just skip + log the ones that errored.
   const [campaignResults, dailyResults] = await Promise.all([
-    Promise.allSettled(accounts.map((a) => getAccountCampaignInsights(a, datePreset))),
-    Promise.allSettled(accounts.map((a) => getAccountDailySpend(a, datePreset))),
+    Promise.allSettled(accounts.map((a) => getAccountCampaignInsights(a, period))),
+    Promise.allSettled(accounts.map((a) => getAccountDailySpend(a, period))),
   ]);
 
   const campaigns = campaignResults
@@ -244,7 +258,7 @@ export async function getDashboardData(
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return {
-    datePreset,
+    period,
     accounts,
     campaigns,
     dailySpend,
