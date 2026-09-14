@@ -74,18 +74,18 @@ export default function RankingChart({ campaigns }: RankingChartProps) {
   const maxValue = Math.max(...ranked.map((r) => r.value), 1);
 
   return (
-    <div className="rounded-2xl border border-navy-700/10 bg-white p-6">
+    <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h3 className="text-sm font-medium text-navy-950">Ranking de campanhas</h3>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Selecionar métrica do ranking">
+        <h3 className="text-[13px] font-medium text-intel-text">Ranking de campanhas</h3>
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Selecionar métrica do ranking">
           {METRICS.map((m) => (
             <button
               key={m.id}
               type="button"
               aria-pressed={metric === m.id}
               onClick={() => setMetric(m.id)}
-              className={`text-[12px] px-3 py-1.5 rounded-full transition-colors duration-150 ${
-                metric === m.id ? "bg-navy-950 text-white" : "text-navy-600 hover:bg-silver-100"
+              className={`text-[11.5px] px-3 py-1.5 rounded-full transition-colors duration-200 ${
+                metric === m.id ? "bg-intel-cyan/[0.14] text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
               }`}
             >
               {m.label}
@@ -96,14 +96,14 @@ export default function RankingChart({ campaigns }: RankingChartProps) {
 
       {objectiveOptions.length > 1 && (
         <div className="mb-4">
-          <label htmlFor="ranking-objective" className="block text-[11px] tracking-[0.08em] uppercase text-navy-500 mb-1.5">
+          <label htmlFor="ranking-objective" className="block text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim mb-1.5">
             Comparar dentro do mesmo objetivo
           </label>
           <select
             id="ranking-objective"
             value={objectiveFilter}
             onChange={(e) => setObjectiveFilter(e.target.value)}
-            className="rounded-lg border border-navy-700/20 bg-white px-3 py-1.5 text-[13px] text-navy-800 focus:border-navy-600 focus:outline-none"
+            className="rounded-lg border border-white/10 bg-intel-surface-2 px-3 py-1.5 text-[13px] text-intel-text focus:border-intel-cyan/50 focus:outline-none transition-colors duration-200 [color-scheme:dark]"
           >
             <option value="all">Todos os objetivos (mostrando o objetivo de cada campanha)</option>
             {objectiveOptions.map((o) => (
@@ -116,28 +116,28 @@ export default function RankingChart({ campaigns }: RankingChartProps) {
       )}
 
       {ranked.length === 0 ? (
-        <p className="text-sm text-navy-500">Sem campanhas com esse indicador disponível no período.</p>
+        <p className="text-sm text-intel-text-dim">Sem campanhas com esse indicador disponível no período.</p>
       ) : (
         <ol className="space-y-3">
           {ranked.map((row, i) => (
             <li key={row.campaign.campaignId} className="flex items-center gap-3">
-              <span className="w-5 shrink-0 text-[12px] tabular-nums text-navy-400">{i + 1}</span>
+              <span className="w-5 shrink-0 text-[12px] tabular-nums text-intel-text-dim">{i + 1}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-3 mb-1">
-                  <span className="text-[13px] truncate text-navy-700">
+                  <span className="text-[13px] truncate text-intel-text-dim">
                     {row.campaign.campaignName}
                     {objectiveFilter === "all" && (
-                      <span className="ml-2 text-[10px] tracking-[0.04em] uppercase text-navy-400">
+                      <span className="ml-2 text-[10px] tracking-[0.04em] uppercase text-intel-text-dim/70">
                         {objectiveLabel(row.campaign.objective)}
                       </span>
                     )}
                   </span>
-                  <span className="text-[13px] tabular-nums text-navy-950 shrink-0">{formatValue(row.value, metric)}</span>
+                  <span className="text-[13px] tabular-nums text-intel-text shrink-0">{formatValue(row.value, metric)}</span>
                 </div>
-                <div className="h-2 rounded-full bg-silver-100">
+                <div className="h-2 rounded-full bg-white/[0.05]">
                   <div
                     className="h-full rounded-full"
-                    style={{ width: `${Math.max((row.value / maxValue) * 100, 2)}%`, backgroundColor: "var(--color-navy-700)" }}
+                    style={{ width: `${Math.max((row.value / maxValue) * 100, 2)}%`, backgroundColor: "var(--color-intel-violet)" }}
                   />
                 </div>
               </div>

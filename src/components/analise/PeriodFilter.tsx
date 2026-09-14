@@ -3,15 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { DATE_PRESETS, isValidDateRange, MAX_CUSTOM_RANGE_DAYS, type Period } from "@/lib/meta-ads-types";
 import { formatShortDate } from "@/lib/format";
+import { INTEL_PILL_BASE, INTEL_PILL_INACTIVE, INTEL_PILL_ACTIVE, INTEL_POPOVER, INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 
 type PeriodFilterProps = {
   value: Period;
   onChange: (period: Period) => void;
   disabled?: boolean;
 };
-
-const fieldClass =
-  "w-full rounded-lg border border-navy-700/20 bg-white px-3 py-2 text-sm text-navy-950 focus:border-navy-600 focus:outline-none transition-colors";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -56,6 +54,7 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
     value.kind === "preset"
       ? DATE_PRESETS.find((p) => p.value === value.preset)?.label ?? "Período"
       : `${formatShortDate(value.range.since)} – ${formatShortDate(value.range.until)}`;
+  const isCustom = value.kind === "custom";
 
   return (
     <div className="relative" ref={rootRef}>
@@ -65,15 +64,15 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
         aria-haspopup="dialog"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 text-[13px] px-4 py-2 rounded-full border border-navy-700/15 bg-white text-navy-700 hover:border-navy-600/40 transition-colors duration-200 disabled:opacity-60 disabled:cursor-wait"
+        className={`${INTEL_PILL_BASE} ${isCustom ? INTEL_PILL_ACTIVE : INTEL_PILL_INACTIVE}`}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
           <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
         <span>{label}</span>
         <svg
-          width="10"
+          width="9"
           height="6"
           viewBox="0 0 10 6"
           fill="none"
@@ -85,7 +84,7 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-2 w-[19rem] rounded-xl border border-navy-700/10 bg-white shadow-lg overflow-hidden">
+        <div className={`absolute z-30 mt-2 w-[19rem] overflow-hidden ${INTEL_POPOVER}`}>
           <ul role="radiogroup" aria-label="Atalhos de período" className="py-2 max-h-56 overflow-y-auto">
             {DATE_PRESETS.map((preset) => {
               const selected = value.kind === "preset" && value.preset === preset.value;
@@ -99,8 +98,8 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
                       onChange({ kind: "preset", preset: preset.value });
                       setOpen(false);
                     }}
-                    className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${
-                      selected ? "bg-silver-100 text-navy-950 font-medium" : "text-navy-700 hover:bg-silver-100"
+                    className={`w-full text-left px-4 py-2 text-[13px] transition-colors duration-150 ${
+                      selected ? "bg-intel-cyan/10 text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text"
                     }`}
                   >
                     {preset.label}
@@ -110,11 +109,11 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
             })}
           </ul>
 
-          <div className="border-t border-navy-700/8 p-4">
-            <p className="text-[11px] tracking-[0.1em] uppercase text-navy-500 mb-2.5">Período personalizado</p>
+          <div className="border-t border-white/[0.06] p-4">
+            <p className={`${INTEL_LABEL} mb-2.5`}>Período personalizado</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="period-since" className="block text-[10px] tracking-[0.08em] uppercase text-navy-500 mb-1">
+                <label htmlFor="period-since" className="block text-[10px] tracking-[0.08em] uppercase text-intel-text-dim mb-1">
                   Início
                 </label>
                 <input
@@ -123,11 +122,11 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
                   value={since}
                   max={until || todayIso()}
                   onChange={(e) => setSince(e.target.value)}
-                  className={fieldClass}
+                  className={`${INTEL_INPUT} [color-scheme:dark]`}
                 />
               </div>
               <div>
-                <label htmlFor="period-until" className="block text-[10px] tracking-[0.08em] uppercase text-navy-500 mb-1">
+                <label htmlFor="period-until" className="block text-[10px] tracking-[0.08em] uppercase text-intel-text-dim mb-1">
                   Fim
                 </label>
                 <input
@@ -137,13 +136,13 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
                   min={since}
                   max={todayIso()}
                   onChange={(e) => setUntil(e.target.value)}
-                  className={fieldClass}
+                  className={`${INTEL_INPUT} [color-scheme:dark]`}
                 />
               </div>
             </div>
 
             {error && (
-              <p className="mt-2.5 text-xs text-red-700" role="alert">
+              <p className="mt-2.5 text-xs text-intel-red" role="alert">
                 {error}
               </p>
             )}
@@ -151,7 +150,7 @@ export default function PeriodFilter({ value, onChange, disabled }: PeriodFilter
             <button
               type="button"
               onClick={applyCustomRange}
-              className="mt-3 w-full inline-flex items-center justify-center bg-navy-950 text-white text-[13px] tracking-[0.06em] uppercase font-medium px-4 py-2.5 rounded-full hover:bg-navy-800 transition-colors duration-300"
+              className="mt-3 w-full inline-flex items-center justify-center bg-intel-cyan text-[#04121a] text-[13px] tracking-[0.06em] uppercase font-semibold px-4 py-2.5 rounded-full hover:brightness-110 transition-[filter] duration-200"
             >
               Aplicar
             </button>

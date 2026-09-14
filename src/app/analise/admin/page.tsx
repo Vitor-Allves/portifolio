@@ -46,29 +46,29 @@ export default async function AnaliseAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-ice-50">
+    <main className="min-h-screen bg-intel-ambient bg-intel-grid">
       <AnaliseHeader isAdmin clientLabel={null} />
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
         <Link
           href="/analise/"
-          className="inline-flex items-center gap-1.5 text-[13px] tracking-[0.06em] uppercase text-navy-500 hover:text-navy-950 transition-colors mb-6"
+          className="inline-flex items-center gap-1.5 text-[13px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200 mb-6"
         >
           <span aria-hidden="true">←</span> Voltar ao painel
         </Link>
-        <h1 className="font-serif text-2xl text-navy-950 mb-1">Acessos de clientes</h1>
-        <p className="text-sm text-navy-500 mb-8">
+        <h1 className="font-sans text-2xl font-semibold text-intel-text mb-1">Acessos de clientes</h1>
+        <p className="text-sm text-intel-text-dim mb-8">
           Crie um login separado para cada cliente ver apenas as próprias campanhas.
         </p>
 
         {dbNotConfigured ? (
-          <div className="rounded-2xl border border-navy-700/15 bg-white p-8 max-w-xl">
-            <p className="font-serif text-xl text-navy-950 mb-2">
+          <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-8 max-w-xl">
+            <p className="font-sans text-xl font-semibold text-intel-text mb-2">
               Banco de dados ainda não configurado
             </p>
-            <p className="text-sm text-navy-700/80 leading-relaxed">
+            <p className="text-sm text-intel-text-dim leading-relaxed">
               Os acessos de clientes ficam guardados num banco Postgres, que
               ainda não está conectado a este projeto. Siga o passo a passo em{" "}
-              <code className="text-sm bg-silver-100 px-1.5 py-0.5 rounded">
+              <code className="text-sm bg-white/[0.06] px-1.5 py-0.5 rounded">
                 docs/client-access-setup.md
               </code>{" "}
               para conectar um banco (Vercel → Storage → Connect Database) e

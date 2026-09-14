@@ -7,7 +7,7 @@ import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { sumTotals, ctr, cpc, cpm, pctChange } from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
-import IntelligenceSidebar, { type SectionId } from "./IntelligenceSidebar";
+import IntelligenceSidebar, { SECTIONS, type SectionId } from "./IntelligenceSidebar";
 import IntelligenceTopBar from "./IntelligenceTopBar";
 import FilterBar from "./FilterBar";
 import KpiCard from "./KpiCard";
@@ -16,6 +16,7 @@ import SpendDistributionChart from "./SpendDistributionChart";
 import RankingChart from "./RankingChart";
 import CampaignsTable from "./CampaignsTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
+import StrategicInsightsCompact from "./StrategicInsightsCompact";
 import ReportsPanel from "./ReportsPanel";
 import IntegrationsPanel from "./IntegrationsPanel";
 
@@ -27,11 +28,11 @@ type DashboardProps = {
 };
 
 const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 14 },
+  hidden: { opacity: 0, y: 12 },
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] as const },
+    transition: { duration: 0.45, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] as const },
   }),
 };
 
@@ -93,6 +94,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
 
   const [section, setSection] = useState<SectionId>("overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>("spend");
 
   const [accountIds, setAccountIds] = useState(() => allIds(initialData.accounts.map((a) => ({ id: a.id }))));
@@ -319,27 +321,35 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
   const trendCurrent = dailyFiltered;
   const trendComparison = compare ? comparisonDailyFiltered : null;
 
+  const sectionLabel = SECTIONS.find((s) => s.id === section)?.label ?? "Legado Intelligence";
+  const connectionState: "ok" | "partial" | "down" =
+    data.accounts.length === 0 ? "down" : data.partialAccounts.length > 0 ? "partial" : "ok";
+
   return (
-    <div className="flex min-h-screen bg-ice-50">
+    <div className="flex min-h-screen bg-intel-ambient bg-intel-grid">
       <IntelligenceSidebar
         active={section}
         onSelect={setSection}
         isAdmin={isAdmin}
         mobileOpen={mobileNavOpen}
         onCloseMobile={() => setMobileNavOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
       />
 
       <div className="flex-1 min-w-0 flex flex-col">
         <IntelligenceTopBar
+          sectionLabel={sectionLabel}
           clientLabel={clientLabel}
           accountsCount={data.accounts.length}
           lastSyncIso={data.generatedAt}
+          connectionState={connectionState}
           onOpenMobileMenu={() => setMobileNavOpen(true)}
         />
 
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1400px] w-full mx-auto">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1500px] w-full mx-auto">
           {data.partialAccounts.length > 0 && (
-            <div className="mb-5 rounded-xl border border-amber-600/25 bg-amber-600/8 px-4 py-3 text-[13px] text-amber-800">
+            <div className="mb-5 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-[13px] text-amber-300">
               {data.partialAccounts.length === 1 ? "1 conta não pôde" : `${data.partialAccounts.length} contas não puderam`}{" "}
               ser carregada(s) agora ({data.partialAccounts.map((a) => a.name).join(", ")}). Os números acima estão
               incompletos, não zerados — tente atualizar a página em instantes.
@@ -347,14 +357,14 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
           )}
 
           {error && (
-            <div className="mb-5 rounded-xl border border-red-700/20 bg-red-700/5 px-4 py-3 flex items-center justify-between gap-3">
-              <p className="text-[13px] text-red-700" role="alert">
+            <div className="mb-5 rounded-xl border border-intel-red/25 bg-intel-red/[0.06] px-4 py-3 flex items-center justify-between gap-3">
+              <p className="text-[13px] text-intel-red" role="alert">
                 {error}
               </p>
               <button
                 type="button"
                 onClick={() => refetch(period, compare)}
-                className="shrink-0 text-[12px] tracking-[0.06em] uppercase text-red-700 hover:text-red-900 transition-colors"
+                className="shrink-0 text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
               >
                 Tentar novamente
               </button>
@@ -362,9 +372,9 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
           )}
 
           {data.accounts.length === 0 ? (
-            <div className="rounded-2xl border border-navy-700/15 bg-white p-10 text-center max-w-xl mx-auto">
-              <p className="font-sans text-lg font-semibold text-navy-950 mb-2">Nenhuma conta de anúncios disponível</p>
-              <p className="text-sm text-navy-600 leading-relaxed">
+            <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-10 text-center max-w-xl mx-auto">
+              <p className="font-sans text-lg font-semibold text-intel-text mb-2">Nenhuma conta de anúncios disponível</p>
+              <p className="text-sm text-intel-text-dim leading-relaxed">
                 Este acesso não está associado a nenhuma conta de anúncios ativa. Fale com o administrador para
                 verificar as contas liberadas no Business Manager.
               </p>
@@ -392,7 +402,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                 disabled={isPending}
               />
 
-              <div className={`transition-opacity duration-300 ${isPending ? "opacity-60" : "opacity-100"}`}>
+              <div className={`transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
@@ -403,28 +413,34 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                       ))}
                     </div>
 
-                    <m.div custom={6} initial="hidden" animate="visible" variants={fadeUp}>
-                      <StrategicInsightsPanel insights={insights} onShowFlaggedCampaigns={showFlaggedCampaigns} />
-                    </m.div>
-
-                    <m.div custom={7} initial="hidden" animate="visible" variants={fadeUp}>
-                      <TrendChart
-                        current={trendCurrent}
-                        comparison={trendComparison}
-                        metric={trendMetric}
-                        onMetricChange={setTrendMetric}
-                      />
-                    </m.div>
+                    <div className="grid lg:grid-cols-[1fr_360px] gap-4 items-stretch">
+                      <m.div custom={7} initial="hidden" animate="visible" variants={fadeUp}>
+                        <TrendChart
+                          current={trendCurrent}
+                          comparison={trendComparison}
+                          metric={trendMetric}
+                          onMetricChange={setTrendMetric}
+                        />
+                      </m.div>
+                      <m.div custom={8} initial="hidden" animate="visible" variants={fadeUp}>
+                        <StrategicInsightsCompact
+                          insights={insights}
+                          onViewAll={() => setSection("insights")}
+                          onShowFlaggedCampaigns={showFlaggedCampaigns}
+                          isProcessing={isPending}
+                        />
+                      </m.div>
+                    </div>
 
                     <div className="grid lg:grid-cols-2 gap-4">
-                      <m.div custom={8} initial="hidden" animate="visible" variants={fadeUp}>
+                      <m.div custom={9} initial="hidden" animate="visible" variants={fadeUp}>
                         <SpendDistributionChart
                           campaigns={filteredCampaigns}
                           focusedCampaignId={campaignIds.size === 1 ? [...campaignIds][0] : null}
                           onFocusCampaign={focusCampaign}
                         />
                       </m.div>
-                      <m.div custom={9} initial="hidden" animate="visible" variants={fadeUp}>
+                      <m.div custom={10} initial="hidden" animate="visible" variants={fadeUp}>
                         <RankingChart campaigns={filteredCampaigns} />
                       </m.div>
                     </div>
@@ -436,7 +452,11 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                 )}
 
                 {section === "insights" && (
-                  <StrategicInsightsPanel insights={insights} onShowFlaggedCampaigns={showFlaggedCampaigns} />
+                  <StrategicInsightsPanel
+                    insights={insights}
+                    onShowFlaggedCampaigns={showFlaggedCampaigns}
+                    isProcessing={isPending}
+                  />
                 )}
 
                 {section === "reports" && (

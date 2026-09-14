@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CampaignInsight } from "@/lib/meta-ads-types";
+import type { CampaignInsight, CampaignStatus } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } from "@/lib/format";
 import { ctr, cpc, cpm, pctChange } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
+import { INTEL_INPUT, INTEL_POPOVER } from "./intel-styles";
 
 type ColumnId =
   | "account"
@@ -101,6 +102,22 @@ const COLUMNS: Column[] = [
   { id: "reach", label: "Alcance", numeric: true, defaultVisible: false, value: (c) => c.reach, render: (c) => formatInteger(c.reach) },
 ];
 
+const STATUS_TONE: Record<CampaignStatus, string> = {
+  ACTIVE: "bg-intel-green/10 text-intel-green border-intel-green/20",
+  PAUSED: "bg-amber-400/10 text-amber-300 border-amber-400/20",
+  DELETED: "bg-white/[0.05] text-intel-text-dim border-white/10",
+  ARCHIVED: "bg-white/[0.05] text-intel-text-dim border-white/10",
+  OTHER: "bg-white/[0.05] text-intel-text-dim border-white/10",
+};
+
+function StatusBadge({ status }: { status: CampaignStatus }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${STATUS_TONE[status]}`}>
+      {statusLabel(status)}
+    </span>
+  );
+}
+
 function SortButton({
   columnId,
   label,
@@ -121,7 +138,7 @@ function SortButton({
     <button
       type="button"
       onClick={() => onToggle(columnId)}
-      className={`inline-flex items-center gap-1 hover:text-navy-950 transition-colors ${numeric ? "flex-row-reverse" : ""}`}
+      className={`inline-flex items-center gap-1 hover:text-intel-text transition-colors duration-200 ${numeric ? "flex-row-reverse" : ""}`}
     >
       <span>{label}</span>
       <svg
@@ -130,7 +147,7 @@ function SortButton({
         viewBox="0 0 10 10"
         fill="none"
         aria-hidden="true"
-        className={`transition-transform ${active && sortDir === "asc" ? "rotate-180" : ""} ${active ? "opacity-100" : "opacity-30"}`}
+        className={`transition-transform duration-200 ${active && sortDir === "asc" ? "rotate-180" : ""} ${active ? "opacity-100" : "opacity-30"}`}
       >
         <path d="M2 3.5L5 7l3-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -202,15 +219,15 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
   }
 
   const activeColumns = COLUMNS.filter((c) => visibleColumns.has(c.id));
-  const th = "text-left text-[11px] tracking-[0.08em] uppercase text-navy-500 font-medium py-2 px-3 select-none";
+  const th = "text-left text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2.5 px-3 select-none";
   const thNum = `${th} text-right`;
-  const td = "py-2.5 px-3 text-[13px] text-navy-800 border-t border-navy-700/8";
+  const td = "py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]";
   const tdNum = `${td} text-right tabular-nums`;
 
   return (
-    <div className="rounded-2xl border border-navy-700/10 bg-white p-6">
+    <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h3 className="text-sm font-medium text-navy-950">Campanhas ({sorted.length})</h3>
+        <h3 className="text-[13px] font-medium text-intel-text">Campanhas ({sorted.length})</h3>
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -218,7 +235,7 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar campanha..."
             aria-label="Buscar campanha por nome"
-            className="rounded-lg border border-navy-700/20 bg-white px-3 py-1.5 text-[13px] text-navy-800 placeholder:text-navy-400 focus:border-navy-600 focus:outline-none w-40 sm:w-56"
+            className={`${INTEL_INPUT} w-40 sm:w-56`}
           />
 
           <div className="relative">
@@ -227,21 +244,21 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
               onClick={() => setColumnPickerOpen((v) => !v)}
               aria-expanded={columnPickerOpen}
               aria-haspopup="listbox"
-              className="text-[12px] tracking-[0.04em] px-3 py-1.5 rounded-lg border border-navy-700/20 text-navy-700 hover:border-navy-600/40 transition-colors"
+              className="text-[12px] tracking-[0.04em] px-3 py-1.5 rounded-lg border border-white/10 text-intel-text-dim hover:border-white/25 hover:text-intel-text transition-colors duration-200"
             >
               Colunas
             </button>
             {columnPickerOpen && (
-              <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-navy-700/10 bg-white shadow-lg py-2">
+              <div className={`absolute right-0 z-20 mt-2 w-56 py-2 ${INTEL_POPOVER}`}>
                 <ul className="max-h-72 overflow-y-auto">
                   {COLUMNS.map((c) => (
                     <li key={c.id}>
-                      <label className="flex items-center gap-2.5 px-4 py-1.5 text-[13px] text-navy-800 hover:bg-silver-100 cursor-pointer">
+                      <label className="flex items-center gap-2.5 px-4 py-1.5 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text cursor-pointer transition-colors duration-150">
                         <input
                           type="checkbox"
                           checked={visibleColumns.has(c.id)}
                           onChange={() => toggleColumn(c.id)}
-                          className="h-3.5 w-3.5"
+                          className="h-3.5 w-3.5 accent-intel-cyan"
                         />
                         {c.label}
                       </label>
@@ -256,7 +273,7 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
             type="button"
             onClick={exportCsv}
             disabled={sorted.length === 0}
-            className="text-[12px] tracking-[0.04em] px-3 py-1.5 rounded-lg bg-navy-950 text-white hover:bg-navy-800 transition-colors disabled:opacity-50"
+            className="text-[12px] tracking-[0.04em] px-3 py-1.5 rounded-lg bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Exportar CSV
           </button>
@@ -264,7 +281,7 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
       </div>
 
       {sorted.length === 0 ? (
-        <p className="text-sm text-navy-500">Nenhuma campanha encontrada.</p>
+        <p className="text-sm text-intel-text-dim">Nenhuma campanha encontrada.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] border-collapse">
@@ -303,20 +320,20 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
                   <tr
                     key={`${c.accountId}-${c.campaignId}`}
                     onClick={() => setDetailCampaign(c)}
-                    className="cursor-pointer hover:bg-silver-100/60 transition-colors"
+                    className="cursor-pointer hover:bg-white/[0.035] transition-colors duration-150"
                   >
                     <td className={td}>{c.campaignName}</td>
                     {activeColumns.map((col) => (
                       <td key={col.id} className={col.numeric ? tdNum : td}>
-                        {col.render(c)}
+                        {col.id === "status" ? <StatusBadge status={c.status} /> : col.render(c)}
                       </td>
                     ))}
                     {comparisonByCampaignId && (
                       <td className={tdNum}>
                         {delta === null ? (
-                          <span className="text-navy-400">—</span>
+                          <span className="text-intel-text-dim/60">—</span>
                         ) : (
-                          <span className={delta > 0 ? "text-emerald-700" : delta < 0 ? "text-red-700" : "text-navy-500"}>
+                          <span className={delta > 0 ? "text-intel-green" : delta < 0 ? "text-intel-red" : "text-intel-text-dim"}>
                             {formatSignedPercent(delta)}
                           </span>
                         )}
@@ -378,35 +395,35 @@ function CampaignDetailPanel({
 
   return (
     <div className="fixed inset-0 z-40">
-      <button type="button" aria-label="Fechar detalhes" onClick={onClose} className="absolute inset-0 bg-navy-950/40" />
-      <div className="absolute inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl p-6 overflow-y-auto">
+      <button type="button" aria-label="Fechar detalhes" onClick={onClose} className="absolute inset-0 bg-black/60" />
+      <div className="absolute inset-y-0 right-0 w-full max-w-md bg-intel-surface-1 border-l border-white/10 shadow-[0_0_60px_-12px_rgba(0,0,0,0.8)] p-6 overflow-y-auto animate-intel-in">
         <div className="flex items-start justify-between gap-3 mb-1">
-          <h4 className="font-sans text-lg font-semibold text-navy-950">{campaign.campaignName}</h4>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="shrink-0 text-navy-500 hover:text-navy-950">
+          <h4 className="font-sans text-lg font-semibold text-intel-text">{campaign.campaignName}</h4>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="shrink-0 text-intel-text-dim hover:text-intel-text transition-colors duration-200">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 5L19 19M19 5L5 19" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
           </button>
         </div>
-        <p className="text-[12px] text-navy-500 mb-6">
-          {campaign.accountName} · {objectiveLabel(campaign.objective)} · {statusLabel(campaign.status)}
+        <p className="text-[12px] text-intel-text-dim mb-6">
+          {campaign.accountName} · {objectiveLabel(campaign.objective)} · <StatusBadge status={campaign.status} />
         </p>
 
         <dl className="space-y-3">
           {rows.map((row) => (
-            <div key={row.label} className="flex items-center justify-between border-b border-navy-700/8 pb-2.5">
-              <dt className="text-[12px] text-navy-500">{row.label}</dt>
+            <div key={row.label} className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+              <dt className="text-[12px] text-intel-text-dim">{row.label}</dt>
               <dd className="text-right">
-                <span className="text-sm tabular-nums text-navy-950">{row.current}</span>
+                <span className="text-sm tabular-nums text-intel-text">{row.current}</span>
                 {row.previous !== undefined && (
-                  <span className="block text-[11px] tabular-nums text-navy-400">anterior: {row.previous}</span>
+                  <span className="block text-[11px] tabular-nums text-intel-text-dim/70">anterior: {row.previous}</span>
                 )}
               </dd>
             </div>
           ))}
         </dl>
 
-        <p className="mt-6 text-[11px] leading-relaxed text-navy-400">
+        <p className="mt-6 text-[11px] leading-relaxed text-intel-text-dim/70">
           “Cliques (todos)” é o campo clicks da Meta (todo tipo de clique no anúncio); “Cliques no link” é
           inline_link_clicks (apenas cliques que levam ao destino do anúncio).
         </p>

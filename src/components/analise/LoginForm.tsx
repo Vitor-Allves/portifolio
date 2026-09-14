@@ -4,8 +4,8 @@ import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const fieldClass =
-  "w-full rounded-lg border border-white/15 bg-navy-950 px-4 py-3.5 text-sm text-white placeholder:text-silver-500 focus:border-silver-400 focus:outline-none transition-colors";
-const labelClass = "block text-[11px] tracking-[0.14em] uppercase text-silver-400 mb-2";
+  "w-full rounded-lg border border-white/10 bg-intel-surface-2 px-4 py-3.5 text-sm text-intel-text placeholder:text-intel-text-dim/60 focus:border-intel-cyan/50 focus:outline-none transition-colors duration-200";
+const labelClass = "block text-[11px] tracking-[0.14em] uppercase text-intel-text-dim mb-2";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -60,7 +60,7 @@ export default function LoginForm() {
       />
 
       {error && (
-        <p className="mt-3 text-sm text-red-400" role="alert">
+        <p className="mt-3 text-sm text-intel-red" role="alert">
           {error}
         </p>
       )}
@@ -68,7 +68,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="mt-6 w-full inline-flex items-center justify-center bg-white text-navy-950 text-sm tracking-[0.12em] uppercase font-medium px-6 py-3.5 rounded-full hover:bg-silver-200 active:bg-silver-300 transition-colors duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="mt-6 w-full inline-flex items-center justify-center bg-intel-cyan text-[#04121a] text-sm tracking-[0.12em] uppercase font-semibold px-6 py-3.5 rounded-full hover:brightness-110 active:brightness-95 transition-[filter] duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {loading ? "Entrando..." : "Entrar"}
       </button>

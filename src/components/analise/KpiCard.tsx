@@ -10,10 +10,9 @@ type KpiCardProps = {
   tooltip: string;
 };
 
-// Fixed viewBox coordinate space, but the <svg> itself is told to fill
-// whatever width the card gives it (w-full) — a full-width strip under the
-// value instead of a fixed-size box squeezed in beside it, which is what
-// was pushing wide currency values past the card's edge.
+// Fixed viewBox coordinate space, but the <svg> itself fills whatever width
+// the card gives it — a full-width strip under the value rather than a
+// fixed-size box squeezed in beside variable-width text.
 function Sparkline({ values }: { values: number[] }) {
   if (values.length < 2) return null;
   const w = 100;
@@ -29,16 +28,27 @@ function Sparkline({ values }: { values: number[] }) {
     })
     .join(" ");
   const last = points.split(" ").at(-1)!.split(",").map(Number);
+  const areaPath = `M${points.split(" ")[0]} L${points.replace(/ /g, " L")} L${w},${h} L0,${h} Z`;
 
   return (
-    <svg
-      viewBox={`0 0 ${w} ${h}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-      className="w-full h-6 mt-1.5"
-    >
-      <polyline points={points} fill="none" stroke="var(--color-navy-400)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <circle cx={last[0]} cy={last[1]} r={2} fill="var(--color-navy-700)" vectorEffect="non-scaling-stroke" />
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true" className="w-full h-6 mt-2">
+      <defs>
+        <linearGradient id="kpi-spark-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-intel-cyan)" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="var(--color-intel-cyan)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill="url(#kpi-spark-fill)" stroke="none" />
+      <polyline
+        points={points}
+        fill="none"
+        stroke="var(--color-intel-cyan)"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={last[0]} cy={last[1]} r="2" fill="var(--color-intel-cyan)" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -47,46 +57,57 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
   const isUnavailable = value === "—";
   const deltaColor =
     delta === undefined || delta === null
-      ? "text-navy-400"
+      ? "text-intel-text-dim"
       : delta > 0
-        ? "text-emerald-700"
+        ? "text-intel-green"
         : delta < 0
-          ? "text-red-700"
-          : "text-navy-500";
+          ? "text-intel-red"
+          : "text-intel-text-dim";
 
   return (
-    <div className="rounded-2xl border border-navy-700/10 bg-white px-5 py-4 overflow-hidden">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] tracking-[0.12em] uppercase text-navy-500">{label}</p>
-        <div className="group relative">
+    <div className="group relative rounded-2xl border border-white/[0.07] bg-intel-surface-1 px-5 py-4 overflow-hidden transition-colors duration-200 hover:border-white/[0.14]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-intel-cyan/[0.03] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+      />
+
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="text-[10.5px] tracking-[0.12em] uppercase text-intel-text-dim">{label}</p>
+        <div className="group/tip relative">
           <button
             type="button"
             aria-label={`O que é ${label}`}
             title={tooltip}
-            className="flex h-4 w-4 items-center justify-center rounded-full border border-navy-700/20 text-[10px] text-navy-500 hover:border-navy-600/50 hover:text-navy-700 transition-colors"
+            className="flex h-4 w-4 items-center justify-center rounded-full border border-white/15 text-[10px] text-intel-text-dim hover:border-intel-cyan/50 hover:text-intel-cyan transition-colors duration-200"
           >
             i
           </button>
-          <div className="pointer-events-none absolute right-0 top-6 z-20 w-56 rounded-lg border border-navy-700/10 bg-navy-950 px-3 py-2 text-[11px] leading-relaxed text-silver-100 opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="pointer-events-none absolute right-0 top-6 z-20 w-56 rounded-lg border border-white/10 bg-intel-surface-2 px-3 py-2 text-[11px] leading-relaxed text-intel-text-dim opacity-0 shadow-[0_16px_32px_-12px_rgba(0,0,0,0.7)] transition-opacity duration-150 group-hover/tip:opacity-100 group-focus-within/tip:opacity-100">
             {tooltip}
           </div>
         </div>
       </div>
 
       <p
-        className={`mt-2 font-sans text-[26px] leading-none font-semibold tabular-nums ${
-          isUnavailable ? "text-navy-400" : "text-navy-950"
+        className={`relative mt-2 font-sans text-[26px] leading-none font-semibold tabular-nums ${
+          isUnavailable ? "text-intel-text-dim" : "text-intel-text"
         }`}
       >
         {value}
       </p>
 
-      {sparkline && sparkline.length > 1 && <Sparkline values={sparkline} />}
+      {sparkline && sparkline.length > 1 && (
+        <div className="relative">
+          <Sparkline values={sparkline} />
+        </div>
+      )}
 
-      {isUnavailable && unavailableReason && <p className="mt-1 text-[11px] text-navy-400">{unavailableReason}</p>}
+      {isUnavailable && unavailableReason && (
+        <p className="relative mt-1 text-[11px] text-intel-text-dim">{unavailableReason}</p>
+      )}
 
       {delta !== undefined && (
-        <p className={`mt-1.5 text-[12px] tabular-nums ${deltaColor}`}>
+        <p className={`relative mt-1.5 text-[12px] tabular-nums ${deltaColor}`}>
           {delta === null ? "Sem período anterior para comparar" : `${formatSignedPercent(delta)} vs. período anterior`}
         </p>
       )}

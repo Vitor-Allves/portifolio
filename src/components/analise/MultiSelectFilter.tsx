@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { INTEL_PILL_BASE, INTEL_PILL_INACTIVE, INTEL_PILL_ACTIVE, INTEL_POPOVER, INTEL_INPUT } from "./intel-styles";
 
 export type FilterOption = { id: string; label: string };
 
@@ -61,6 +62,7 @@ export default function MultiSelectFilter({
   }
 
   const allSelected = options.length > 0 && selectedIds.size === options.length;
+  const narrowed = !allSelected && options.length > 0 && selectedIds.size > 0;
   const label =
     options.length === 0
       ? placeholder
@@ -78,11 +80,11 @@ export default function MultiSelectFilter({
         aria-expanded={open}
         aria-haspopup="listbox"
         disabled={disabled || options.length === 0}
-        className="flex items-center gap-2 text-[13px] px-4 py-2 rounded-full border border-navy-700/15 bg-white text-navy-700 hover:border-navy-600/40 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+        className={`${INTEL_PILL_BASE} disabled:cursor-not-allowed ${narrowed ? INTEL_PILL_ACTIVE : INTEL_PILL_INACTIVE}`}
       >
         <span>{allSelected || options.length === 0 ? placeholder : label}</span>
         <svg
-          width="10"
+          width="9"
           height="6"
           viewBox="0 0 10 6"
           fill="none"
@@ -94,11 +96,7 @@ export default function MultiSelectFilter({
       </button>
 
       {open && (
-        <div
-          role="listbox"
-          aria-multiselectable="true"
-          className="absolute z-30 mt-2 w-64 rounded-xl border border-navy-700/10 bg-white shadow-lg py-2"
-        >
+        <div role="listbox" aria-multiselectable="true" className={`absolute z-30 mt-2 w-64 py-2 ${INTEL_POPOVER}`}>
           {searchable && (
             <div className="px-3 pb-2">
               <input
@@ -106,21 +104,21 @@ export default function MultiSelectFilter({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar..."
-                className="w-full rounded-lg border border-navy-700/15 px-3 py-1.5 text-[13px] focus:border-navy-600 focus:outline-none"
+                className={INTEL_INPUT}
               />
             </div>
           )}
           <button
             type="button"
             onClick={selectAll}
-            className="w-full text-left px-4 py-1.5 text-[12px] tracking-[0.06em] uppercase text-navy-500 hover:text-navy-950 transition-colors"
+            className="w-full text-left px-4 py-1.5 text-[11px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200"
           >
             Selecionar todos
           </button>
-          <div className="my-1 border-t border-navy-700/8" />
+          <div className="my-1 border-t border-white/[0.06]" />
           <ul className="max-h-64 overflow-y-auto">
             {filteredOptions.length === 0 && (
-              <li className="px-4 py-2 text-[13px] text-navy-500">Nenhum resultado.</li>
+              <li className="px-4 py-2 text-[13px] text-intel-text-dim">Nenhum resultado.</li>
             )}
             {filteredOptions.map((option) => {
               const checked = selectedIds.has(option.id);
@@ -131,11 +129,11 @@ export default function MultiSelectFilter({
                     role="option"
                     aria-selected={checked}
                     onClick={() => toggle(option.id)}
-                    className="w-full flex items-center gap-3 text-left px-4 py-2 text-[13px] text-navy-800 hover:bg-silver-100 transition-colors"
+                    className="w-full flex items-center gap-3 text-left px-4 py-2 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-150"
                   >
                     <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                        checked ? "bg-navy-950 border-navy-950" : "border-navy-700/25"
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors duration-150 ${
+                        checked ? "bg-intel-cyan border-intel-cyan" : "border-white/20"
                       }`}
                       aria-hidden="true"
                     >
@@ -143,8 +141,8 @@ export default function MultiSelectFilter({
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
                           <path
                             d="M1 4L3.5 6.5L9 1"
-                            stroke="white"
-                            strokeWidth="1.5"
+                            stroke="#070d1a"
+                            strokeWidth="1.6"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           />
