@@ -28,9 +28,21 @@ painel de admin é acessado — não precisa rodar nenhuma migração manual.
    administrador — um cliente não vê esse link).
 3. Em **Novo acesso**: dê um nome pro cliente e marque a(s) conta(s) de
    anúncio que ele deve enxergar.
-4. Clique em **Criar acesso** — a senha gerada aparece **uma única vez** na
+4. Opcional — **Restringir filtros, colunas e seções**: por padrão o cliente
+   vê tudo que a conta dele tem direito (exceto a área de admin). Abrindo
+   essa seção dá pra desmarcar filtros específicos (ex: Objetivo), colunas
+   da tabela de Campanhas (ex: CPM) ou seções inteiras do menu (ex: Análises
+   com IA, Relatórios) — o que for desmarcado simplesmente some da tela
+   desse cliente. "Visão geral" nunca pode ser escondida, pra sempre ter
+   algum lugar pro cliente cair ao entrar.
+5. Clique em **Criar acesso** — a senha gerada aparece **uma única vez** na
    tela. Copie e envie pro cliente (WhatsApp, e-mail, etc.) — ela não fica
    salva em nenhum lugar visível depois disso, nem pra você.
+
+As restrições de filtros/colunas/seções só podem ser definidas na criação do
+acesso — não dá pra editar as de um cliente já criado depois (mesma
+limitação que já existia para as contas de anúncio). Pra mudar, revogue o
+acesso antigo e crie um novo.
 
 ## 3. Como o cliente acessa
 

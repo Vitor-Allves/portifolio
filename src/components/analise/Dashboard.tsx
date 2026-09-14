@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
 import type { AdSetInsight, CampaignInsight, DashboardData, DailyMetrics, Period } from "@/lib/meta-ads-types";
+import type { ClientPermissions } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { sumTotals, ctr, cpc, cpm, pctChange } from "@/lib/metrics";
@@ -24,6 +25,7 @@ type DashboardProps = {
   initialData: DashboardData;
   isAdmin: boolean;
   clientLabel: string | null;
+  clientPermissions: ClientPermissions | null;
   dbConfigured: boolean;
 };
 
@@ -93,7 +95,11 @@ function sparklineFor(daily: { spend: number; impressions: number; clicks: numbe
   });
 }
 
-export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigured }: DashboardProps) {
+export default function Dashboard({ initialData, isAdmin, clientLabel, clientPermissions, dbConfigured }: DashboardProps) {
+  const hiddenFilterIds = useMemo(() => new Set<string>(clientPermissions?.hiddenFilters ?? []), [clientPermissions]);
+  const hiddenColumnIds = useMemo(() => new Set<string>(clientPermissions?.hiddenColumns ?? []), [clientPermissions]);
+  const hiddenSectionIds = useMemo(() => new Set<string>(clientPermissions?.hiddenSections ?? []), [clientPermissions]);
+
   const [data, setData] = useState(initialData);
   const [period, setPeriod] = useState<Period>(initialData.period);
   const [compare, setCompare] = useState(false);
@@ -265,10 +271,18 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
     setCampaignIds(campaignId ? new Set([campaignId]) : new Set(campaignOptions.map((o) => o.id)));
   }
 
+  // Never navigates to a section this client's permissions hid — the
+  // sidebar already only offers visible sections, but these are also
+  // reachable from cross-links (e.g. "Ver análise completa" on Overview).
+  function goToSection(id: SectionId) {
+    if (hiddenSectionIds.has(id)) return;
+    setSection(id);
+  }
+
   function showFlaggedCampaigns(ids: string[]) {
     if (ids.length === 0) return;
     setCampaignIds(new Set(ids));
-    setSection("campaigns");
+    goToSection("campaigns");
   }
 
   const kpis = [
@@ -367,6 +381,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
         onCloseMobile={() => setMobileNavOpen(false)}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+        hiddenSectionIds={hiddenSectionIds}
       />
 
       <div className="flex-1 min-w-0 flex flex-col">
@@ -434,6 +449,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                 statusOptions={statusOptions}
                 statusIds={statusIds}
                 onStatusIdsChange={setStatusIds}
+                hiddenFilterIds={hiddenFilterIds}
                 disabled={isPending}
               />
 
@@ -448,7 +464,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                       ))}
                     </div>
 
-                    <div className="grid lg:grid-cols-[1fr_360px] gap-4 items-stretch">
+                    <div className={hiddenSectionIds.has("insights") ? "grid gap-4" : "grid lg:grid-cols-[1fr_360px] gap-4 items-stretch"}>
                       <m.div custom={7} initial="hidden" animate="visible" variants={fadeUp}>
                         <TrendChart
                           current={trendCurrent}
@@ -457,14 +473,16 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                           onMetricChange={setTrendMetric}
                         />
                       </m.div>
-                      <m.div custom={8} initial="hidden" animate="visible" variants={fadeUp}>
-                        <StrategicInsightsCompact
-                          insights={insights}
-                          onViewAll={() => setSection("insights")}
-                          onShowFlaggedCampaigns={showFlaggedCampaigns}
-                          isProcessing={isPending}
-                        />
-                      </m.div>
+                      {!hiddenSectionIds.has("insights") && (
+                        <m.div custom={8} initial="hidden" animate="visible" variants={fadeUp}>
+                          <StrategicInsightsCompact
+                            insights={insights}
+                            onViewAll={() => goToSection("insights")}
+                            onShowFlaggedCampaigns={showFlaggedCampaigns}
+                            isProcessing={isPending}
+                          />
+                        </m.div>
+                      )}
                     </div>
 
                     <div className="grid lg:grid-cols-2 gap-4">
@@ -482,15 +500,16 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                   </div>
                 )}
 
-                {section === "campaigns" && (
+                {section === "campaigns" && !hiddenSectionIds.has("campaigns") && (
                   <CampaignsTable
                     campaigns={filteredCampaigns}
                     adSets={filteredAdSets}
                     comparisonByCampaignId={comparisonByCampaignId}
+                    hiddenColumnIds={hiddenColumnIds}
                   />
                 )}
 
-                {section === "insights" && (
+                {section === "insights" && !hiddenSectionIds.has("insights") && (
                   <StrategicInsightsPanel
                     insights={insights}
                     onShowFlaggedCampaigns={showFlaggedCampaigns}
@@ -498,11 +517,11 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                   />
                 )}
 
-                {section === "reports" && (
+                {section === "reports" && !hiddenSectionIds.has("reports") && (
                   <ReportsPanel campaigns={filteredCampaigns} periodLabel={insights.periodLabel} />
                 )}
 
-                {section === "integrations" && (
+                {section === "integrations" && !hiddenSectionIds.has("integrations") && (
                   <IntegrationsPanel
                     accountsCount={data.accounts.length}
                     partialAccountsCount={data.partialAccounts.length}

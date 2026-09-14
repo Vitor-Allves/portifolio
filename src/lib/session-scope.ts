@@ -2,7 +2,9 @@
 // Node classic crypto) and by any component that needs to know what a
 // session is allowed to see. No crypto, no env vars — safe anywhere.
 
-/** "admin" sees every ad account; "client" is restricted to accountIds. */
+import type { ClientPermissions } from "./client-permissions";
+
+/** "admin" sees every ad account and every filter/column/section; "client" is restricted to accountIds, plus whatever filters/columns/sections were hidden for it. */
 export type SessionScope =
   | { kind: "admin" }
-  | { kind: "client"; accountIds: string[]; label: string };
+  | { kind: "client"; accountIds: string[]; label: string; permissions: ClientPermissions };

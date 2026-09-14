@@ -24,6 +24,7 @@ export default async function AnalisePage() {
 
   const allowedAccountIds = scope.kind === "client" ? scope.accountIds : undefined;
   const clientLabel = scope.kind === "client" ? scope.label : null;
+  const clientPermissions = scope.kind === "client" ? scope.permissions : null;
   const dbConfigured = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
@@ -51,6 +52,7 @@ export default async function AnalisePage() {
       initialData={data}
       isAdmin={scope.kind === "admin"}
       clientLabel={clientLabel}
+      clientPermissions={clientPermissions}
       dbConfigured={dbConfigured}
     />
   );

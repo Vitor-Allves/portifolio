@@ -35,6 +35,7 @@ type IntelligenceSidebarProps = {
   onCloseMobile: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  hiddenSectionIds: Set<string>;
 };
 
 function NavButton({
@@ -91,6 +92,7 @@ function SidebarContent({
   collapsed,
   onToggleCollapsed,
   showCollapseToggle,
+  visibleSections,
 }: {
   active: SectionId;
   onSelect: (section: SectionId) => void;
@@ -99,6 +101,7 @@ function SidebarContent({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   showCollapseToggle: boolean;
+  visibleSections: typeof SECTIONS;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -116,7 +119,7 @@ function SidebarContent({
       </div>
 
       <nav className="flex-1 py-4 px-2.5 space-y-0.5" aria-label="Navegação principal">
-        {SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <NavButton
             key={section.id}
             section={section}
@@ -183,7 +186,11 @@ export default function IntelligenceSidebar({
   onCloseMobile,
   collapsed,
   onToggleCollapsed,
+  hiddenSectionIds,
 }: IntelligenceSidebarProps) {
+  // "overview" is never hideable — always somewhere for a client to land.
+  const visibleSections = SECTIONS.filter((s) => s.id === "overview" || !hiddenSectionIds.has(s.id));
+
   return (
     <>
       <aside
@@ -199,6 +206,7 @@ export default function IntelligenceSidebar({
           collapsed={collapsed}
           onToggleCollapsed={onToggleCollapsed}
           showCollapseToggle
+          visibleSections={visibleSections}
         />
       </aside>
 
@@ -219,6 +227,7 @@ export default function IntelligenceSidebar({
               collapsed={false}
               onToggleCollapsed={onToggleCollapsed}
               showCollapseToggle={false}
+              visibleSections={visibleSections}
             />
           </aside>
         </div>

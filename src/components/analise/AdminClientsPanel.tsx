@@ -3,6 +3,15 @@
 import { useState } from "react";
 import type { MetaAdAccount } from "@/lib/meta-ads-types";
 import type { ClientAccessSummary } from "@/lib/client-access-types";
+import {
+  FILTER_OPTIONS,
+  CAMPAIGN_COLUMN_OPTIONS,
+  HIDEABLE_SECTION_OPTIONS,
+  type ClientPermissions,
+  type FilterKey,
+  type CampaignColumnId,
+  type HideableSectionId,
+} from "@/lib/client-permissions";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 
 type AdminClientsPanelProps = {
@@ -16,6 +25,68 @@ function accountNames(accountIds: string[], accounts: MetaAdAccount[]): string {
   return accountIds.map((id) => byId.get(id) ?? id).join(", ");
 }
 
+function permissionsSummary(p: ClientPermissions): string {
+  const hidden = p.hiddenFilters.length + p.hiddenColumns.length + p.hiddenSections.length;
+  return hidden === 0 ? "Acesso completo" : `${hidden} restriç${hidden === 1 ? "ão" : "ões"}`;
+}
+
+function toggleInSet<T>(prev: Set<T>, id: T): Set<T> {
+  const next = new Set(prev);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+function CheckboxGroup<T extends string>({
+  title,
+  hint,
+  options,
+  hiddenIds,
+  onToggle,
+}: {
+  title: string;
+  hint: string;
+  options: { id: T; label: string }[];
+  hiddenIds: Set<T>;
+  onToggle: (id: T) => void;
+}) {
+  return (
+    <div className="mt-5">
+      <p className={INTEL_LABEL}>{title}</p>
+      <p className="text-[11px] text-intel-text-dim/70 mt-0.5 mb-2">{hint}</p>
+      <ul className="rounded-lg border border-white/10 divide-y divide-white/[0.06]">
+        {options.map((option) => {
+          const hidden = hiddenIds.has(option.id);
+          return (
+            <li key={option.id}>
+              <button
+                type="button"
+                onClick={() => onToggle(option.id)}
+                className="w-full flex items-center gap-3 text-left px-3 py-2 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-150"
+              >
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors duration-150 ${
+                    hidden ? "border-white/20" : "bg-intel-cyan border-intel-cyan"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {!hidden && (
+                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                      <path d="M1 4L3.5 6.5L9 1" stroke="#070d1a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <span className="truncate">{option.label}</span>
+                {hidden && <span className="ml-auto shrink-0 text-[11px] text-intel-text-dim/60">oculto</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function AdminClientsPanel({
   accounts,
   accountsError,
@@ -24,6 +95,9 @@ export default function AdminClientsPanel({
   const [clients, setClients] = useState(initialClients);
   const [label, setLabel] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  const [hiddenFilters, setHiddenFilters] = useState<Set<FilterKey>>(new Set());
+  const [hiddenColumns, setHiddenColumns] = useState<Set<CampaignColumnId>>(new Set());
+  const [hiddenSections, setHiddenSections] = useState<Set<HideableSectionId>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ label: string; password: string } | null>(null);
@@ -31,12 +105,7 @@ export default function AdminClientsPanel({
   const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
 
   function toggleAccount(id: string) {
-    setSelectedAccountIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelectedAccountIds((prev) => toggleInSet(prev, id));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -52,12 +121,18 @@ export default function AdminClientsPanel({
       return;
     }
 
+    const permissions: ClientPermissions = {
+      hiddenFilters: [...hiddenFilters],
+      hiddenColumns: [...hiddenColumns],
+      hiddenSections: [...hiddenSections],
+    };
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/analise/admin/clients/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim(), accountIds: [...selectedAccountIds] }),
+        body: JSON.stringify({ label: label.trim(), accountIds: [...selectedAccountIds], permissions }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -72,12 +147,16 @@ export default function AdminClientsPanel({
           slug: "",
           label: body.label,
           accountIds: [...selectedAccountIds],
+          permissions,
           createdAt: new Date().toISOString(),
         },
         ...prev,
       ]);
       setLabel("");
       setSelectedAccountIds(new Set());
+      setHiddenFilters(new Set());
+      setHiddenColumns(new Set());
+      setHiddenSections(new Set());
     } catch {
       setError("Falha de conexão. Tente novamente.");
     } finally {
@@ -167,6 +246,39 @@ export default function AdminClientsPanel({
             </ul>
           )}
 
+          <details className="mt-5 group">
+            <summary className="cursor-pointer text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
+              Restringir filtros, colunas e seções (opcional)
+            </summary>
+            <p className="text-[11px] text-intel-text-dim/70 mt-2">
+              Por padrão o cliente vê tudo (exceto o admin). Marque abaixo só o que esse cliente deve ver — o resto fica oculto.
+            </p>
+
+            <CheckboxGroup
+              title="Filtros disponíveis"
+              hint="Filtros desmarcados somem da barra de filtros para esse cliente."
+              options={FILTER_OPTIONS}
+              hiddenIds={hiddenFilters}
+              onToggle={(id: FilterKey) => setHiddenFilters((prev) => toggleInSet(prev, id))}
+            />
+
+            <CheckboxGroup
+              title="Colunas da tabela de campanhas"
+              hint="Colunas desmarcadas não aparecem na tabela nem no seletor de colunas."
+              options={CAMPAIGN_COLUMN_OPTIONS}
+              hiddenIds={hiddenColumns}
+              onToggle={(id: CampaignColumnId) => setHiddenColumns((prev) => toggleInSet(prev, id))}
+            />
+
+            <CheckboxGroup
+              title="Seções do menu"
+              hint="Seções desmarcadas somem do menu lateral. 'Visão geral' fica sempre disponível."
+              options={HIDEABLE_SECTION_OPTIONS}
+              hiddenIds={hiddenSections}
+              onToggle={(id: HideableSectionId) => setHiddenSections((prev) => toggleInSet(prev, id))}
+            />
+          </details>
+
           {error && (
             <p className="mt-4 text-sm text-intel-red" role="alert">
               {error}
@@ -227,6 +339,9 @@ export default function AdminClientsPanel({
                 <th className="text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3">
                   Contas
                 </th>
+                <th className="text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3">
+                  Permissões
+                </th>
                 <th className="text-right text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3" />
               </tr>
             </thead>
@@ -238,6 +353,9 @@ export default function AdminClientsPanel({
                   </td>
                   <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
                     {accountNames(client.accountIds, accounts)}
+                  </td>
+                  <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
+                    {permissionsSummary(client.permissions)}
                   </td>
                   <td className="py-2.5 px-3 text-right border-t border-white/[0.05]">
                     <button

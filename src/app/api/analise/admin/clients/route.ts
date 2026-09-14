@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
 import { createClientAccess, listClientAccess } from "@/lib/client-access";
+import { sanitizePermissions } from "@/lib/client-permissions";
 import { DbConfigError } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
   }
 
-  let body: { label?: unknown; accountIds?: unknown };
+  let body: { label?: unknown; accountIds?: unknown; permissions?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
   const accountIds = Array.isArray(body.accountIds)
     ? body.accountIds.filter((id): id is string => typeof id === "string")
     : [];
+  const permissions = sanitizePermissions(body.permissions);
 
   if (!label) {
     return NextResponse.json({ error: "Informe o nome do cliente." }, { status: 400 });
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { id, password } = await createClientAccess(label, accountIds);
+    const { id, password } = await createClientAccess(label, accountIds, permissions);
     return NextResponse.json({ id, label, password });
   } catch (err) {
     if (err instanceof DbConfigError) {
