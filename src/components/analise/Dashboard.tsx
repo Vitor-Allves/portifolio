@@ -15,8 +15,9 @@ import KpiCard from "./KpiCard";
 import TrendChart, { type TrendMetric } from "./TrendChart";
 import SpendDistributionChart from "./SpendDistributionChart";
 import RankingChart from "./RankingChart";
-import AudienceBreakdown from "./AudienceBreakdown";
+import DemographicAnalysis from "./DemographicAnalysis";
 import CampaignsTable from "./CampaignsTable";
+import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
 import StrategicInsightsCompact from "./StrategicInsightsCompact";
 import ReportsPanel from "./ReportsPanel";
@@ -238,6 +239,47 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
   const filteredAudience = useMemo(
     () => data.audience.filter((a) => accountIds.has(a.accountId)),
     [data.audience, accountIds]
+  );
+
+  // Flat, cross-campaign views for the Campanhas page's "Conjuntos" and
+  // "Melhores anúncios" sections — campaign/account names aren't on
+  // AdSetInsight/AdInsight themselves, so they're joined in here once
+  // rather than repeated per row inside RankedEntityTable.
+  const campaignNameById = useMemo(() => new Map(data.campaigns.map((c) => [c.campaignId, c.campaignName])), [data.campaigns]);
+  const accountNameById = useMemo(() => new Map(data.accounts.map((a) => [a.id, a.name])), [data.accounts]);
+
+  const adSetRows: RankedRow[] = useMemo(
+    () =>
+      filteredAdSets.map((a) => ({
+        id: a.adSetId,
+        name: a.adSetName,
+        campaignName: campaignNameById.get(a.campaignId) ?? "—",
+        accountName: accountNameById.get(a.accountId) ?? "—",
+        status: a.status,
+        spend: a.spend,
+        impressions: a.impressions,
+        clicks: a.clicks,
+        linkClicks: a.linkClicks,
+        reach: a.reach,
+      })),
+    [filteredAdSets, campaignNameById, accountNameById]
+  );
+
+  const adRows: RankedRow[] = useMemo(
+    () =>
+      filteredAds.map((ad) => ({
+        id: ad.adId,
+        name: ad.adName,
+        campaignName: campaignNameById.get(ad.campaignId) ?? "—",
+        accountName: accountNameById.get(ad.accountId) ?? "—",
+        status: ad.status,
+        spend: ad.spend,
+        impressions: ad.impressions,
+        clicks: ad.clicks,
+        linkClicks: ad.linkClicks,
+        reach: ad.reach,
+      })),
+    [filteredAds, campaignNameById, accountNameById]
   );
 
   // Comparison is scoped only by the client (account) filter — never by the
@@ -519,7 +561,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
               <div className={`transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-9 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                       {kpis.map((kpi, i) => (
                         <m.div key={kpi.label} custom={i} initial="hidden" animate="visible" variants={fadeUp}>
                           <KpiCard {...kpi} />
@@ -561,20 +603,39 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                       </m.div>
                     </div>
 
-                    <m.div custom={11} initial="hidden" animate="visible" variants={fadeUp}>
-                      <AudienceBreakdown audience={filteredAudience} />
-                    </m.div>
+                    <div className="grid lg:grid-cols-2 gap-4">
+                      <m.div custom={11} initial="hidden" animate="visible" variants={fadeUp}>
+                        <DemographicAnalysis
+                          title="Público por idade"
+                          dimension="age"
+                          audience={filteredAudience}
+                          barColor="var(--color-intel-cyan)"
+                        />
+                      </m.div>
+                      <m.div custom={12} initial="hidden" animate="visible" variants={fadeUp}>
+                        <DemographicAnalysis
+                          title="Público por gênero"
+                          dimension="gender"
+                          audience={filteredAudience}
+                          barColor="var(--color-intel-violet)"
+                        />
+                      </m.div>
+                    </div>
                   </div>
                 )}
 
                 {section === "campaigns" && !hiddenSectionIds.has("campaigns") && (
-                  <CampaignsTable
-                    campaigns={filteredCampaigns}
-                    adSets={filteredAdSets}
-                    ads={filteredAds}
-                    comparisonByCampaignId={comparisonByCampaignId}
-                    hiddenColumnIds={hiddenColumnIds}
-                  />
+                  <div className="space-y-5">
+                    <CampaignsTable
+                      campaigns={filteredCampaigns}
+                      adSets={filteredAdSets}
+                      ads={filteredAds}
+                      comparisonByCampaignId={comparisonByCampaignId}
+                      hiddenColumnIds={hiddenColumnIds}
+                    />
+                    <RankedEntityTable title="Conjuntos" nameLabel="Conjunto" rows={adSetRows} csvFilePrefix="conjuntos" />
+                    <RankedEntityTable title="Melhores anúncios" nameLabel="Anúncio" rows={adRows} csvFilePrefix="anuncios" />
+                  </div>
                 )}
 
                 {section === "insights" && !hiddenSectionIds.has("insights") && (

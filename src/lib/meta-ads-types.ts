@@ -143,6 +143,7 @@ export type AudienceSegment = {
   spend: number;
   impressions: number;
   clicks: number;
+  linkClicks: number;
   reach: number;
 };
 

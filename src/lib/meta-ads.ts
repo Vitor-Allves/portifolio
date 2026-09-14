@@ -589,6 +589,7 @@ type AudienceInsightNode = {
   spend?: string;
   impressions?: string;
   clicks?: string;
+  inline_link_clicks?: string;
   reach?: string;
 };
 
@@ -608,7 +609,7 @@ async function getAccountDemographics(
       level: "account",
       ...periodParams(period),
       breakdowns: "age,gender",
-      fields: "spend,impressions,clicks,reach",
+      fields: "spend,impressions,clicks,inline_link_clicks,reach",
       limit: "500",
     },
     accessToken
@@ -621,6 +622,7 @@ async function getAccountDemographics(
     spend: Number(row.spend ?? 0),
     impressions: Number(row.impressions ?? 0),
     clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
     reach: Number(row.reach ?? 0),
   }));
 }
