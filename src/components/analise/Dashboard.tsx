@@ -194,6 +194,23 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
     [comparisonCampaigns]
   );
 
+  // Reach is only ever summed per account, never per campaign or per day —
+  // Meta already deduplicates it within one account-level call for the whole
+  // period, and re-summing a finer breakdown would count the same person
+  // again for every campaign or day that reached them.
+  const totalReach = useMemo(
+    () =>
+      data.accountReach.filter((r) => accountIds.has(r.accountId)).reduce((sum, r) => sum + r.reach, 0),
+    [data.accountReach, accountIds]
+  );
+  const comparisonReach = useMemo(
+    () =>
+      data.comparison
+        ? data.comparison.accountReach.filter((r) => accountIds.has(r.accountId)).reduce((sum, r) => sum + r.reach, 0)
+        : null,
+    [data.comparison, accountIds]
+  );
+
   const totalCtr = ctr(totals);
   const totalCpc = cpc(totals);
   const totalCpm = cpm(totals);
@@ -290,6 +307,13 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
       sparkline: sparklineFor(dailyFiltered, "cpm"),
       tooltip: "CPM = investimento total ÷ total de impressões × 1.000.",
     },
+    {
+      label: "Alcance",
+      value: formatInteger(totalReach),
+      delta: compare ? (comparisonReach !== null ? pctChange(totalReach, comparisonReach) : null) : undefined,
+      tooltip:
+        "Pessoas únicas estimadas pela Meta, somadas entre as contas selecionadas. É deduplicado dentro de cada conta, mas não entre contas diferentes — a mesma pessoa pode contar mais de uma vez se aparecer em mais de uma conta selecionada.",
+    },
   ];
 
   const trendCurrent = dailyFiltered;
@@ -371,7 +395,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
               <div className={`transition-opacity duration-300 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
                       {kpis.map((kpi, i) => (
                         <m.div key={kpi.label} custom={i} initial="hidden" animate="visible" variants={fadeUp}>
                           <KpiCard {...kpi} />
