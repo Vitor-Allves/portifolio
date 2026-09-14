@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session";
+import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
 import { getDashboardData, MetaConfigError, MetaApiError } from "@/lib/meta-ads";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
@@ -18,7 +18,7 @@ export default async function AnalisePage() {
   // Defense in depth: middleware already gates this route, but a page-level
   // check keeps it safe even if the middleware matcher is ever changed.
   const token = (await cookies()).get(ANALISE_SESSION_COOKIE)?.value;
-  if (!(await verifySessionToken(token))) {
+  if (!verifySessionToken(token)) {
     redirect("/analise/login");
   }
 
