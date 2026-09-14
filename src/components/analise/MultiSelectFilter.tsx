@@ -1,24 +1,36 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { MetaAdAccount } from "@/lib/meta-ads-types";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-type ClientFilterProps = {
-  accounts: MetaAdAccount[];
+export type FilterOption = { id: string; label: string };
+
+type MultiSelectFilterProps = {
+  placeholder: string;
+  allLabel: string;
+  options: FilterOption[];
   selectedIds: Set<string>;
   onChange: (next: Set<string>) => void;
+  searchable?: boolean;
+  disabled?: boolean;
 };
 
-export default function ClientFilter({ accounts, selectedIds, onChange }: ClientFilterProps) {
+export default function MultiSelectFilter({
+  placeholder,
+  allLabel,
+  options,
+  selectedIds,
+  onChange,
+  searchable,
+  disabled,
+}: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     function handlePointerDown(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     }
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -31,6 +43,12 @@ export default function ClientFilter({ accounts, selectedIds, onChange }: Client
     };
   }, [open]);
 
+  const filteredOptions = useMemo(() => {
+    if (!query.trim()) return options;
+    const q = query.toLowerCase();
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
   function toggle(id: string) {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id);
@@ -39,18 +57,18 @@ export default function ClientFilter({ accounts, selectedIds, onChange }: Client
   }
 
   function selectAll() {
-    onChange(new Set(accounts.map((a) => a.id)));
+    onChange(new Set(options.map((o) => o.id)));
   }
 
-  const allSelected = accounts.length > 0 && selectedIds.size === accounts.length;
+  const allSelected = options.length > 0 && selectedIds.size === options.length;
   const label =
-    accounts.length === 0
-      ? "Nenhum cliente"
+    options.length === 0
+      ? placeholder
       : allSelected
-        ? "Todos os clientes"
+        ? allLabel
         : selectedIds.size === 0
-          ? "Nenhum cliente selecionado"
-          : `${selectedIds.size} de ${accounts.length} clientes`;
+          ? "Nenhum selecionado"
+          : `${selectedIds.size} de ${options.length}`;
 
   return (
     <div className="relative" ref={rootRef}>
@@ -59,10 +77,10 @@ export default function ClientFilter({ accounts, selectedIds, onChange }: Client
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="listbox"
-        disabled={accounts.length === 0}
-        className="flex items-center gap-2 text-[13px] tracking-[0.02em] px-4 py-2 rounded-full border border-navy-700/15 bg-white text-navy-700 hover:border-navy-600/40 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+        disabled={disabled || options.length === 0}
+        className="flex items-center gap-2 text-[13px] px-4 py-2 rounded-full border border-navy-700/15 bg-white text-navy-700 hover:border-navy-600/40 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        <span>{label}</span>
+        <span>{allSelected || options.length === 0 ? placeholder : label}</span>
         <svg
           width="10"
           height="6"
@@ -79,8 +97,19 @@ export default function ClientFilter({ accounts, selectedIds, onChange }: Client
         <div
           role="listbox"
           aria-multiselectable="true"
-          className="absolute z-20 mt-2 w-64 rounded-xl border border-navy-700/10 bg-white shadow-lg py-2"
+          className="absolute z-30 mt-2 w-64 rounded-xl border border-navy-700/10 bg-white shadow-lg py-2"
         >
+          {searchable && (
+            <div className="px-3 pb-2">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar..."
+                className="w-full rounded-lg border border-navy-700/15 px-3 py-1.5 text-[13px] focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+          )}
           <button
             type="button"
             onClick={selectAll}
@@ -90,15 +119,18 @@ export default function ClientFilter({ accounts, selectedIds, onChange }: Client
           </button>
           <div className="my-1 border-t border-navy-700/8" />
           <ul className="max-h-64 overflow-y-auto">
-            {accounts.map((account) => {
-              const checked = selectedIds.has(account.id);
+            {filteredOptions.length === 0 && (
+              <li className="px-4 py-2 text-[13px] text-navy-500">Nenhum resultado.</li>
+            )}
+            {filteredOptions.map((option) => {
+              const checked = selectedIds.has(option.id);
               return (
-                <li key={account.id}>
+                <li key={option.id}>
                   <button
                     type="button"
                     role="option"
                     aria-selected={checked}
-                    onClick={() => toggle(account.id)}
+                    onClick={() => toggle(option.id)}
                     className="w-full flex items-center gap-3 text-left px-4 py-2 text-[13px] text-navy-800 hover:bg-silver-100 transition-colors"
                   >
                     <span
@@ -119,7 +151,7 @@ export default function ClientFilter({ accounts, selectedIds, onChange }: Client
                         </svg>
                       )}
                     </span>
-                    <span className="truncate">{account.name}</span>
+                    <span className="truncate">{option.label}</span>
                   </button>
                 </li>
               );

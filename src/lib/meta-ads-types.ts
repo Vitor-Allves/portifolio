@@ -50,27 +50,58 @@ export type MetaAdAccount = {
   name: string;
 };
 
+// Meta's campaign `effective_status` has more values (PENDING_REVIEW,
+// WITH_ISSUES, CAMPAIGN_PAUSED, ...) — collapsed here to the ones that are
+// meaningful for filtering; anything else falls back to "other" rather than
+// being silently mislabeled.
+export const CAMPAIGN_STATUSES = ["ACTIVE", "PAUSED", "DELETED", "ARCHIVED", "OTHER"] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
 export type CampaignInsight = {
   campaignId: string;
   campaignName: string;
   accountId: string;
   accountName: string;
+  objective: string | null; // Meta's raw objective (e.g. "OUTCOME_TRAFFIC"), null when unavailable
+  status: CampaignStatus;
   spend: number;
   impressions: number;
-  clicks: number;
-  ctr: number;
-  cpc: number;
+  clicks: number; // Meta's "clicks" field — every click type, not just link clicks
+  linkClicks: number; // Meta's "inline_link_clicks" — clicks to the destination link only
   reach: number;
 };
 
 // Tagged per account (not pre-summed) so the client can re-aggregate
 // whichever subset of accounts the client filter has selected.
-export type DailySpend = { accountId: string; date: string; spend: number };
+export type DailyMetrics = {
+  accountId: string;
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+};
+
+export type AccountRef = { id: string; name: string };
 
 export type DashboardData = {
   period: Period;
+  // The concrete since/until this period resolved to — presets are
+  // resolved server-side so the header/labels can show exact dates too.
+  resolvedRange: DateRange;
   accounts: MetaAdAccount[];
   campaigns: CampaignInsight[];
-  dailySpend: DailySpend[];
+  daily: DailyMetrics[];
+  // Same shape as the primary period, for the "compare to previous period"
+  // filter — omitted entirely when comparison wasn't requested.
+  comparison: {
+    period: DateRange;
+    campaigns: CampaignInsight[];
+    daily: DailyMetrics[];
+  } | null;
+  // Accounts that failed to load for this request (transient Meta error,
+  // token not yet propagated, ...) — surfaced so the UI can distinguish
+  // "genuinely zero" from "we couldn't fetch this", instead of silently
+  // dropping them like a zero-result account.
+  partialAccounts: AccountRef[];
   generatedAt: string;
 };

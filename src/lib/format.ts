@@ -26,6 +26,11 @@ export function formatPercent(value: number, digits = 2): string {
   return `${value.toFixed(digits)}%`;
 }
 
+export function formatSignedPercent(value: number, digits = 1): string {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}%`;
+}
+
 export function formatShortDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);
   if (!year || !month || !day) return isoDate;

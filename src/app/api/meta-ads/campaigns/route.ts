@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
   if ("error" in period) {
     return NextResponse.json({ error: period.error }, { status: 400 });
   }
+  const compare = req.nextUrl.searchParams.get("compare") === "1";
 
   // Middleware already requires a valid session to reach this route — this
   // re-check only decides the scope (which accounts this session may see),
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
   const allowedAccountIds = scope?.kind === "client" ? scope.accountIds : undefined;
 
   try {
-    const data = await getDashboardData(period, allowedAccountIds);
+    const data = await getDashboardData(period, allowedAccountIds, { compare });
     return NextResponse.json(data);
   } catch (err) {
     console.error("[api/meta-ads/campaigns]", err);
