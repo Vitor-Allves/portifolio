@@ -65,6 +65,39 @@ Depois de configurar, faça um novo deploy (ou redeploy) para que as
 variáveis entrem em vigor. Sem elas, `/analise` mostra uma mensagem de
 "integração ainda não configurada" em vez de quebrar.
 
+## 6. Trazer contas de clientes que ficam em outras Empresas (Business Manager)
+
+Se a agência usa **uma Empresa separada por cliente** no Business Manager
+(comum quando cada cliente tem seu próprio Portfólio Empresarial na Meta,
+em vez de todas as contas ficarem dentro de uma única Empresa da agência),
+o token do passo 3 **não enxerga essas contas automaticamente** — um
+usuário do sistema só acessa ativos da Empresa onde ele foi criado, mais os
+que essa Empresa recebeu como cliente. Isso não é um limite do dashboard,
+é assim que a Meta isola dados entre Empresas diferentes.
+
+O código já busca tanto contas próprias quanto contas de clientes
+compartilhadas (`owned_ad_accounts` e `client_ad_accounts`), então basta
+compartilhar a conta — nenhuma mudança de código ou novo deploy é
+necessária, ela aparece no próximo carregamento do dashboard (o cache dura
+até 15 minutos).
+
+Para cada cliente cujas campanhas devem aparecer no `/analise`:
+
+1. Entre no Business Manager **do cliente** em
+   [business.facebook.com](https://business.facebook.com) (troque de
+   portfólio empresarial no seletor, no canto superior esquerdo).
+2. Vá em **Configurações do negócio → Contas → Contas de anúncio**.
+3. Selecione a conta de anúncios → **Atribuir parceiro** (ou "Compartilhar
+   com outra empresa").
+4. Informe o **ID da Empresa** usada no passo 4 acima (a que gerou o
+   token) — é a mesma configurada em `META_BUSINESS_ID`.
+5. Conceda a permissão **Visualizar desempenho** (somente leitura).
+
+Se o dashboard continuar sem mostrar uma conta depois disso, verifique se
+ela não ficou presa no filtro de contas desativadas/fechadas — o código só
+ignora contas com status `DISABLED` ou `CLOSED`, todo o resto (incluindo
+período de carência, pendente de acerto, etc.) é considerado.
+
 ## Observações importantes
 
 - **Revisão do app / verificação de negócio.** Para ler dados de contas de
