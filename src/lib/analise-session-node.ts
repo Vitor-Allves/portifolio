@@ -12,10 +12,13 @@
 // there is exactly one token format, just two ways of computing it.
 
 import { createHmac, timingSafeEqual } from "crypto";
+import type { SessionScope } from "./session-scope";
 
 export const ANALISE_SESSION_COOKIE = "legado_analise_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
 export const SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;
+
+type TokenPayload = { exp: number; scope: SessionScope };
 
 function requireSecret(): string {
   const secret = process.env.ANALYTICS_SESSION_SECRET;
@@ -31,27 +34,32 @@ function sign(payload: string): string {
   return createHmac("sha256", requireSecret()).update(payload).digest("base64url");
 }
 
-/** Creates a signed `expiresAt.signature` token. Throws if the secret env var is missing. */
-export function createSessionToken(): string {
-  const expiresAt = String(Date.now() + SESSION_TTL_MS);
-  return `${expiresAt}.${sign(expiresAt)}`;
+/** Creates a signed `payload.signature` token. Throws if the secret env var is missing. */
+export function createSessionToken(scope: SessionScope): string {
+  const payload: TokenPayload = { exp: Date.now() + SESSION_TTL_MS, scope };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${payloadB64}.${sign(payloadB64)}`;
 }
 
-/** Verifies signature + expiry. Never throws — any problem (including a missing secret) is "not valid". */
-export function verifySessionToken(token: string | undefined | null): boolean {
-  if (!token) return false;
-  const [expiresAtRaw, signatureB64] = token.split(".");
-  if (!expiresAtRaw || !signatureB64) return false;
-
-  const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
+/** Verifies signature + expiry and returns the session's scope, or null if invalid/expired/missing. */
+export function verifySessionToken(token: string | undefined | null): SessionScope | null {
+  if (!token) return null;
+  const [payloadB64, signatureB64] = token.split(".");
+  if (!payloadB64 || !signatureB64) return null;
 
   try {
-    const expected = Buffer.from(sign(expiresAtRaw));
+    const expected = Buffer.from(sign(payloadB64));
     const actual = Buffer.from(signatureB64);
-    if (expected.length !== actual.length) return false;
-    return timingSafeEqual(expected, actual);
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+      return null;
+    }
+
+    const payload = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8")
+    ) as TokenPayload;
+    if (!Number.isFinite(payload.exp) || Date.now() > payload.exp) return null;
+    return payload.scope;
   } catch {
-    return false;
+    return null;
   }
 }

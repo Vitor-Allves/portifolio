@@ -18,14 +18,18 @@ export default async function AnalisePage() {
   // Defense in depth: middleware already gates this route, but a page-level
   // check keeps it safe even if the middleware matcher is ever changed.
   const token = (await cookies()).get(ANALISE_SESSION_COOKIE)?.value;
-  if (!verifySessionToken(token)) {
+  const scope = verifySessionToken(token);
+  if (!scope) {
     redirect("/analise/login");
   }
+
+  const allowedAccountIds = scope.kind === "client" ? scope.accountIds : undefined;
+  const clientLabel = scope.kind === "client" ? scope.label : null;
 
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
   let loadError: unknown = null;
   try {
-    data = await getDashboardData(DEFAULT_PRESET);
+    data = await getDashboardData(DEFAULT_PRESET, allowedAccountIds);
   } catch (err) {
     console.error("[analise] failed to load dashboard data", err);
     loadError = err;
@@ -33,7 +37,7 @@ export default async function AnalisePage() {
 
   return (
     <main className="min-h-screen bg-ice-50">
-      <AnaliseHeader />
+      <AnaliseHeader isAdmin={scope.kind === "admin"} clientLabel={clientLabel} />
       {data ? (
         <Dashboard initialData={data} />
       ) : (

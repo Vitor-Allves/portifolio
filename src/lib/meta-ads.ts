@@ -88,7 +88,8 @@ async function graphGet<T>(path: string, params: Record<string, string>): Promis
 
 type AdAccountNode = { id: string; name?: string; account_status?: number };
 
-async function listAdAccounts(): Promise<MetaAdAccount[]> {
+/** Lists every ad account the configured Business Manager owns or manages, for admin UI use (e.g. picking which accounts a new client credential should see). */
+export async function listAdAccounts(): Promise<MetaAdAccount[]> {
   const { businessId } = requireConfig();
 
   const data = await graphGet<{
@@ -188,8 +189,15 @@ async function getAccountDailySpend(
  * caller to render a friendly message from — it never returns partial or
  * fabricated numbers.
  */
-export async function getDashboardData(datePreset: DatePreset): Promise<DashboardData> {
-  const accounts = await listAdAccounts();
+export async function getDashboardData(
+  datePreset: DatePreset,
+  allowedAccountIds?: string[]
+): Promise<DashboardData> {
+  let accounts = await listAdAccounts();
+  if (allowedAccountIds) {
+    const allowed = new Set(allowedAccountIds);
+    accounts = accounts.filter((a) => allowed.has(a.id));
+  }
 
   if (accounts.length === 0) {
     return {

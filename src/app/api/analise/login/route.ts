@@ -6,6 +6,8 @@ import {
   SESSION_MAX_AGE_SECONDS,
   createSessionToken,
 } from "@/lib/analise-session-node";
+import { matchClientPassword } from "@/lib/client-access";
+import type { SessionScope } from "@/lib/session-scope";
 
 export const runtime = "nodejs";
 
@@ -27,6 +29,27 @@ function clientKey(req: NextRequest): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 }
 
+async function resolveScope(password: string): Promise<SessionScope | null> {
+  const adminPassword = process.env.ANALYTICS_DASHBOARD_PASSWORD;
+  if (adminPassword && safeEqual(password, adminPassword)) {
+    return { kind: "admin" };
+  }
+
+  // Client credentials live in Postgres (see docs/client-access-setup.md).
+  // Not configuring that database yet is a valid state — it just means no
+  // client logins exist, not a login-system-wide failure.
+  try {
+    const match = await matchClientPassword(password);
+    if (match) {
+      return { kind: "client", accountIds: match.accountIds, label: match.label };
+    }
+  } catch (err) {
+    console.error("[analise/login] client credential lookup failed", err);
+  }
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const key = clientKey(req);
   if (isRateLimited(`analise-login:${key}`)) {
@@ -34,12 +57,6 @@ export async function POST(req: NextRequest) {
       { error: "Muitas tentativas. Aguarde um minuto e tente novamente." },
       { status: 429 }
     );
-  }
-
-  const expectedPassword = process.env.ANALYTICS_DASHBOARD_PASSWORD;
-  if (!expectedPassword) {
-    console.error("[analise/login] ANALYTICS_DASHBOARD_PASSWORD is not configured");
-    return NextResponse.json({ error: GENERIC_ERROR }, { status: 503 });
   }
 
   let password: unknown;
@@ -50,13 +67,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   }
 
-  if (typeof password !== "string" || !safeEqual(password, expectedPassword)) {
+  if (typeof password !== "string" || password.length === 0) {
+    return NextResponse.json({ error: "Senha incorreta." }, { status: 401 });
+  }
+
+  const scope = await resolveScope(password);
+  if (!scope) {
     return NextResponse.json({ error: "Senha incorreta." }, { status: 401 });
   }
 
   let token: string;
   try {
-    token = createSessionToken();
+    token = createSessionToken(scope);
   } catch (err) {
     console.error("[analise/login] failed to create session token", err);
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 503 });

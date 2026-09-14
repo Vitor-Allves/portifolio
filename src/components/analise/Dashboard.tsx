@@ -88,11 +88,13 @@ export default function Dashboard({ initialData }: DashboardProps) {
     <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
         <DateRangeFilter value={datePreset} onChange={handleDatePresetChange} disabled={isPending} />
-        <ClientFilter
-          accounts={data.accounts}
-          selectedIds={selectedAccountIds}
-          onChange={setSelectedAccountIds}
-        />
+        {data.accounts.length > 1 && (
+          <ClientFilter
+            accounts={data.accounts}
+            selectedIds={selectedAccountIds}
+            onChange={setSelectedAccountIds}
+          />
+        )}
       </div>
 
       {error && (
