@@ -1,10 +1,17 @@
-// Signed, stateless session token for the /analise dashboard's shared-password
-// gate. Built on Web Crypto (not Node's `crypto` module) so the exact same
-// code runs in both the middleware (edge runtime) and the login route
-// (nodejs runtime) without a runtime-specific branch.
+// Signed, stateless session token for the /analise dashboard's login gate.
+// Built on Web Crypto (not Node's `crypto` module) so the exact same code
+// runs in both the middleware (edge runtime) and the login route (nodejs
+// runtime) without a runtime-specific branch. The token carries the
+// session's scope (admin = everything, or a client restricted to specific
+// ad accounts) so the middleware can enforce admin-only routes without a
+// database round trip on every request.
+
+import type { SessionScope } from "./session-scope";
 
 export const ANALISE_SESSION_COOKIE = "legado_analise_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
+
+type TokenPayload = { exp: number; scope: SessionScope };
 
 function requireSecret(): string {
   const secret = process.env.ANALYTICS_SESSION_SECRET;
@@ -26,38 +33,35 @@ async function getHmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-function toBase64Url(bytes: ArrayBuffer): string {
-  const binary = String.fromCharCode(...new Uint8Array(bytes));
+function bytesToBase64Url(bytes: Uint8Array): string {
+  const binary = String.fromCharCode(...bytes);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function fromBase64Url(value: string): Uint8Array {
+function base64UrlToBytes(value: string): Uint8Array {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
 
-/** Creates a signed `expiresAt.signature` token. Throws if the secret env var is missing. */
-export async function createSessionToken(): Promise<string> {
+/** Creates a signed `payload.signature` token. Throws if the secret env var is missing. */
+export async function createSessionToken(scope: SessionScope): Promise<string> {
   const secret = requireSecret();
-  const expiresAt = String(Date.now() + SESSION_TTL_MS);
+  const payload: TokenPayload = { exp: Date.now() + SESSION_TTL_MS, scope };
+  const payloadB64 = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+
   const key = await getHmacKey(secret);
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(expiresAt)
-  );
-  return `${expiresAt}.${toBase64Url(signature)}`;
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
+  return `${payloadB64}.${bytesToBase64Url(new Uint8Array(signature))}`;
 }
 
-/** Verifies signature + expiry. Never throws — any problem (including a missing secret) is "not valid". */
-export async function verifySessionToken(token: string | undefined | null): Promise<boolean> {
-  if (!token) return false;
-  const [expiresAtRaw, signatureB64] = token.split(".");
-  if (!expiresAtRaw || !signatureB64) return false;
-
-  const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
+/** Verifies signature + expiry and returns the session's scope, or null if invalid/expired/missing. */
+export async function verifySessionToken(
+  token: string | undefined | null
+): Promise<SessionScope | null> {
+  if (!token) return null;
+  const [payloadB64, signatureB64] = token.split(".");
+  if (!payloadB64 || !signatureB64) return null;
 
   try {
     const secret = requireSecret();
@@ -66,15 +70,22 @@ export async function verifySessionToken(token: string | undefined | null): Prom
     // which SubtleCrypto's BufferSource type doesn't accept — the buffer
     // is always a plain ArrayBuffer at runtime (TextEncoder/atob never
     // produce a SharedArrayBuffer), so this cast is safe.
-    const signature = fromBase64Url(signatureB64) as unknown as BufferSource;
-    return await crypto.subtle.verify(
+    const signature = base64UrlToBytes(signatureB64) as unknown as BufferSource;
+    const valid = await crypto.subtle.verify(
       "HMAC",
       key,
       signature,
-      new TextEncoder().encode(expiresAtRaw)
+      new TextEncoder().encode(payloadB64)
     );
+    if (!valid) return null;
+
+    const payload = JSON.parse(
+      new TextDecoder().decode(base64UrlToBytes(payloadB64))
+    ) as TokenPayload;
+    if (!Number.isFinite(payload.exp) || Date.now() > payload.exp) return null;
+    return payload.scope;
   } catch {
-    return false;
+    return null;
   }
 }
 
