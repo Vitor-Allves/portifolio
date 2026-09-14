@@ -5,7 +5,6 @@ import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-sessio
 import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
-import AnaliseHeader from "@/components/analise/AnaliseHeader";
 
 export const metadata: Metadata = {
   title: "Análise de Campanhas",
@@ -25,6 +24,7 @@ export default async function AnalisePage() {
 
   const allowedAccountIds = scope.kind === "client" ? scope.accountIds : undefined;
   const clientLabel = scope.kind === "client" ? scope.label : null;
+  const dbConfigured = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
   let loadError: unknown = null;
@@ -35,17 +35,23 @@ export default async function AnalisePage() {
     loadError = err;
   }
 
-  return (
-    <main className="min-h-screen bg-ice-50">
-      <AnaliseHeader isAdmin={scope.kind === "admin"} clientLabel={clientLabel} />
-      {data ? (
-        <Dashboard initialData={data} />
-      ) : (
+  if (!data) {
+    return (
+      <main className="min-h-screen bg-ice-50">
         <NotConfigured
           reason={loadError instanceof MetaConfigError ? "config" : "api"}
           detail={loadError instanceof MetaApiError ? loadError.message : undefined}
         />
-      )}
-    </main>
+      </main>
+    );
+  }
+
+  return (
+    <Dashboard
+      initialData={data}
+      isAdmin={scope.kind === "admin"}
+      clientLabel={clientLabel}
+      dbConfigured={dbConfigured}
+    />
   );
 }
