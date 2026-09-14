@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { SITE_URL } from "@/lib/site-config";
 import MotionProvider from "@/components/MotionProvider";
+import WhatsAppFloatButton from "@/components/WhatsAppFloatButton";
 
 const cormorant = Cormorant_Garamond({
   variable: "--font-cormorant",
@@ -112,6 +113,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-ice-50 text-navy-950">
         <MotionProvider>{children}</MotionProvider>
+        <WhatsAppFloatButton />
         <Script
           id="organization-schema"
           type="application/ld+json"
