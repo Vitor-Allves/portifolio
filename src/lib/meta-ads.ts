@@ -25,6 +25,8 @@ import type {
   AccountRef,
   AccountReach,
   AdSetInsight,
+  AdInsight,
+  AudienceSegment,
 } from "./meta-ads-types";
 export {
   DATE_PRESETS,
@@ -44,6 +46,8 @@ export type {
   DailyMetrics,
   DashboardData,
   AdSetInsight,
+  AdInsight,
+  AudienceSegment,
 };
 
 export type DashboardOptions = { compare?: boolean };
@@ -453,7 +457,86 @@ async function getAccountAdSetInsights(
   });
 }
 
-type DailyInsightNode = { date_start?: string; spend?: string; impressions?: string; clicks?: string };
+type AdMetaNode = { id?: string; name?: string; effective_status?: string };
+type AdMeta = { name: string; status: CampaignStatus };
+
+// Same pattern again, one level down: an ad's name/status live on the ad
+// node itself, fetched once per account (every ad across every ad set),
+// not once per ad set.
+async function getAdMeta(account: MetaAdAccount, accessToken: string): Promise<Map<string, AdMeta>> {
+  const data = await graphGet<{ data: AdMetaNode[] }>(
+    `/${account.id}/ads`,
+    { fields: "id,name,effective_status", limit: "500" },
+    accessToken
+  );
+
+  const map = new Map<string, AdMeta>();
+  for (const row of data.data ?? []) {
+    if (!row.id) continue;
+    map.set(row.id, { name: row.name ?? "Anúncio sem nome", status: normalizeStatus(row.effective_status) });
+  }
+  return map;
+}
+
+type AdInsightNode = {
+  ad_id?: string;
+  ad_name?: string;
+  adset_id?: string;
+  campaign_id?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  reach?: string;
+};
+
+// One call per account (level: "ad") — every ad across every ad set and
+// campaign in the account in one response, same shape as the campaign- and
+// adset-level insight calls above. Lets the UI rank "which ad is actually
+// performing" inside a campaign or ad set without a call per ad set.
+async function getAccountAdInsights(
+  account: MetaAdAccount,
+  period: Period,
+  metaByAdId: Map<string, AdMeta>,
+  accessToken: string
+): Promise<AdInsight[]> {
+  const data = await graphGet<{ data: AdInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "ad",
+      ...periodParams(period),
+      fields: "ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => {
+    const meta = metaByAdId.get(row.ad_id ?? "");
+    return {
+      adId: row.ad_id ?? "",
+      adName: row.ad_name ?? meta?.name ?? "Anúncio sem nome",
+      adSetId: row.adset_id ?? "",
+      campaignId: row.campaign_id ?? "",
+      accountId: account.id,
+      status: meta?.status ?? "OTHER",
+      spend: Number(row.spend ?? 0),
+      impressions: Number(row.impressions ?? 0),
+      clicks: Number(row.clicks ?? 0),
+      linkClicks: Number(row.inline_link_clicks ?? 0),
+      reach: Number(row.reach ?? 0),
+    };
+  });
+}
+
+type DailyInsightNode = {
+  date_start?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  reach?: string;
+};
 
 async function getAccountDailySeries(
   account: MetaAdAccount,
@@ -466,7 +549,7 @@ async function getAccountDailySeries(
       level: "account",
       ...periodParams(period),
       time_increment: "1",
-      fields: "spend,impressions,clicks",
+      fields: "spend,impressions,clicks,inline_link_clicks,reach",
       limit: "500",
     },
     accessToken
@@ -480,6 +563,8 @@ async function getAccountDailySeries(
       spend: Number(row.spend ?? 0),
       impressions: Number(row.impressions ?? 0),
       clicks: Number(row.clicks ?? 0),
+      linkClicks: Number(row.inline_link_clicks ?? 0),
+      reach: Number(row.reach ?? 0),
     }));
 }
 
@@ -498,22 +583,74 @@ async function getAccountReach(account: MetaAdAccount, period: Period, accessTok
   return Number(data.data?.[0]?.reach ?? 0);
 }
 
+type AudienceInsightNode = {
+  age?: string;
+  gender?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  reach?: string;
+};
+
+// One call per account, broken down by age+gender — unlike the plain
+// account-level reach above, these buckets are mutually exclusive (everyone
+// has exactly one age bracket and one gender), so summing across buckets
+// doesn't reintroduce the double-counting AccountReach's own comment warns
+// about; it's the intended way to read a Meta breakdown.
+async function getAccountDemographics(
+  account: MetaAdAccount,
+  period: Period,
+  accessToken: string
+): Promise<AudienceSegment[]> {
+  const data = await graphGet<{ data: AudienceInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "age,gender",
+      fields: "spend,impressions,clicks,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    age: row.age ?? "unknown",
+    gender: row.gender ?? "unknown",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
 async function fetchAccountPeriodData(
   account: MetaAdAccount,
   period: Period,
   accessToken: string
-): Promise<{ campaigns: CampaignInsight[]; adSets: AdSetInsight[]; daily: DailyMetrics[]; reach: number }> {
-  const [campaignMeta, adSetMeta] = await Promise.all([
+): Promise<{
+  campaigns: CampaignInsight[];
+  adSets: AdSetInsight[];
+  ads: AdInsight[];
+  daily: DailyMetrics[];
+  reach: number;
+  audience: AudienceSegment[];
+}> {
+  const [campaignMeta, adSetMeta, adMeta] = await Promise.all([
     getCampaignMeta(account, accessToken).catch(() => new Map<string, CampaignMeta>()),
     getAdSetMeta(account, accessToken).catch(() => new Map<string, AdSetMeta>()),
+    getAdMeta(account, accessToken).catch(() => new Map<string, AdMeta>()),
   ]);
-  const [campaigns, adSets, daily, reach] = await Promise.all([
+  const [campaigns, adSets, ads, daily, reach, audience] = await Promise.all([
     getAccountCampaignInsights(account, period, campaignMeta, accessToken),
     getAccountAdSetInsights(account, period, adSetMeta, accessToken),
+    getAccountAdInsights(account, period, adMeta, accessToken),
     getAccountDailySeries(account, period, accessToken),
     getAccountReach(account, period, accessToken),
+    getAccountDemographics(account, period, accessToken),
   ]);
-  return { campaigns, adSets, daily, reach };
+  return { campaigns, adSets, ads, daily, reach, audience };
 }
 
 async function fetchAllAccounts(
@@ -523,8 +660,10 @@ async function fetchAllAccounts(
 ): Promise<{
   campaigns: CampaignInsight[];
   adSets: AdSetInsight[];
+  ads: AdInsight[];
   daily: DailyMetrics[];
   accountReach: AccountReach[];
+  audience: AudienceSegment[];
   partialAccounts: AccountRef[];
 }> {
   const settled = await Promise.allSettled(
@@ -533,8 +672,10 @@ async function fetchAllAccounts(
 
   const campaigns: CampaignInsight[] = [];
   const adSets: AdSetInsight[] = [];
+  const ads: AdInsight[] = [];
   const daily: DailyMetrics[] = [];
   const accountReach: AccountReach[] = [];
+  const audience: AudienceSegment[] = [];
   const partialAccounts: AccountRef[] = [];
 
   settled.forEach((result, i) => {
@@ -549,15 +690,18 @@ async function fetchAllAccounts(
     }
     campaigns.push(...result.value.campaigns);
     adSets.push(...result.value.adSets);
+    ads.push(...result.value.ads);
     daily.push(...result.value.daily);
     accountReach.push({ accountId: accounts[i].id, reach: result.value.reach });
+    audience.push(...result.value.audience);
   });
 
   campaigns.sort((a, b) => b.spend - a.spend);
   adSets.sort((a, b) => b.spend - a.spend);
+  ads.sort((a, b) => b.spend - a.spend);
   daily.sort((a, b) => a.date.localeCompare(b.date));
 
-  return { campaigns, adSets, daily, accountReach, partialAccounts };
+  return { campaigns, adSets, ads, daily, accountReach, audience, partialAccounts };
 }
 
 /**
@@ -588,8 +732,10 @@ export async function getDashboardData(
       accounts: [],
       campaigns: [],
       adSets: [],
+      ads: [],
       daily: [],
       accountReach: [],
+      audience: [],
       comparison: null,
       partialAccounts: [],
       generatedAt: new Date().toISOString(),
@@ -617,8 +763,10 @@ export async function getDashboardData(
     accounts,
     campaigns: current.campaigns,
     adSets: current.adSets,
+    ads: current.ads,
     daily: current.daily,
     accountReach: current.accountReach,
+    audience: current.audience,
     comparison,
     partialAccounts: current.partialAccounts,
     generatedAt: new Date().toISOString(),

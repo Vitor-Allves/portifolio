@@ -3,7 +3,7 @@
 import type { CampaignInsight } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { ctr, cpc, cpm, sumTotals } from "@/lib/metrics";
+import { ctr, cpc, cpm, costPerConversation, sumTotals } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 
 type ReportsPanelProps = {
@@ -23,7 +23,8 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
       "Investimento",
       "Impressões",
       "Cliques (todos)",
-      "Conversão",
+      "Conversa iniciada",
+      "Custo por conversa iniciada",
       "CTR",
       "CPC",
       "CPM",
@@ -33,6 +34,7 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
       const cCtr = ctr(c);
       const cCpc = cpc(c);
       const cCpm = cpm(c);
+      const cCostPerConversation = costPerConversation(c);
       return [
         c.campaignName,
         c.accountName,
@@ -42,6 +44,7 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
         formatInteger(c.impressions),
         formatInteger(c.clicks),
         formatInteger(c.linkClicks),
+        cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
         cCtr === null ? "—" : formatPercent(cCtr),
         cCpc === null ? "—" : formatCurrencyBRL(cCpc),
         cCpm === null ? "—" : formatCurrencyBRL(cCpm),
@@ -59,18 +62,32 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
       byAccount.set(c.accountId, entry);
     }
 
-    const header = ["Conta", "Campanhas", "Investimento", "Impressões", "Cliques (todos)", "CTR", "CPC", "CPM"];
+    const header = [
+      "Conta",
+      "Campanhas",
+      "Investimento",
+      "Impressões",
+      "Cliques (todos)",
+      "Conversa iniciada",
+      "Custo por conversa iniciada",
+      "CTR",
+      "CPC",
+      "CPM",
+    ];
     const rows = [...byAccount.values()].map((entry) => {
       const totals = sumTotals(entry.campaigns);
       const cCtr = ctr(totals);
       const cCpc = cpc(totals);
       const cCpm = cpm(totals);
+      const cCostPerConversation = costPerConversation(totals);
       return [
         entry.name,
         String(entry.campaigns.length),
         formatCurrencyBRL(totals.spend),
         formatInteger(totals.impressions),
         formatInteger(totals.clicks),
+        formatInteger(totals.linkClicks),
+        cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
         cCtr === null ? "—" : formatPercent(cCtr),
         cCpc === null ? "—" : formatCurrencyBRL(cCpc),
         cCpm === null ? "—" : formatCurrencyBRL(cCpm),

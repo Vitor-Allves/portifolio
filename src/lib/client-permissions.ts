@@ -23,6 +23,7 @@ export type CampaignColumnId =
   | "impressions"
   | "clicks"
   | "linkClicks"
+  | "costPerConversation"
   | "ctr"
   | "cpc"
   | "cpm"
@@ -35,7 +36,8 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "spend", label: "Investimento" },
   { id: "impressions", label: "Impressões" },
   { id: "clicks", label: "Cliques (todos)" },
-  { id: "linkClicks", label: "Conversão" },
+  { id: "linkClicks", label: "Conversa iniciada" },
+  { id: "costPerConversation", label: "Custo por conversa iniciada" },
   { id: "ctr", label: "CTR" },
   { id: "cpc", label: "CPC" },
   { id: "cpm", label: "CPM" },

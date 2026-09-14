@@ -73,12 +73,21 @@ export type CampaignInsight = {
 
 // Tagged per account (not pre-summed) so the client can re-aggregate
 // whichever subset of accounts the client filter has selected.
+//
+// `reach` here is per-day, each day's own independent number straight from
+// Meta — safe to plot as a trend line (each point is correct on its own),
+// but NEVER sum across days into a total: unlike spend/impressions/clicks,
+// the same person reached on multiple days would be counted once per day.
+// The one correct total lives in AccountReach, from a separate whole-period
+// call with no time_increment breakdown.
 export type DailyMetrics = {
   accountId: string;
   date: string;
   spend: number;
   impressions: number;
   clicks: number;
+  linkClicks: number;
+  reach: number;
 };
 
 export type AccountRef = { id: string; name: string };
@@ -99,12 +108,43 @@ export type AdSetInsight = {
   reach: number;
 };
 
+// One level below AdSetInsight — the individual ad creative. Same fetch
+// pattern: one call per account at level="ad", not one call per ad set.
+export type AdInsight = {
+  adId: string;
+  adName: string;
+  adSetId: string;
+  campaignId: string;
+  accountId: string;
+  status: CampaignStatus;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  reach: number;
+};
+
 // One number per account for the whole period — NOT the sum of each
 // campaign's own `reach`, and not the sum of daily reach either. Meta's
 // "reach" is already deduplicated (estimated unique people) within a single
 // insights call, but only within that one call's scope: summing per-campaign
 // or per-day reach would double-count anyone reached more than once.
 export type AccountReach = { accountId: string; reach: number };
+
+// Meta's age/gender breakdown, fetched at account level (one call per
+// account). Unlike per-campaign or per-day reach, these buckets ARE safe to
+// sum across — age and gender are mutually exclusive per person (everyone
+// falls into exactly one bucket), so this doesn't have the double-counting
+// problem AccountReach's own doc comment warns about.
+export type AudienceSegment = {
+  accountId: string;
+  age: string; // e.g. "18-24", "65+", or "unknown"
+  gender: string; // "male" | "female" | "unknown"
+  spend: number;
+  impressions: number;
+  clicks: number;
+  reach: number;
+};
 
 export type DashboardData = {
   period: Period;
@@ -114,8 +154,10 @@ export type DashboardData = {
   accounts: MetaAdAccount[];
   campaigns: CampaignInsight[];
   adSets: AdSetInsight[];
+  ads: AdInsight[];
   daily: DailyMetrics[];
   accountReach: AccountReach[];
+  audience: AudienceSegment[];
   // Same shape as the primary period, for the "compare to previous period"
   // filter — omitted entirely when comparison wasn't requested.
   comparison: {

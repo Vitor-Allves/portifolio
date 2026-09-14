@@ -48,6 +48,12 @@ export function cpm(totals: Pick<Totals, "spend" | "impressions">): number | nul
   return (totals.spend / totals.impressions) * 1000;
 }
 
+/** Custo por conversa iniciada = investimento ÷ conversas iniciadas (linkClicks). null only when there are none. */
+export function costPerConversation(totals: Pick<Totals, "spend" | "linkClicks">): number | null {
+  if (totals.linkClicks <= 0) return null;
+  return totals.spend / totals.linkClicks;
+}
+
 /** % change of current vs. previous. null when there's no previous value to compare against. */
 export function pctChange(current: number, previous: number): number | null {
   if (previous === 0) return current === 0 ? 0 : null;
