@@ -5,7 +5,7 @@ import {
   ANALISE_SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
   createSessionToken,
-} from "@/lib/analise-session";
+} from "@/lib/analise-session-node";
 
 export const runtime = "nodejs";
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   let token: string;
   try {
-    token = await createSessionToken();
+    token = createSessionToken();
   } catch (err) {
     console.error("[analise/login] failed to create session token", err);
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 503 });
