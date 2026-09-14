@@ -83,6 +83,22 @@ export type DailyMetrics = {
 
 export type AccountRef = { id: string; name: string };
 
+// Fetched on demand (when a campaign's detail panel is opened), not as part
+// of the main dashboard payload — one extra Graph API call per campaign
+// would multiply the dashboard's request count by the ad set count for data
+// most sessions never drill into.
+export type AdSetInsight = {
+  adSetId: string;
+  adSetName: string;
+  campaignId: string;
+  status: CampaignStatus;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  reach: number;
+};
+
 // One number per account for the whole period — NOT the sum of each
 // campaign's own `reach`, and not the sum of daily reach either. Meta's
 // "reach" is already deduplicated (estimated unique people) within a single

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { CampaignInsight, CampaignStatus } from "@/lib/meta-ads-types";
+import { useEffect, useMemo, useState } from "react";
+import type { AdSetInsight, CampaignInsight, CampaignStatus, Period } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } from "@/lib/format";
 import { ctr, cpc, cpm, pctChange } from "@/lib/metrics";
@@ -158,9 +158,10 @@ function SortButton({
 type CampaignsTableProps = {
   campaigns: CampaignInsight[];
   comparisonByCampaignId: Map<string, CampaignInsight> | null;
+  period: Period;
 };
 
-export default function CampaignsTable({ campaigns, comparisonByCampaignId }: CampaignsTableProps) {
+export default function CampaignsTable({ campaigns, comparisonByCampaignId, period }: CampaignsTableProps) {
   const [search, setSearch] = useState("");
   const [sortColumn, setSortColumn] = useState<ColumnId | "name">("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -351,8 +352,97 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
         <CampaignDetailPanel
           campaign={detailCampaign}
           comparison={comparisonByCampaignId?.get(detailCampaign.campaignId) ?? null}
+          period={period}
           onClose={() => setDetailCampaign(null)}
         />
+      )}
+    </div>
+  );
+}
+
+function periodSearchParams(period: Period): URLSearchParams {
+  const params = new URLSearchParams();
+  if (period.kind === "preset") {
+    params.set("date_preset", period.preset);
+  } else {
+    params.set("since", period.range.since);
+    params.set("until", period.range.until);
+  }
+  return params;
+}
+
+type AdSetsState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; adSets: AdSetInsight[] };
+
+function CampaignAdSets({ campaign, period }: { campaign: CampaignInsight; period: Period }) {
+  const [state, setState] = useState<AdSetsState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const params = periodSearchParams(period);
+    params.set("accountId", campaign.accountId);
+
+    fetch(`/api/meta-ads/campaigns/${campaign.campaignId}/adsets?${params.toString()}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? "Não foi possível carregar os conjuntos de anúncios.");
+        }
+        return res.json() as Promise<{ adSets: AdSetInsight[] }>;
+      })
+      .then((body) => {
+        if (!cancelled) setState({ status: "ready", adSets: body.adSets });
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setState({ status: "error", message: err.message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [campaign.campaignId, campaign.accountId, period]);
+
+  return (
+    <div className="mt-6">
+      <h5 className="text-[11px] tracking-[0.1em] uppercase text-intel-text-dim mb-3">Conjuntos de anúncios</h5>
+
+      {state.status === "loading" && (
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-9 rounded-lg bg-intel-shimmer bg-white/[0.04]" />
+          ))}
+        </div>
+      )}
+
+      {state.status === "error" && <p className="text-[12px] text-intel-red">{state.message}</p>}
+
+      {state.status === "ready" && state.adSets.length === 0 && (
+        <p className="text-[12px] text-intel-text-dim">Nenhum conjunto de anúncios encontrado neste período.</p>
+      )}
+
+      {state.status === "ready" && state.adSets.length > 0 && (
+        <ul className="space-y-2">
+          {state.adSets.map((a) => (
+            <li
+              key={a.adSetId}
+              className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-[13px] text-intel-text">{a.adSetName}</span>
+                <StatusBadge status={a.status} />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-intel-text-dim tabular-nums">
+                <span>Investimento: {formatCurrencyBRL(a.spend)}</span>
+                <span>Impressões: {formatInteger(a.impressions)}</span>
+                <span>Cliques: {formatInteger(a.clicks)}</span>
+                <span>Alcance: {formatInteger(a.reach)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -361,10 +451,12 @@ export default function CampaignsTable({ campaigns, comparisonByCampaignId }: Ca
 function CampaignDetailPanel({
   campaign,
   comparison,
+  period,
   onClose,
 }: {
   campaign: CampaignInsight;
   comparison: CampaignInsight | null;
+  period: Period;
   onClose: () => void;
 }) {
   const rows: { label: string; current: string; previous?: string }[] = [
@@ -427,6 +519,14 @@ function CampaignDetailPanel({
           “Cliques (todos)” é o campo clicks da Meta (todo tipo de clique no anúncio); “Cliques no link” é
           inline_link_clicks (apenas cliques que levam ao destino do anúncio).
         </p>
+
+        <CampaignAdSets
+          key={`${campaign.accountId}-${campaign.campaignId}-${
+            period.kind === "preset" ? period.preset : `${period.range.since}_${period.range.until}`
+          }`}
+          campaign={campaign}
+          period={period}
+        />
       </div>
     </div>
   );

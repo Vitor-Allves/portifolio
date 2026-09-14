@@ -448,7 +448,11 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                 )}
 
                 {section === "campaigns" && (
-                  <CampaignsTable campaigns={filteredCampaigns} comparisonByCampaignId={comparisonByCampaignId} />
+                  <CampaignsTable
+                    campaigns={filteredCampaigns}
+                    comparisonByCampaignId={comparisonByCampaignId}
+                    period={period}
+                  />
                 )}
 
                 {section === "insights" && (

@@ -24,6 +24,7 @@ import type {
   DashboardData,
   AccountRef,
   AccountReach,
+  AdSetInsight,
 } from "./meta-ads-types";
 export {
   DATE_PRESETS,
@@ -42,6 +43,7 @@ export type {
   CampaignStatus,
   DailyMetrics,
   DashboardData,
+  AdSetInsight,
 };
 
 export type DashboardOptions = { compare?: boolean };
@@ -292,6 +294,12 @@ export async function listAdAccounts(): Promise<MetaAdAccount[]> {
   return accounts;
 }
 
+/** Which configured business's token can read this account, or null if it isn't visible to any of them. Reuses the same 15-minute-cached account listing as the rest of the dashboard, so this doesn't add a fresh Graph API round trip on every call. */
+export async function getAccessTokenForAccount(accountId: string): Promise<string | null> {
+  const { tokenByAccountId } = await fetchAllBusinessAccounts();
+  return tokenByAccountId.get(accountId) ?? null;
+}
+
 type CampaignMetaNode = { id?: string; objective?: string; effective_status?: string };
 type CampaignMeta = { objective: string | null; status: CampaignStatus };
 
@@ -376,6 +384,75 @@ async function getAccountCampaignInsights(
       reach: Number(row.reach ?? 0),
     };
   });
+}
+
+type AdSetMetaNode = { id?: string; name?: string; effective_status?: string };
+type AdSetMeta = { name: string; status: CampaignStatus };
+
+// Same pattern as getCampaignMeta: an ad set's name/status live on the ad
+// set node itself, not on its insights row.
+async function getAdSetMeta(campaignId: string, accessToken: string): Promise<Map<string, AdSetMeta>> {
+  const data = await graphGet<{ data: AdSetMetaNode[] }>(
+    `/${campaignId}/adsets`,
+    { fields: "id,name,effective_status", limit: "500" },
+    accessToken
+  );
+
+  const map = new Map<string, AdSetMeta>();
+  for (const row of data.data ?? []) {
+    if (!row.id) continue;
+    map.set(row.id, { name: row.name ?? "Conjunto sem nome", status: normalizeStatus(row.effective_status) });
+  }
+  return map;
+}
+
+type AdSetInsightNode = {
+  adset_id?: string;
+  adset_name?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  reach?: string;
+};
+
+/** Ad sets within one campaign, fetched on demand — see AdSetInsight for why this isn't part of the main dashboard payload. */
+export async function getCampaignAdSets(
+  campaignId: string,
+  period: Period,
+  accessToken: string
+): Promise<AdSetInsight[]> {
+  const [meta, insights] = await Promise.all([
+    getAdSetMeta(campaignId, accessToken).catch(() => new Map<string, AdSetMeta>()),
+    graphGet<{ data: AdSetInsightNode[] }>(
+      `/${campaignId}/insights`,
+      {
+        level: "adset",
+        ...periodParams(period),
+        fields: "adset_id,adset_name,spend,impressions,clicks,inline_link_clicks,reach",
+        limit: "500",
+      },
+      accessToken
+    ),
+  ]);
+
+  const adSets = (insights.data ?? []).map((row) => {
+    const m = meta.get(row.adset_id ?? "");
+    return {
+      adSetId: row.adset_id ?? "",
+      adSetName: row.adset_name ?? m?.name ?? "Conjunto sem nome",
+      campaignId,
+      status: m?.status ?? "OTHER",
+      spend: Number(row.spend ?? 0),
+      impressions: Number(row.impressions ?? 0),
+      clicks: Number(row.clicks ?? 0),
+      linkClicks: Number(row.inline_link_clicks ?? 0),
+      reach: Number(row.reach ?? 0),
+    };
+  });
+
+  adSets.sort((a, b) => b.spend - a.spend);
+  return adSets;
 }
 
 type DailyInsightNode = { date_start?: string; spend?: string; impressions?: string; clicks?: string };
