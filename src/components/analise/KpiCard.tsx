@@ -31,7 +31,7 @@ function Sparkline({ values }: { values: number[] }) {
   const areaPath = `M${points.split(" ")[0]} L${points.replace(/ /g, " L")} L${w},${h} L0,${h} Z`;
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true" className="w-full h-6 mt-2">
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true" className="w-full h-full">
       <defs>
         <linearGradient id="kpi-spark-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--color-intel-cyan)" stopOpacity="0.22" />
@@ -96,11 +96,13 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
         {value}
       </p>
 
-      {sparkline && sparkline.length > 1 && (
-        <div className="relative">
-          <Sparkline values={sparkline} />
-        </div>
-      )}
+      {/* Reserves the sparkline's own height even when there's no series to
+          plot (e.g. Alcance, which has no daily breakdown) — otherwise that
+          card's border ends up visibly shorter than its siblings, since a
+          card's box doesn't stretch to match the row on its own. */}
+      <div className="relative mt-2 h-6">
+        {sparkline && sparkline.length > 1 && <Sparkline values={sparkline} />}
+      </div>
 
       {isUnavailable && unavailableReason && (
         <p className="relative mt-1 text-[11px] text-intel-text-dim">{unavailableReason}</p>
