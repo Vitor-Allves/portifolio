@@ -71,9 +71,14 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
         className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-intel-cyan/[0.03] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
       />
 
-      <div className="relative flex items-start justify-between gap-2">
-        <p className="text-[10.5px] tracking-[0.12em] uppercase text-intel-text-dim">{label}</p>
-        <div className="group/tip relative">
+      {/* min-h reserves two lines' worth of label height regardless of
+          whether THIS card's own label happens to wrap — otherwise a
+          two-word label (e.g. "Conversa iniciada") pushes its value down
+          a row further than every single-word sibling, breaking the
+          row's alignment. */}
+      <div className="relative flex items-start justify-between gap-2 min-h-[2.3em]">
+        <p className="text-[10.5px] leading-tight tracking-[0.12em] uppercase text-intel-text-dim">{label}</p>
+        <div className="group/tip relative shrink-0">
           <button
             type="button"
             aria-label={`O que é ${label}`}
@@ -88,8 +93,11 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
         </div>
       </div>
 
+      {/* Wraps onto a second line rather than ever clipping — a value is
+          never allowed to run past the card's own edge. min-h keeps every
+          card the same height whether or not its own value needed to wrap. */}
       <p
-        className={`relative mt-2 font-sans text-[26px] leading-none font-semibold tabular-nums ${
+        className={`relative mt-2 font-sans text-[22px] leading-tight font-semibold tabular-nums break-words min-h-[1.2em] ${
           isUnavailable ? "text-intel-text-dim" : "text-intel-text"
         }`}
       >
