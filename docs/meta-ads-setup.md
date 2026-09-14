@@ -65,7 +65,40 @@ Depois de configurar, faça um novo deploy (ou redeploy) para que as
 variáveis entrem em vigor. Sem elas, `/analise` mostra uma mensagem de
 "integração ainda não configurada" em vez de quebrar.
 
-## 6. Trazer contas de clientes que ficam em outras Empresas (Business Manager)
+## 6. Conectando um segundo Business Manager (outra empresa, sem separação)
+
+Isso é diferente do passo seguinte (contas de clientes compartilhadas). Use
+esta seção quando quiser trazer os dados de **outra empresa inteira** — com
+Business Manager próprio, sem relação com o da Legado — para dentro do
+mesmo `/analise`, misturados com o resto (mesmos filtros, mesmos
+indicadores, mesma tabela — nada de tela separada por empresa).
+
+Como um token de usuário do sistema só enxerga a Empresa onde ele foi
+criado, não dá pra reaproveitar o token da Legado — é preciso repetir os
+passos 2 a 4 (criar um usuário do sistema, gerar o token com `ads_read`,
+pegar o ID da empresa) **dentro do Business Manager da outra empresa**, e
+configurar como um segundo par de variáveis, numerado a partir de `_2`:
+
+| Variável | Valor |
+|---|---|
+| `META_SYSTEM_USER_TOKEN_2` | Token do usuário do sistema criado na outra empresa |
+| `META_BUSINESS_ID_2` | ID dessa outra empresa |
+
+Depois de configurar e fazer o redeploy, as contas de anúncio dessa empresa
+passam a aparecer junto com as da Legado — no mesmo painel, no mesmo
+filtro de "Cliente", sem nenhuma indicação de que vieram de um Business
+Manager diferente (a única exceção prática é `/analise/admin`, onde a
+lista de contas para criar acessos de clientes também inclui as duas
+empresas juntas).
+
+Uma terceira empresa segue o mesmo padrão com `_3` (`META_SYSTEM_USER_TOKEN_3` /
+`META_BUSINESS_ID_3`), e assim por diante — a numeração precisa ser
+contínua a partir de 2 (sem pular números) e cada par precisa estar
+completo; se faltar uma das duas variáveis de um par, o dashboard mostra a
+tela de "integração ainda não configurada" em vez de simplesmente ignorar
+aquela empresa, para deixar claro que há uma configuração incompleta.
+
+## 7. Trazer contas de clientes que ficam em outras Empresas (Business Manager)
 
 Se a agência usa **uma Empresa separada por cliente** no Business Manager
 (comum quando cada cliente tem seu próprio Portfólio Empresarial na Meta,
@@ -113,6 +146,9 @@ período de carência, pendente de acerto, etc.) é considerado.
 - **Limite de requisições.** A Marketing API tem rate limit por conta de
   anúncio. O dashboard faz cache de 15 minutos nas respostas (não busca dados
   novos a cada carregamento de página) — isso é intencional, não um bug.
+  Cada Business Manager adicional (passo 6) usa seu próprio token/usuário do
+  sistema, então tem seu próprio limite — não compartilha nem disputa cota
+  com o primeiro.
 - **Segurança do token.** Trate `META_SYSTEM_USER_TOKEN` como uma senha: ele
   dá acesso de leitura a dados de investimento e desempenho reais dos
   clientes da agência. Nunca cole o token em código, commits, ou mensagens —

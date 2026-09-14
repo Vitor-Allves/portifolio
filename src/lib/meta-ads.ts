@@ -1,6 +1,6 @@
 // Server-only client for the Meta Marketing API. Never import this from a
-// "use client" component — it reads META_SYSTEM_USER_TOKEN, which must
-// never reach the browser.
+// "use client" component — it reads META_SYSTEM_USER_TOKEN (and any
+// META_SYSTEM_USER_TOKEN_N siblings), which must never reach the browser.
 //
 // Setup guide: docs/meta-ads-setup.md
 
@@ -133,23 +133,58 @@ export class MetaConfigError extends MetaApiError {
   }
 }
 
-function requireConfig() {
-  const accessToken = process.env.META_SYSTEM_USER_TOKEN;
-  const businessId = process.env.META_BUSINESS_ID;
-  const missing = [
-    !accessToken && "META_SYSTEM_USER_TOKEN",
-    !businessId && "META_BUSINESS_ID",
-  ].filter((v): v is string => Boolean(v));
+type BusinessCredential = { businessId: string; accessToken: string };
 
+// Each Business Manager needs its own System User token — a token only ever
+// has access to the Business Manager it was created in, so there's no way
+// to read a second, unrelated company's accounts with the first token no
+// matter what it's scoped to. META_BUSINESS_ID/META_SYSTEM_USER_TOKEN is the
+// first (and for most deployments, only) business; META_BUSINESS_ID_2 /
+// META_SYSTEM_USER_TOKEN_2, _3, and so on layer in additional, completely
+// separate Business Managers — their accounts are merged into one pool
+// everywhere else in this file, with no notion of "which business" left
+// downstream. Numbering stops at the first index where neither var is set.
+function getBusinessCredentials(): BusinessCredential[] {
+  const credentials: BusinessCredential[] = [];
+  const missing: string[] = [];
+
+  const primaryToken = process.env.META_SYSTEM_USER_TOKEN;
+  const primaryBusiness = process.env.META_BUSINESS_ID;
+  if (primaryToken || primaryBusiness) {
+    if (!primaryToken) missing.push("META_SYSTEM_USER_TOKEN");
+    if (!primaryBusiness) missing.push("META_BUSINESS_ID");
+    if (primaryToken && primaryBusiness) {
+      credentials.push({ businessId: primaryBusiness, accessToken: primaryToken });
+    }
+  }
+
+  for (let i = 2; ; i++) {
+    const token = process.env[`META_SYSTEM_USER_TOKEN_${i}`];
+    const businessId = process.env[`META_BUSINESS_ID_${i}`];
+    if (!token && !businessId) break;
+    if (!token) missing.push(`META_SYSTEM_USER_TOKEN_${i}`);
+    if (!businessId) missing.push(`META_BUSINESS_ID_${i}`);
+    if (token && businessId) {
+      credentials.push({ businessId, accessToken: token });
+    }
+  }
+
+  // No vars set at all: report the primary pair (the common case). Any
+  // *partially* filled pair (primary or numbered) is a real misconfiguration
+  // and fails loudly instead of just silently dropping that business — a
+  // typo here would otherwise just look like "that business's accounts
+  // never showed up," with nothing pointing at why.
+  if (credentials.length === 0 && missing.length === 0) {
+    throw new MetaConfigError(["META_SYSTEM_USER_TOKEN", "META_BUSINESS_ID"]);
+  }
   if (missing.length > 0) {
     throw new MetaConfigError(missing);
   }
 
-  return { accessToken: accessToken!, businessId: businessId! };
+  return credentials;
 }
 
-async function graphGet<T>(path: string, params: Record<string, string>): Promise<T> {
-  const { accessToken } = requireConfig();
+async function graphGet<T>(path: string, params: Record<string, string>, accessToken: string): Promise<T> {
   const url = new URL(`${GRAPH_API_BASE}${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
@@ -181,39 +216,80 @@ async function graphGet<T>(path: string, params: Record<string, string>): Promis
 
 type AdAccountNode = { id: string; name?: string; account_status?: number };
 
-/** Lists every ad account the configured Business Manager owns or manages, for admin UI use (e.g. picking which accounts a new client credential should see). */
-export async function listAdAccounts(): Promise<MetaAdAccount[]> {
-  const { businessId } = requireConfig();
+// Meta's account_status has ~10 values (active, in grace period, pending
+// settlement/risk review, unsettled, etc.) and several of those still have
+// real campaigns and spend worth showing — only DISABLED (2) and CLOSED
+// (101) are permanently done and safe to skip. Requiring exactly ACTIVE (1)
+// here previously hid every account sitting in any other live state.
+const DEAD_ACCOUNT_STATUSES = new Set([2, 101]);
 
-  const data = await graphGet<{
-    owned_ad_accounts?: { data: AdAccountNode[] };
-    client_ad_accounts?: { data: AdAccountNode[] };
-  }>(`/${businessId}`, {
-    fields:
-      "owned_ad_accounts.limit(200){id,name,account_status},client_ad_accounts.limit(200){id,name,account_status}",
-  });
+async function fetchAllBusinessAccounts(): Promise<{
+  accounts: MetaAdAccount[];
+  tokenByAccountId: Map<string, string>;
+}> {
+  const credentials = getBusinessCredentials();
 
-  const raw = [
-    ...(data.owned_ad_accounts?.data ?? []),
-    ...(data.client_ad_accounts?.data ?? []),
-  ];
-
-  // Meta's account_status has ~10 values (active, in grace period, pending
-  // settlement/risk review, unsettled, etc.) and several of those still have
-  // real campaigns and spend worth showing — only DISABLED (2) and CLOSED
-  // (101) are permanently done and safe to skip. Requiring exactly ACTIVE
-  // (1) here previously hid every account sitting in any other live state.
-  const DEAD_STATUSES = new Set([2, 101]);
+  const settled = await Promise.allSettled(
+    credentials.map((cred) =>
+      graphGet<{
+        owned_ad_accounts?: { data: AdAccountNode[] };
+        client_ad_accounts?: { data: AdAccountNode[] };
+      }>(
+        `/${cred.businessId}`,
+        {
+          fields:
+            "owned_ad_accounts.limit(200){id,name,account_status},client_ad_accounts.limit(200){id,name,account_status}",
+        },
+        cred.accessToken
+      ).then((data) => ({ cred, data }))
+    )
+  );
 
   const byId = new Map<string, MetaAdAccount>();
-  for (const account of raw) {
-    if (account.account_status !== undefined && DEAD_STATUSES.has(account.account_status)) {
+  const tokenByAccountId = new Map<string, string>();
+  let firstError: unknown = null;
+  let successCount = 0;
+
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      // One misconfigured/unreachable Business Manager shouldn't hide the
+      // accounts of the others sharing this same dashboard — but if *every*
+      // configured business fails, that's surfaced below like before.
+      console.error("[meta-ads] failed to list accounts for a configured business", result.reason);
+      firstError ??= result.reason;
       continue;
     }
-    byId.set(account.id, { id: account.id, name: account.name ?? account.id });
+    successCount++;
+    const { cred, data } = result.value;
+    const raw = [...(data.owned_ad_accounts?.data ?? []), ...(data.client_ad_accounts?.data ?? [])];
+    for (const account of raw) {
+      if (account.account_status !== undefined && DEAD_ACCOUNT_STATUSES.has(account.account_status)) {
+        continue;
+      }
+      // An account id is only ever issued once by Meta, globally — if it
+      // somehow turned up under more than one configured business (e.g. one
+      // business owns it, another was also given client access), the first
+      // business seen keeps it rather than fetching it twice.
+      if (!byId.has(account.id)) {
+        byId.set(account.id, { id: account.id, name: account.name ?? account.id });
+        tokenByAccountId.set(account.id, cred.accessToken);
+      }
+    }
   }
 
-  return [...byId.values()];
+  if (successCount === 0) {
+    throw firstError instanceof MetaApiError
+      ? firstError
+      : new MetaApiError("Failed to list ad accounts", firstError);
+  }
+
+  return { accounts: [...byId.values()], tokenByAccountId };
+}
+
+/** Lists every ad account across every configured Business Manager, for admin UI use (e.g. picking which accounts a new client credential should see). */
+export async function listAdAccounts(): Promise<MetaAdAccount[]> {
+  const { accounts } = await fetchAllBusinessAccounts();
+  return accounts;
 }
 
 type CampaignMetaNode = { id?: string; objective?: string; effective_status?: string };
@@ -239,11 +315,12 @@ function normalizeStatus(raw: string | undefined): CampaignStatus {
 // Insights rows don't carry campaign metadata (objective, status) — that
 // lives on the Campaign node itself, so it's a separate call per account,
 // merged into the insights rows by campaign_id below.
-async function getCampaignMeta(account: MetaAdAccount): Promise<Map<string, CampaignMeta>> {
-  const data = await graphGet<{ data: CampaignMetaNode[] }>(`/${account.id}/campaigns`, {
-    fields: "id,objective,effective_status",
-    limit: "500",
-  });
+async function getCampaignMeta(account: MetaAdAccount, accessToken: string): Promise<Map<string, CampaignMeta>> {
+  const data = await graphGet<{ data: CampaignMetaNode[] }>(
+    `/${account.id}/campaigns`,
+    { fields: "id,objective,effective_status", limit: "500" },
+    accessToken
+  );
 
   const map = new Map<string, CampaignMeta>();
   for (const row of data.data ?? []) {
@@ -266,14 +343,19 @@ type CampaignInsightNode = {
 async function getAccountCampaignInsights(
   account: MetaAdAccount,
   period: Period,
-  metaByCampaignId: Map<string, CampaignMeta>
+  metaByCampaignId: Map<string, CampaignMeta>,
+  accessToken: string
 ): Promise<CampaignInsight[]> {
-  const data = await graphGet<{ data: CampaignInsightNode[] }>(`/${account.id}/insights`, {
-    level: "campaign",
-    ...periodParams(period),
-    fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach",
-    limit: "500",
-  });
+  const data = await graphGet<{ data: CampaignInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "campaign",
+      ...periodParams(period),
+      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach",
+      limit: "500",
+    },
+    accessToken
+  );
 
   return (data.data ?? []).map((row) => {
     const meta = metaByCampaignId.get(row.campaign_id ?? "");
@@ -298,14 +380,22 @@ async function getAccountCampaignInsights(
 
 type DailyInsightNode = { date_start?: string; spend?: string; impressions?: string; clicks?: string };
 
-async function getAccountDailySeries(account: MetaAdAccount, period: Period): Promise<DailyMetrics[]> {
-  const data = await graphGet<{ data: DailyInsightNode[] }>(`/${account.id}/insights`, {
-    level: "account",
-    ...periodParams(period),
-    time_increment: "1",
-    fields: "spend,impressions,clicks",
-    limit: "500",
-  });
+async function getAccountDailySeries(
+  account: MetaAdAccount,
+  period: Period,
+  accessToken: string
+): Promise<DailyMetrics[]> {
+  const data = await graphGet<{ data: DailyInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      time_increment: "1",
+      fields: "spend,impressions,clicks",
+      limit: "500",
+    },
+    accessToken
+  );
 
   return (data.data ?? [])
     .filter((row) => row.date_start)
@@ -324,39 +414,42 @@ type AccountInsightNode = { reach?: string };
 // time_increment breakdown — this is what keeps Meta's dedup intact. Reach
 // summed from the per-day series or from per-campaign rows would count the
 // same person again for every day or campaign that reached them.
-async function getAccountReach(account: MetaAdAccount, period: Period): Promise<number> {
-  const data = await graphGet<{ data: AccountInsightNode[] }>(`/${account.id}/insights`, {
-    level: "account",
-    ...periodParams(period),
-    fields: "reach",
-    limit: "1",
-  });
+async function getAccountReach(account: MetaAdAccount, period: Period, accessToken: string): Promise<number> {
+  const data = await graphGet<{ data: AccountInsightNode[] }>(
+    `/${account.id}/insights`,
+    { level: "account", ...periodParams(period), fields: "reach", limit: "1" },
+    accessToken
+  );
   return Number(data.data?.[0]?.reach ?? 0);
 }
 
 async function fetchAccountPeriodData(
   account: MetaAdAccount,
-  period: Period
+  period: Period,
+  accessToken: string
 ): Promise<{ campaigns: CampaignInsight[]; daily: DailyMetrics[]; reach: number }> {
-  const meta = await getCampaignMeta(account).catch(() => new Map<string, CampaignMeta>());
+  const meta = await getCampaignMeta(account, accessToken).catch(() => new Map<string, CampaignMeta>());
   const [campaigns, daily, reach] = await Promise.all([
-    getAccountCampaignInsights(account, period, meta),
-    getAccountDailySeries(account, period),
-    getAccountReach(account, period),
+    getAccountCampaignInsights(account, period, meta, accessToken),
+    getAccountDailySeries(account, period, accessToken),
+    getAccountReach(account, period, accessToken),
   ]);
   return { campaigns, daily, reach };
 }
 
 async function fetchAllAccounts(
   accounts: MetaAdAccount[],
-  period: Period
+  period: Period,
+  tokenByAccountId: Map<string, string>
 ): Promise<{
   campaigns: CampaignInsight[];
   daily: DailyMetrics[];
   accountReach: AccountReach[];
   partialAccounts: AccountRef[];
 }> {
-  const settled = await Promise.allSettled(accounts.map((a) => fetchAccountPeriodData(a, period)));
+  const settled = await Promise.allSettled(
+    accounts.map((a) => fetchAccountPeriodData(a, period, tokenByAccountId.get(a.id)!))
+  );
 
   const campaigns: CampaignInsight[] = [];
   const daily: DailyMetrics[] = [];
@@ -385,7 +478,7 @@ async function fetchAllAccounts(
 }
 
 /**
- * Fetches and aggregates campaign performance across every ad account the
+ * Fetches and aggregates campaign performance across every ad account every
  * configured Business Manager owns or manages for a client. Fails closed:
  * any missing config or upstream error surfaces as a MetaApiError for the
  * caller to render a friendly message from — it never returns partial or
@@ -396,7 +489,8 @@ export async function getDashboardData(
   allowedAccountIds?: string[],
   options: DashboardOptions = {}
 ): Promise<DashboardData> {
-  let accounts = await listAdAccounts();
+  const { accounts: allAccounts, tokenByAccountId } = await fetchAllBusinessAccounts();
+  let accounts = allAccounts;
   if (allowedAccountIds) {
     const allowed = new Set(allowedAccountIds);
     accounts = accounts.filter((a) => allowed.has(a.id));
@@ -418,12 +512,12 @@ export async function getDashboardData(
     };
   }
 
-  const current = await fetchAllAccounts(accounts, period);
+  const current = await fetchAllAccounts(accounts, period, tokenByAccountId);
 
   let comparison: DashboardData["comparison"] = null;
   if (options.compare) {
     const prevRange = previousEquivalentRange(resolvedRange);
-    const prev = await fetchAllAccounts(accounts, { kind: "custom", range: prevRange });
+    const prev = await fetchAllAccounts(accounts, { kind: "custom", range: prevRange }, tokenByAccountId);
     comparison = {
       period: prevRange,
       campaigns: prev.campaigns,
