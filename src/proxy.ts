@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session";
+import { isFullAdmin } from "@/lib/session-scope";
 
 function isAdminOnlyPath(pathname: string): boolean {
   return pathname === "/analise/admin" || pathname.startsWith("/api/analise/admin");
@@ -27,7 +28,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (scope.kind !== "admin" && isAdminOnlyPath(pathname)) {
+  if (!isFullAdmin(scope) && isAdminOnlyPath(pathname)) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
     }

@@ -10,6 +10,7 @@ const labelClass = "block text-[11px] tracking-[0.14em] uppercase text-intel-tex
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +24,7 @@ export default function LoginForm() {
       const res = await fetch("/api/analise/login/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email: email.trim() || undefined, password }),
       });
 
       if (!res.ok) {
@@ -45,7 +46,21 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <label htmlFor="password" className={labelClass}>
+      <label htmlFor="email" className={labelClass}>
+        E-mail da equipe (opcional)
+      </label>
+      <input
+        id="email"
+        name="email"
+        type="email"
+        autoComplete="username"
+        placeholder="Deixe em branco se você é cliente"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className={fieldClass}
+      />
+
+      <label htmlFor="password" className={`${labelClass} mt-5`}>
         Senha de acesso
       </label>
       <input

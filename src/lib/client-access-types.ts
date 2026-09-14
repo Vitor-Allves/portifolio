@@ -4,6 +4,12 @@
 
 import type { ClientPermissions } from "./client-permissions";
 
+export type ClientAccessUserSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
 export type ClientAccessSummary = {
   id: string;
   slug: string;
@@ -11,4 +17,5 @@ export type ClientAccessSummary = {
   accountIds: string[];
   permissions: ClientPermissions;
   createdAt: string;
+  users: ClientAccessUserSummary[];
 };

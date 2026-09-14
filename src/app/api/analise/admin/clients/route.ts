@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
+import { isFullAdmin } from "@/lib/session-scope";
 import { createClientAccess, listClientAccess } from "@/lib/client-access";
 import { sanitizePermissions } from "@/lib/client-permissions";
 import { DbConfigError } from "@/lib/db";
@@ -11,7 +12,7 @@ const DB_NOT_CONFIGURED_MESSAGE =
 
 function requireAdmin(req: NextRequest): boolean {
   const scope = verifySessionToken(req.cookies.get(ANALISE_SESSION_COOKIE)?.value);
-  return scope?.kind === "admin";
+  return isFullAdmin(scope);
 }
 
 export async function GET(req: NextRequest) {
@@ -60,8 +61,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { id, password } = await createClientAccess(label, accountIds, permissions);
-    return NextResponse.json({ id, label, password });
+    const { id, userId, userName, password } = await createClientAccess(label, accountIds, permissions);
+    return NextResponse.json({ id, label, userId, userName, password });
   } catch (err) {
     if (err instanceof DbConfigError) {
       return NextResponse.json({ error: DB_NOT_CONFIGURED_MESSAGE }, { status: 503 });
