@@ -104,11 +104,18 @@ async function listAdAccounts(): Promise<MetaAdAccount[]> {
     ...(data.client_ad_accounts?.data ?? []),
   ];
 
+  // Meta's account_status has ~10 values (active, in grace period, pending
+  // settlement/risk review, unsettled, etc.) and several of those still have
+  // real campaigns and spend worth showing — only DISABLED (2) and CLOSED
+  // (101) are permanently done and safe to skip. Requiring exactly ACTIVE
+  // (1) here previously hid every account sitting in any other live state.
+  const DEAD_STATUSES = new Set([2, 101]);
+
   const byId = new Map<string, MetaAdAccount>();
   for (const account of raw) {
-    // account_status 1 = ACTIVE. Skip disabled/closed accounts so the
-    // dashboard doesn't spend rate-limit budget on accounts with no spend.
-    if (account.account_status !== 1) continue;
+    if (account.account_status !== undefined && DEAD_STATUSES.has(account.account_status)) {
+      continue;
+    }
     byId.set(account.id, { id: account.id, name: account.name ?? account.id });
   }
 
@@ -191,18 +198,36 @@ export async function getDashboardData(datePreset: DatePreset): Promise<Dashboar
     };
   }
 
-  const [campaignsByAccount, dailyByAccount] = await Promise.all([
-    Promise.all(accounts.map((a) => getAccountCampaignInsights(a, datePreset))),
-    Promise.all(accounts.map((a) => getAccountDailySpend(a, datePreset))),
+  // One account failing (e.g. the system user not yet assigned to it, or a
+  // transient Meta error) shouldn't take down the whole dashboard — settle
+  // per account and just skip + log the ones that errored.
+  const [campaignResults, dailyResults] = await Promise.all([
+    Promise.allSettled(accounts.map((a) => getAccountCampaignInsights(a, datePreset))),
+    Promise.allSettled(accounts.map((a) => getAccountDailySpend(a, datePreset))),
   ]);
 
-  const campaigns = campaignsByAccount
-    .flat()
+  const campaigns = campaignResults
+    .flatMap((result, i) => {
+      if (result.status === "rejected") {
+        console.error(
+          `[meta-ads] failed to fetch campaign insights for ${accounts[i].id}`,
+          result.reason
+        );
+        return [];
+      }
+      return result.value;
+    })
     .sort((a, b) => b.spend - a.spend);
 
   const dailyTotals = new Map<string, number>();
-  for (const day of dailyByAccount.flat()) {
-    dailyTotals.set(day.date, (dailyTotals.get(day.date) ?? 0) + day.spend);
+  for (const result of dailyResults) {
+    if (result.status === "rejected") {
+      console.error("[meta-ads] failed to fetch daily spend", result.reason);
+      continue;
+    }
+    for (const day of result.value) {
+      dailyTotals.set(day.date, (dailyTotals.get(day.date) ?? 0) + day.spend);
+    }
   }
   const dailySpend = [...dailyTotals.entries()]
     .map(([date, spend]) => ({ date, spend }))
