@@ -26,6 +26,10 @@ export type FilterBarProps = {
   campaignIds: Set<string>;
   onCampaignIdsChange: (next: Set<string>) => void;
 
+  adSetOptions: FilterOption[];
+  adSetIds: Set<string>;
+  onAdSetIdsChange: (next: Set<string>) => void;
+
   objectiveOptions: FilterOption[];
   objectiveIds: Set<string>;
   onObjectiveIdsChange: (next: Set<string>) => void;
@@ -49,6 +53,9 @@ export default function FilterBar({
   campaignOptions,
   campaignIds,
   onCampaignIdsChange,
+  adSetOptions,
+  adSetIds,
+  onAdSetIdsChange,
   objectiveOptions,
   objectiveIds,
   onObjectiveIdsChange,
@@ -89,6 +96,14 @@ export default function FilterBar({
     });
   }
 
+  if (adSetOptions.length > 0 && adSetIds.size !== adSetOptions.length) {
+    chips.push({
+      key: "adsets",
+      label: `Conjunto: ${adSetIds.size} de ${adSetOptions.length}`,
+      onRemove: () => onAdSetIdsChange(new Set(adSetOptions.map((o) => o.id))),
+    });
+  }
+
   if (objectiveOptions.length > 0 && objectiveIds.size !== objectiveOptions.length) {
     chips.push({
       key: "objectives",
@@ -112,6 +127,7 @@ export default function FilterBar({
     onPeriodChange(defaultPeriod);
     onCompareChange(false);
     onCampaignIdsChange(new Set(campaignOptions.map((o) => o.id)));
+    onAdSetIdsChange(new Set(adSetOptions.map((o) => o.id)));
     onObjectiveIdsChange(new Set(objectiveOptions.map((o) => o.id)));
     onStatusIdsChange(new Set(statusOptions.map((o) => o.id)));
   }
@@ -143,6 +159,18 @@ export default function FilterBar({
           onChange={onCampaignIdsChange}
           disabled={disabled}
           searchable={campaignOptions.length > 8}
+        />
+      )}
+
+      {adSetOptions.length > 1 && (
+        <MultiSelectFilter
+          placeholder="Conjunto"
+          allLabel="Todos os conjuntos"
+          options={adSetOptions}
+          selectedIds={adSetIds}
+          onChange={onAdSetIdsChange}
+          disabled={disabled}
+          searchable={adSetOptions.length > 8}
         />
       )}
 

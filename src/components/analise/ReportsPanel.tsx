@@ -23,7 +23,7 @@ export default function ReportsPanel({ campaigns, periodLabel }: ReportsPanelPro
       "Investimento",
       "Impressões",
       "Cliques (todos)",
-      "Cliques no link",
+      "Conversão",
       "CTR",
       "CPC",
       "CPM",

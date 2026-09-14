@@ -61,6 +61,10 @@ export default function MultiSelectFilter({
     onChange(new Set(options.map((o) => o.id)));
   }
 
+  function clearAll() {
+    onChange(new Set());
+  }
+
   const allSelected = options.length > 0 && selectedIds.size === options.length;
   const narrowed = !allSelected && options.length > 0 && selectedIds.size > 0;
   const label =
@@ -108,13 +112,22 @@ export default function MultiSelectFilter({
               />
             </div>
           )}
-          <button
-            type="button"
-            onClick={selectAll}
-            className="w-full text-left px-4 py-1.5 text-[11px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200"
-          >
-            Selecionar todos
-          </button>
+          <div className="flex items-center justify-between px-4">
+            <button
+              type="button"
+              onClick={selectAll}
+              className="py-1.5 text-[11px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200"
+            >
+              Selecionar todos
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              className="py-1.5 text-[11px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-red transition-colors duration-200"
+            >
+              Desmarcar todos
+            </button>
+          </div>
           <div className="my-1 border-t border-white/[0.06]" />
           <ul className="max-h-64 overflow-y-auto">
             {filteredOptions.length === 0 && (

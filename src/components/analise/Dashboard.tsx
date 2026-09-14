@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
-import type { CampaignInsight, DashboardData, DailyMetrics, Period } from "@/lib/meta-ads-types";
+import type { AdSetInsight, CampaignInsight, DashboardData, DailyMetrics, Period } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { sumTotals, ctr, cpc, cpm, pctChange } from "@/lib/metrics";
@@ -47,6 +47,14 @@ function uniqueOptions(campaigns: CampaignInsight[], key: (c: CampaignInsight) =
   for (const c of campaigns) {
     const id = key(c);
     if (!seen.has(id)) seen.set(id, label(c));
+  }
+  return [...seen.entries()].map(([id, l]) => ({ id, label: l }));
+}
+
+function uniqueAdSetOptions(adSets: AdSetInsight[]) {
+  const seen = new Map<string, string>();
+  for (const a of adSets) {
+    if (!seen.has(a.adSetId)) seen.set(a.adSetId, a.adSetName);
   }
   return [...seen.entries()].map(([id, l]) => ({ id, label: l }));
 }
@@ -99,6 +107,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
 
   const [accountIds, setAccountIds] = useState(() => allIds(initialData.accounts.map((a) => ({ id: a.id }))));
   const [campaignIds, setCampaignIds] = useState(() => new Set(initialData.campaigns.map((c) => c.campaignId)));
+  const [adSetIds, setAdSetIds] = useState(() => new Set(initialData.adSets.map((a) => a.adSetId)));
   const [objectiveIds, setObjectiveIds] = useState(
     () => new Set(initialData.campaigns.map((c) => c.objective ?? NONE_KEY))
   );
@@ -109,6 +118,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
   function resetFilters(nextData: DashboardData) {
     setAccountIds(allIds(nextData.accounts.map((a) => ({ id: a.id }))));
     setCampaignIds(new Set(nextData.campaigns.map((c) => c.campaignId)));
+    setAdSetIds(new Set(nextData.adSets.map((a) => a.adSetId)));
     setObjectiveIds(new Set(nextData.campaigns.map((c) => c.objective ?? NONE_KEY)));
     setStatusIds(new Set(nextData.campaigns.map((c) => c.status)));
   }
@@ -148,6 +158,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
     () => uniqueOptions(data.campaigns, (c) => c.campaignId, (c) => c.campaignName),
     [data.campaigns]
   );
+  const adSetOptions = useMemo(() => uniqueAdSetOptions(data.adSets), [data.adSets]);
   const objectiveOptions = useMemo(
     () => uniqueOptions(data.campaigns, (c) => c.objective ?? NONE_KEY, (c) => objectiveLabel(c.objective)),
     [data.campaigns]
@@ -157,6 +168,21 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
     [data.campaigns]
   );
 
+  // Only campaigns with at least one ad set matching the Conjunto filter —
+  // and only once that filter has actually been narrowed. Left as a no-op
+  // when every ad set is selected (the default), so a campaign whose ad
+  // sets failed to load isn't silently hidden just because the filter
+  // technically "requires" a match it never got the data to make.
+  const adSetFilterActive = adSetOptions.length > 0 && adSetIds.size !== adSetOptions.length;
+  const campaignIdsWithSelectedAdSet = useMemo(() => {
+    if (!adSetFilterActive) return null;
+    const set = new Set<string>();
+    for (const a of data.adSets) {
+      if (adSetIds.has(a.adSetId)) set.add(a.campaignId);
+    }
+    return set;
+  }, [data.adSets, adSetIds, adSetFilterActive]);
+
   const filteredCampaigns = useMemo(
     () =>
       data.campaigns.filter(
@@ -164,10 +190,16 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
           accountIds.has(c.accountId) &&
           campaignIds.has(c.campaignId) &&
           objectiveIds.has(c.objective ?? NONE_KEY) &&
-          statusIds.has(c.status)
+          statusIds.has(c.status) &&
+          (campaignIdsWithSelectedAdSet === null || campaignIdsWithSelectedAdSet.has(c.campaignId))
       ),
-    [data.campaigns, accountIds, campaignIds, objectiveIds, statusIds]
+    [data.campaigns, accountIds, campaignIds, objectiveIds, statusIds, campaignIdsWithSelectedAdSet]
   );
+
+  const filteredAdSets = useMemo(() => {
+    const visibleCampaignIds = new Set(filteredCampaigns.map((c) => c.campaignId));
+    return data.adSets.filter((a) => adSetIds.has(a.adSetId) && visibleCampaignIds.has(a.campaignId));
+  }, [data.adSets, adSetIds, filteredCampaigns]);
 
   // Comparison is scoped only by the client (account) filter — never by the
   // campaign/objective/status filters, whose option lists are built from the
@@ -393,6 +425,9 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                 campaignOptions={campaignOptions}
                 campaignIds={campaignIds}
                 onCampaignIdsChange={setCampaignIds}
+                adSetOptions={adSetOptions}
+                adSetIds={adSetIds}
+                onAdSetIdsChange={setAdSetIds}
                 objectiveOptions={objectiveOptions}
                 objectiveIds={objectiveIds}
                 onObjectiveIdsChange={setObjectiveIds}
@@ -450,8 +485,8 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, dbConfigu
                 {section === "campaigns" && (
                   <CampaignsTable
                     campaigns={filteredCampaigns}
+                    adSets={filteredAdSets}
                     comparisonByCampaignId={comparisonByCampaignId}
-                    period={period}
                   />
                 )}
 
