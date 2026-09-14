@@ -1,5 +1,5 @@
 import type { CampaignInsight } from "@/lib/meta-ads-types";
-import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
+import { formatCurrencyBRL, formatInteger } from "@/lib/format";
 
 type CampaignsTableProps = {
   campaigns: CampaignInsight[];
@@ -25,8 +25,6 @@ export default function CampaignsTable({ campaigns }: CampaignsTableProps) {
               <th className={thNum}>Investimento</th>
               <th className={thNum}>Impressões</th>
               <th className={thNum}>Cliques</th>
-              <th className={thNum}>CTR</th>
-              <th className={thNum}>CPC</th>
             </tr>
           </thead>
           <tbody>
@@ -37,8 +35,6 @@ export default function CampaignsTable({ campaigns }: CampaignsTableProps) {
                 <td className={tdNum}>{formatCurrencyBRL(c.spend)}</td>
                 <td className={tdNum}>{formatInteger(c.impressions)}</td>
                 <td className={tdNum}>{formatInteger(c.clicks)}</td>
-                <td className={tdNum}>{formatPercent(c.ctr)}</td>
-                <td className={tdNum}>{formatCurrencyBRL(c.cpc)}</td>
               </tr>
             ))}
           </tbody>

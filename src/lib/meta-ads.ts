@@ -174,7 +174,11 @@ async function getAccountDailySpend(
 
   return (data.data ?? [])
     .filter((row) => row.date_start)
-    .map((row) => ({ date: row.date_start!, spend: Number(row.spend ?? 0) }));
+    .map((row) => ({
+      accountId: account.id,
+      date: row.date_start!,
+      spend: Number(row.spend ?? 0),
+    }));
 }
 
 /**
@@ -193,7 +197,6 @@ export async function getDashboardData(datePreset: DatePreset): Promise<Dashboar
       accounts: [],
       campaigns: [],
       dailySpend: [],
-      totals: { spend: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0 },
       generatedAt: new Date().toISOString(),
     };
   }
@@ -219,39 +222,24 @@ export async function getDashboardData(datePreset: DatePreset): Promise<Dashboar
     })
     .sort((a, b) => b.spend - a.spend);
 
-  const dailyTotals = new Map<string, number>();
-  for (const result of dailyResults) {
-    if (result.status === "rejected") {
-      console.error("[meta-ads] failed to fetch daily spend", result.reason);
-      continue;
-    }
-    for (const day of result.value) {
-      dailyTotals.set(day.date, (dailyTotals.get(day.date) ?? 0) + day.spend);
-    }
-  }
-  const dailySpend = [...dailyTotals.entries()]
-    .map(([date, spend]) => ({ date, spend }))
+  const dailySpend = dailyResults
+    .flatMap((result, i) => {
+      if (result.status === "rejected") {
+        console.error(
+          `[meta-ads] failed to fetch daily spend for ${accounts[i].id}`,
+          result.reason
+        );
+        return [];
+      }
+      return result.value;
+    })
     .sort((a, b) => a.date.localeCompare(b.date));
-
-  const totals = campaigns.reduce(
-    (acc, c) => ({
-      spend: acc.spend + c.spend,
-      impressions: acc.impressions + c.impressions,
-      clicks: acc.clicks + c.clicks,
-      ctr: 0,
-      cpc: 0,
-    }),
-    { spend: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0 }
-  );
-  totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-  totals.cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
 
   return {
     datePreset,
     accounts,
     campaigns,
     dailySpend,
-    totals,
     generatedAt: new Date().toISOString(),
   };
 }
