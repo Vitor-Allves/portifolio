@@ -65,7 +65,7 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
           : "text-intel-text-dim";
 
   return (
-    <div className="group relative rounded-2xl border border-white/[0.07] bg-intel-surface-1 px-5 py-4 overflow-hidden transition-colors duration-200 hover:border-white/[0.14]">
+    <div className="group relative rounded-2xl border border-white/[0.07] bg-intel-surface-1 px-5 py-4 transition-colors duration-200 hover:border-white/[0.14]">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-intel-cyan/[0.03] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
