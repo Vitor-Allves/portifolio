@@ -7,8 +7,13 @@ function toCsvCell(value: string): string {
   return value;
 }
 
+/** Pure row-to-CSV-text serialization — shared with the server-side export route (report-data.ts consumers) so a server-generated CSV and a client-generated one are byte-for-byte the same format. No BOM here; downloadCsv adds it for the browser-download case. */
+export function rowsToCsv(rows: string[][]): string {
+  return rows.map((row) => row.map(toCsvCell).join(";")).join("\n");
+}
+
 export function downloadCsv(filename: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map(toCsvCell).join(";")).join("\n");
+  const csv = rowsToCsv(rows);
   // Leading BOM so Excel opens the accented pt-BR text as UTF-8 instead of guessing Latin-1.
   const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);

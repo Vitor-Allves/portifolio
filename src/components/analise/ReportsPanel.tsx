@@ -3,17 +3,14 @@
 import { useEffect, useState } from "react";
 import type { CampaignInsight, DateRange, Period } from "@/lib/meta-ads-types";
 import { DATE_PRESETS } from "@/lib/meta-ads-types";
-import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
-import { formatCurrencyBRL, formatInteger, formatPercent, formatShortDate } from "@/lib/format";
-import { ctr, cpc, cpm, costPerConversation, sumTotals } from "@/lib/metrics";
-import { downloadCsv } from "@/lib/csv";
+import { formatShortDate } from "@/lib/format";
 import { toSavedIdFilter } from "@/lib/campaign-filters";
 import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-templates-types";
 import type { ClientAccessSummary } from "@/lib/client-access-types";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 
-class ReportPdfError extends Error {}
+class ExportError extends Error {}
 
 /** Slugified default filename mirror of pdf-report-core.ts's own reportFileName — used only for the pre-generation preview text; the real filename is the one the server actually sends in Content-Disposition. */
 function slugify(value: string): string {
@@ -39,29 +36,40 @@ function fileNameFromContentDisposition(header: string | null, fallback: string)
   return match?.[1] ?? fallback;
 }
 
-async function downloadPdfFromServer(body: { title: string; filters: ReportFilters; recipientClientId?: string | null }, fallbackFileName: string): Promise<void> {
-  const res = await fetch("/api/analise/reports/pdf/", {
+async function downloadFromServer(url: string, body: unknown, fallbackFileName: string, errorFallback: string): Promise<void> {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errBody = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ReportPdfError(errBody?.error ?? "Não foi possível gerar o PDF. Tente novamente.");
+    throw new ExportError(errBody?.error ?? errorFallback);
   }
   const blob = await res.blob();
   const fileName = fileNameFromContentDisposition(res.headers.get("Content-Disposition"), fallbackFileName);
-  const url = URL.createObjectURL(blob);
+  const downloadUrl = URL.createObjectURL(blob);
   try {
     const a = document.createElement("a");
-    a.href = url;
+    a.href = downloadUrl;
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();
   } finally {
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(downloadUrl);
   }
+}
+
+async function downloadPdfFromServer(body: { title: string; filters: ReportFilters; recipientClientId?: string | null }, fallbackFileName: string): Promise<void> {
+  return downloadFromServer("/api/analise/reports/pdf/", body, fallbackFileName, "Não foi possível gerar o PDF. Tente novamente.");
+}
+
+async function downloadCsvFromServer(
+  body: { kind: "campaigns" | "account-summary"; filters: ReportFilters; recipientClientId?: string | null },
+  fallbackFileName: string
+): Promise<void> {
+  return downloadFromServer("/api/analise/reports/csv/", body, fallbackFileName, "Não foi possível gerar a exportação. Tente novamente.");
 }
 
 type ReportsPanelProps = {
@@ -169,6 +177,9 @@ export default function ReportsPanel({
   const [recipientClients, setRecipientClients] = useState<ClientAccessSummary[] | null>(null);
   const [recipientClientId, setRecipientClientId] = useState<string>("");
 
+  const [exportingCsv, setExportingCsv] = useState<"campaigns" | "account-summary" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!dbConfigured) return;
     let cancelled = false;
@@ -209,90 +220,53 @@ export default function ReportsPanel({
     };
   }, [isAdmin, dbConfigured]);
 
-  function exportCampaigns() {
-    const header = [
-      "Campanha",
-      "Conta",
-      "Objetivo",
-      "Status",
-      "Investimento",
-      "Impressões",
-      "Cliques (todos)",
-      "Cliques no link",
-      "Conversa iniciada",
-      "Custo por conversa iniciada",
-      "CTR",
-      "CPC",
-      "CPM",
-      "Alcance (campanha, não some entre linhas)",
-    ];
-    const rows = campaigns.map((c) => {
-      const cCtr = ctr(c);
-      const cCpc = cpc(c);
-      const cCpm = cpm(c);
-      const cCostPerConversation = costPerConversation(c);
-      return [
-        c.campaignName,
-        c.accountName,
-        objectiveLabel(c.objective),
-        statusLabel(c.status),
-        formatCurrencyBRL(c.spend),
-        formatInteger(c.impressions),
-        formatInteger(c.clicks),
-        formatInteger(c.linkClicks),
-        c.conversations === null ? "Não disponível" : formatInteger(c.conversations),
-        cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
-        cCtr === null ? "—" : formatPercent(cCtr),
-        cCpc === null ? "—" : formatCurrencyBRL(cCpc),
-        cCpm === null ? "—" : formatCurrencyBRL(cCpm),
-        formatInteger(c.reach),
-      ];
-    });
-    downloadCsv(`campanhas-${today}.csv`, [header, ...rows]);
+  // Both CSV exports are generated server-side from the exact same
+  // permission-resolved dataset as the PDF (see report-data.ts) — a hidden
+  // column is genuinely absent from the file, not just omitted from a
+  // client-side loop over data that was already sitting fully unrestricted
+  // in the browser.
+  function currentFiltersForExport(): ReportFilters {
+    return {
+      period,
+      compare,
+      accountIds: toSavedIdFilter(accountIds, accountOptions),
+      campaignIds: toSavedIdFilter(campaignIds, campaignOptions),
+      adSetIds: toSavedIdFilter(adSetIds, adSetOptions),
+      objectiveIds: toSavedIdFilter(objectiveIds, objectiveOptions),
+      statusIds: toSavedIdFilter(statusIds, statusOptions),
+    };
   }
 
-  function exportAccountSummary() {
-    const byAccount = new Map<string, { name: string; campaigns: CampaignInsight[] }>();
-    for (const c of campaigns) {
-      const entry = byAccount.get(c.accountId) ?? { name: c.accountName, campaigns: [] };
-      entry.campaigns.push(c);
-      byAccount.set(c.accountId, entry);
+  async function exportCampaigns() {
+    if (exportingCsv) return;
+    setExportingCsv("campaigns");
+    setExportError(null);
+    try {
+      await downloadCsvFromServer(
+        { kind: "campaigns", filters: currentFiltersForExport(), recipientClientId: recipientClientId || null },
+        `campanhas-${today}.csv`
+      );
+    } catch (err) {
+      setExportError(err instanceof ExportError ? err.message : "Não foi possível exportar. Tente novamente.");
+    } finally {
+      setExportingCsv(null);
     }
+  }
 
-    const header = [
-      "Conta",
-      "Campanhas",
-      "Investimento",
-      "Impressões",
-      "Cliques (todos)",
-      "Cliques no link",
-      "Conversa iniciada",
-      "Custo por conversa iniciada",
-      "CTR",
-      "CPC",
-      "CPM",
-    ];
-    const rows = [...byAccount.values()].map((entry) => {
-      const entryTotals = sumTotals(entry.campaigns);
-      const cCtr = ctr(entryTotals);
-      const cCpc = cpc(entryTotals);
-      const cCpm = cpm(entryTotals);
-      const cCostPerConversation = costPerConversation(entryTotals);
-      return [
-        entry.name,
-        String(entry.campaigns.length),
-        formatCurrencyBRL(entryTotals.spend),
-        formatInteger(entryTotals.impressions),
-        formatInteger(entryTotals.clicks),
-        formatInteger(entryTotals.linkClicks),
-        entryTotals.conversations === null ? "Não disponível" : formatInteger(entryTotals.conversations),
-        cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
-        cCtr === null ? "—" : formatPercent(cCtr),
-        cCpc === null ? "—" : formatCurrencyBRL(cCpc),
-        cCpm === null ? "—" : formatCurrencyBRL(cCpm),
-      ];
-    });
-    downloadCsv(`resumo-por-conta-${today}.csv`, [header, ...rows]);
+  async function exportAccountSummary() {
+    if (exportingCsv) return;
+    setExportingCsv("account-summary");
+    setExportError(null);
+    try {
+      await downloadCsvFromServer(
+        { kind: "account-summary", filters: currentFiltersForExport(), recipientClientId: recipientClientId || null },
+        `resumo-por-conta-${today}.csv`
+      );
+    } catch (err) {
+      setExportError(err instanceof ExportError ? err.message : "Não foi possível exportar. Tente novamente.");
+    } finally {
+      setExportingCsv(null);
+    }
   }
 
   async function downloadCurrentPdf() {
@@ -323,7 +297,7 @@ export default function ReportsPanel({
         previewFileNameFor(clientLabel, resolvedRange)
       );
     } catch (err) {
-      setCurrentError(err instanceof ReportPdfError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
+      setCurrentError(err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
     } finally {
       setGeneratingCurrent(false);
     }
@@ -385,7 +359,7 @@ export default function ReportsPanel({
     } catch (err) {
       setRowError({
         id: template.id,
-        message: err instanceof ReportPdfError ? err.message : "Não foi possível gerar o PDF. Tente novamente.",
+        message: err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente.",
       });
     } finally {
       setGeneratingId(null);
@@ -588,21 +562,28 @@ export default function ReportsPanel({
           <button
             type="button"
             onClick={exportCampaigns}
-            disabled={campaigns.length === 0}
-            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full border border-white/10 text-intel-text-dim hover:border-white/25 hover:text-intel-text transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={campaigns.length === 0 || exportingCsv !== null}
+            aria-busy={exportingCsv === "campaigns"}
+            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full border border-white/10 text-intel-text-dim hover:border-white/25 hover:text-intel-text transition-colors duration-200 disabled:opacity-40 disabled:cursor-wait"
           >
-            Exportar campanhas (CSV)
+            {exportingCsv === "campaigns" ? "Exportando..." : "Exportar campanhas (CSV)"}
           </button>
           <button
             type="button"
             onClick={exportAccountSummary}
-            disabled={campaigns.length === 0}
-            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full border border-white/10 text-intel-text-dim hover:border-white/25 hover:text-intel-text transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={campaigns.length === 0 || exportingCsv !== null}
+            aria-busy={exportingCsv === "account-summary"}
+            className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full border border-white/10 text-intel-text-dim hover:border-white/25 hover:text-intel-text transition-colors duration-200 disabled:opacity-40 disabled:cursor-wait"
           >
-            Exportar resumo por conta (CSV)
+            {exportingCsv === "account-summary" ? "Exportando..." : "Exportar resumo por conta (CSV)"}
           </button>
         </div>
         {campaigns.length === 0 && <p className="mt-3 text-[12px] text-intel-text-dim">Sem campanhas no período para exportar.</p>}
+        {exportError && (
+          <div className="mt-3 flex flex-wrap items-center gap-3" role="alert">
+            <p className="text-[12px] text-intel-red">{exportError}</p>
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
