@@ -180,6 +180,24 @@ export type RegionSegment = {
   reach: number;
 };
 
+// Meta's city breakdown (e.g. "São Paulo, SP"), fetched as its own call
+// alongside the region one — city and region are two separate Meta
+// breakdown dimensions, not a single combined one, so this is its own
+// segment list rather than a field added onto RegionSegment. Same
+// "safe to sum" reasoning: each reached person is attributed to exactly
+// one city.
+export type CitySegment = {
+  accountId: string;
+  city: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  // See CampaignInsight.conversations.
+  conversations: number | null;
+  reach: number;
+};
+
 export type DashboardData = {
   period: Period;
   // The concrete since/until this period resolved to — presets are
@@ -193,6 +211,7 @@ export type DashboardData = {
   accountReach: AccountReach[];
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  cities: CitySegment[];
   // Same shape as the primary period, for the "compare to previous period"
   // filter — omitted entirely when comparison wasn't requested.
   comparison: {

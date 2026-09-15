@@ -28,6 +28,7 @@ import type {
   AdInsight,
   AudienceSegment,
   RegionSegment,
+  CitySegment,
 } from "./meta-ads-types";
 export {
   DATE_PRESETS,
@@ -50,6 +51,7 @@ export type {
   AdInsight,
   AudienceSegment,
   RegionSegment,
+  CitySegment,
 };
 
 export type DashboardOptions = { compare?: boolean };
@@ -843,6 +845,45 @@ async function getAccountRegions(account: MetaAdAccount, period: Period, accessT
   }));
 }
 
+type CityInsightNode = {
+  city?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  actions?: ActionNode[];
+  reach?: string;
+};
+
+// Same shape and reasoning as getAccountRegions, but Meta's city breakdown
+// is its own dimension — not a finer-grained version of "region" returned
+// in the same row — so this is a separate call/segment list rather than an
+// extra field tacked onto RegionSegment.
+async function getAccountCities(account: MetaAdAccount, period: Period, accessToken: string): Promise<CitySegment[]> {
+  const data = await graphGet<{ data: CityInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "city",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    city: row.city ?? "Não informado",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
 async function fetchAccountPeriodData(
   account: MetaAdAccount,
   period: Period,
@@ -855,13 +896,14 @@ async function fetchAccountPeriodData(
   reach: number;
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  cities: CitySegment[];
 }> {
   const [campaignMeta, adSetMeta, adMeta] = await Promise.all([
     getCampaignMeta(account, accessToken).catch(() => new Map<string, CampaignMeta>()),
     getAdSetMeta(account, accessToken).catch(() => new Map<string, AdSetMeta>()),
     getAdMeta(account, accessToken).catch(() => new Map<string, AdMeta>()),
   ]);
-  const [campaigns, adSets, ads, daily, reach, audience, regions] = await Promise.all([
+  const [campaigns, adSets, ads, daily, reach, audience, regions, cities] = await Promise.all([
     getAccountCampaignInsights(account, period, campaignMeta, accessToken),
     getAccountAdSetInsights(account, period, adSetMeta, accessToken),
     getAccountAdInsights(account, period, adMeta, accessToken),
@@ -869,8 +911,9 @@ async function fetchAccountPeriodData(
     getAccountReach(account, period, accessToken),
     getAccountDemographics(account, period, accessToken),
     getAccountRegions(account, period, accessToken),
+    getAccountCities(account, period, accessToken),
   ]);
-  return { campaigns, adSets, ads, daily, reach, audience, regions };
+  return { campaigns, adSets, ads, daily, reach, audience, regions, cities };
 }
 
 async function fetchAllAccounts(
@@ -885,6 +928,7 @@ async function fetchAllAccounts(
   accountReach: AccountReach[];
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  cities: CitySegment[];
   partialAccounts: AccountRef[];
 }> {
   const settled = await Promise.allSettled(
@@ -898,6 +942,7 @@ async function fetchAllAccounts(
   const accountReach: AccountReach[] = [];
   const audience: AudienceSegment[] = [];
   const regions: RegionSegment[] = [];
+  const cities: CitySegment[] = [];
   const partialAccounts: AccountRef[] = [];
 
   settled.forEach((result, i) => {
@@ -917,6 +962,7 @@ async function fetchAllAccounts(
     accountReach.push({ accountId: accounts[i].id, reach: result.value.reach });
     audience.push(...result.value.audience);
     regions.push(...result.value.regions);
+    cities.push(...result.value.cities);
   });
 
   campaigns.sort((a, b) => b.spend - a.spend);
@@ -924,7 +970,7 @@ async function fetchAllAccounts(
   ads.sort((a, b) => b.spend - a.spend);
   daily.sort((a, b) => a.date.localeCompare(b.date));
 
-  return { campaigns, adSets, ads, daily, accountReach, audience, regions, partialAccounts };
+  return { campaigns, adSets, ads, daily, accountReach, audience, regions, cities, partialAccounts };
 }
 
 /**
@@ -960,6 +1006,7 @@ export async function getDashboardData(
       accountReach: [],
       audience: [],
       regions: [],
+      cities: [],
       comparison: null,
       partialAccounts: [],
       generatedAt: new Date().toISOString(),
@@ -992,6 +1039,7 @@ export async function getDashboardData(
     accountReach: current.accountReach,
     audience: current.audience,
     regions: current.regions,
+    cities: current.cities,
     comparison,
     partialAccounts: current.partialAccounts,
     generatedAt: new Date().toISOString(),

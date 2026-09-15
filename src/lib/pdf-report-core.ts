@@ -28,6 +28,7 @@ import type {
   CampaignInsight,
   DateRange,
   RegionSegment,
+  CitySegment,
 } from "./meta-ads-types";
 import type { CampaignColumnId } from "./client-permissions";
 import { objectiveLabel, statusLabel } from "./campaign-labels";
@@ -103,6 +104,7 @@ export type ReportPdfInput = {
   comparisonReach: number | null;
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  cities: CitySegment[];
   /** Accounts that failed to load for this request — surfaced so totals are never mistaken for "genuinely zero". */
   partialAccountNames: string[];
 };
@@ -1300,14 +1302,23 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 58;
   }
 
-  if (isAllowed(allowed, "reach") && input.regions.length > 0) {
+  if (isAllowed(allowed, "reach") && (input.regions.length > 0 || input.cities.length > 0)) {
     y = ensureSpace(doc, ctx, y, 60);
+    const chartW2b = (CONTENT_W - 8) / 2;
     const byRegion = new Map<string, number>();
     for (const r of input.regions) byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + r.reach);
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 56 }, {
-      title: "Público por região",
+    const byCity = new Map<string, number>();
+    for (const c of input.cities) byCity.set(c.city, (byCity.get(c.city) ?? 0) + c.reach);
+    drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2b, h: 56 }, {
+      title: "Público por região (estado)",
       caption: "Métrica: Alcance (estimativa Meta)",
       items: [...byRegion.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
+      formatValue: formatInteger,
+    });
+    drawBarList(doc, ctx, { x: MARGIN_X + chartW2b + 8, y, w: chartW2b, h: 56 }, {
+      title: "Público por cidade",
+      caption: "Métrica: Alcance (estimativa Meta)",
+      items: [...byCity.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 15),
       formatValue: formatInteger,
     });
     y += 62;

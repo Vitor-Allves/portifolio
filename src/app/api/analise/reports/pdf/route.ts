@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
       comparisonReach,
       audience: freshData.audience.filter((a) => resolvedAccountIds.has(a.accountId)),
       regions: freshData.regions.filter((r) => resolvedAccountIds.has(r.accountId)),
+      cities: freshData.cities.filter((c) => resolvedAccountIds.has(c.accountId)),
       partialAccountNames: freshData.partialAccounts.map((a) => a.name),
     };
 
