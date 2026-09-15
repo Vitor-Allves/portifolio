@@ -4,8 +4,8 @@ import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const fieldClass =
-  "w-full rounded-lg border border-white/10 bg-intel-surface-2 px-4 py-3.5 text-sm text-intel-text placeholder:text-intel-text-dim/60 focus:border-intel-cyan/50 focus:outline-none transition-colors duration-200";
-const labelClass = "block text-[11px] tracking-[0.14em] uppercase text-intel-text-dim mb-2";
+  "w-full rounded-xl border border-white/[0.12] bg-white/[0.04] px-4 py-3.5 text-[15px] text-white placeholder:text-silver-400/50 focus:border-silver-400/60 focus:bg-white/[0.06] focus:outline-none transition-colors duration-200";
+const labelClass = "block text-[11px] font-medium tracking-[0.14em] uppercase text-silver-400 mb-2";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -60,7 +60,7 @@ export default function LoginForm() {
         className={fieldClass}
       />
 
-      <label htmlFor="password" className={`${labelClass} mt-5`}>
+      <label htmlFor="password" className={`${labelClass} mt-6`}>
         Senha de acesso
       </label>
       <input
@@ -75,7 +75,7 @@ export default function LoginForm() {
       />
 
       {error && (
-        <p className="mt-3 text-sm text-intel-red" role="alert">
+        <p className="mt-4 rounded-lg border border-intel-red/25 bg-intel-red/10 px-3.5 py-2.5 text-[13px] text-intel-red" role="alert">
           {error}
         </p>
       )}
@@ -83,8 +83,15 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="mt-6 w-full inline-flex items-center justify-center bg-intel-cyan text-[#04121a] text-sm tracking-[0.12em] uppercase font-semibold px-6 py-3.5 rounded-full hover:brightness-110 active:brightness-95 transition-[filter] duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+        aria-busy={loading}
+        className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.12em] text-navy-900 shadow-[0_8px_24px_-8px_rgba(255,255,255,0.35)] transition-[filter,transform] duration-200 hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
+        {loading && (
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+        )}
         {loading ? "Entrando..." : "Entrar"}
       </button>
     </form>
