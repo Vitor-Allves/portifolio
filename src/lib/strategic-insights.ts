@@ -117,6 +117,11 @@ function campaignTotals(c: CampaignInsight): Totals {
     linkClicks: c.linkClicks,
     conversations: c.conversations,
     reach: c.reach,
+    purchases: c.purchases,
+    purchaseValue: c.purchaseValue,
+    leads: c.leads,
+    addToCart: c.addToCart,
+    completeRegistrations: c.completeRegistrations,
   };
 }
 

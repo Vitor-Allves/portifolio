@@ -20,7 +20,17 @@ import KpiCard from "./KpiCard";
 import TrendChart, { type TrendMetric } from "./TrendChart";
 import SpendDistributionChart from "./SpendDistributionChart";
 import RankingChart from "./RankingChart";
-import BreakdownAnalysis, { AGE_ORDER, GENDER_ORDER, GENDER_LABEL, unknownAsNaoInformado } from "./BreakdownAnalysis";
+import BreakdownAnalysis, {
+  AGE_ORDER,
+  GENDER_ORDER,
+  GENDER_LABEL,
+  unknownAsNaoInformado,
+  PLATFORM_LABEL,
+  PLACEMENT_LABEL,
+  DEVICE_LABEL,
+  HOUR_ORDER,
+  hourShortLabel,
+} from "./BreakdownAnalysis";
 import CampaignsTable from "./CampaignsTable";
 import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
@@ -202,6 +212,27 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   const filteredRegions = useMemo(
     () => data.regions.filter((r) => accountIds.has(r.accountId)),
     [data.regions, accountIds]
+  );
+  // Platform/placement/device/country/hour breakdowns are also account-level only.
+  const filteredPlatforms = useMemo(
+    () => data.platforms.filter((p) => accountIds.has(p.accountId)),
+    [data.platforms, accountIds]
+  );
+  const filteredPlacements = useMemo(
+    () => data.placements.filter((p) => accountIds.has(p.accountId)),
+    [data.placements, accountIds]
+  );
+  const filteredDevices = useMemo(
+    () => data.devices.filter((d) => accountIds.has(d.accountId)),
+    [data.devices, accountIds]
+  );
+  const filteredCountries = useMemo(
+    () => data.countries.filter((c) => accountIds.has(c.accountId)),
+    [data.countries, accountIds]
+  );
+  const filteredHours = useMemo(
+    () => data.hours.filter((h) => accountIds.has(h.accountId)),
+    [data.hours, accountIds]
   );
 
   // Flat, cross-campaign views for the Campanhas page's "Conjuntos" and
@@ -833,6 +864,64 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                         segments={filteredRegions}
                         bucketKey={(s) => s.region}
                         defaultMetric="reach"
+                      />
+                    </m.div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <m.div custom={14} initial="hidden" animate="visible" variants={fadeUp}>
+                        <BreakdownAnalysis
+                          title="Distribuição por plataforma"
+                          barColor="var(--color-intel-cyan)"
+                          segments={filteredPlatforms}
+                          bucketKey={(s) => s.platform}
+                          bucketLabel={(k) => PLATFORM_LABEL[k] ?? k}
+                          defaultMetric="spend"
+                        />
+                      </m.div>
+                      <m.div custom={15} initial="hidden" animate="visible" variants={fadeUp}>
+                        <BreakdownAnalysis
+                          title="Distribuição por posicionamento"
+                          barColor="var(--color-intel-violet)"
+                          segments={filteredPlacements}
+                          bucketKey={(s) => s.placement}
+                          bucketLabel={(k) => PLACEMENT_LABEL[k] ?? k}
+                          defaultMetric="spend"
+                        />
+                      </m.div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <m.div custom={16} initial="hidden" animate="visible" variants={fadeUp}>
+                        <BreakdownAnalysis
+                          title="Distribuição por dispositivo"
+                          barColor="var(--color-intel-cyan)"
+                          segments={filteredDevices}
+                          bucketKey={(s) => s.device}
+                          bucketLabel={(k) => DEVICE_LABEL[k] ?? k}
+                          defaultMetric="spend"
+                        />
+                      </m.div>
+                      <m.div custom={17} initial="hidden" animate="visible" variants={fadeUp}>
+                        <BreakdownAnalysis
+                          title="Distribuição por país"
+                          barColor="var(--color-intel-violet)"
+                          segments={filteredCountries}
+                          bucketKey={(s) => s.country}
+                          defaultMetric="reach"
+                        />
+                      </m.div>
+                    </div>
+
+                    <m.div custom={18} initial="hidden" animate="visible" variants={fadeUp}>
+                      <BreakdownAnalysis
+                        title="Distribuição por horário do dia"
+                        barColor="var(--color-intel-cyan)"
+                        segments={filteredHours}
+                        bucketKey={(s) => s.hour}
+                        bucketLabel={hourShortLabel}
+                        order={HOUR_ORDER}
+                        defaultMetric="spend"
+                        hideMetrics={["reach"]}
                       />
                     </m.div>
                   </div>

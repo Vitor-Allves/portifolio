@@ -21,13 +21,20 @@ export type Totals = {
   // that per-row ambiguity into a scope-level answer.
   conversations: number | null;
   reach: number;
+  // See CampaignInsight.purchases/purchaseValue/leads/addToCart/completeRegistrations
+  // — same "null contributes nothing, not zero" scope-level rule as `conversations`.
+  purchases: number | null;
+  purchaseValue: number | null;
+  leads: number | null;
+  addToCart: number | null;
+  completeRegistrations: number | null;
 };
 
 /** null only when every row in scope is itself null (the metric never applies to anything selected) — otherwise sums whatever rows do report it, treating a null row as "contributes nothing" rather than "poisons the whole total". */
-function sumConversations(rows: { conversations: number | null }[]): number | null {
+function sumNullable<T extends string>(rows: Record<T, number | null>[], key: T): number | null {
   let total: number | null = null;
   for (const row of rows) {
-    if (row.conversations !== null) total = (total ?? 0) + row.conversations;
+    if (row[key] !== null) total = (total ?? 0) + row[key];
   }
   return total;
 }
@@ -38,8 +45,13 @@ export function sumTotals(campaigns: CampaignInsight[]): Totals {
     impressions: campaigns.reduce((sum, c) => sum + c.impressions, 0),
     clicks: campaigns.reduce((sum, c) => sum + c.clicks, 0),
     linkClicks: campaigns.reduce((sum, c) => sum + c.linkClicks, 0),
-    conversations: sumConversations(campaigns),
+    conversations: sumNullable(campaigns, "conversations"),
     reach: campaigns.reduce((sum, c) => sum + c.reach, 0),
+    purchases: sumNullable(campaigns, "purchases"),
+    purchaseValue: sumNullable(campaigns, "purchaseValue"),
+    leads: sumNullable(campaigns, "leads"),
+    addToCart: sumNullable(campaigns, "addToCart"),
+    completeRegistrations: sumNullable(campaigns, "completeRegistrations"),
   };
 }
 
@@ -73,6 +85,19 @@ export function cpm(totals: Pick<Totals, "spend" | "impressions">): number | nul
 export function costPerConversation(totals: Pick<Totals, "spend" | "conversations">): number | null {
   if (totals.conversations === null || totals.conversations <= 0) return null;
   return totals.spend / totals.conversations;
+}
+
+/**
+ * ROAS = valor de compra ÷ investimento (retorno por real gasto). null when
+ * purchaseValue never applies to anything in scope (no Pixel/CAPI purchase
+ * data at all — see CampaignInsight.purchaseValue) or when spend is 0. A
+ * `purchaseValue` of exactly 0 with real spend correctly yields a ROAS of 0,
+ * not null — that's a genuine "no revenue attributed yet", not "não
+ * disponível".
+ */
+export function roas(totals: Pick<Totals, "spend" | "purchaseValue">): number | null {
+  if (totals.purchaseValue === null || totals.spend <= 0) return null;
+  return totals.purchaseValue / totals.spend;
 }
 
 /** % change of current vs. previous. null when there's no previous value to compare against. */
