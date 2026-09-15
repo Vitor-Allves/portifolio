@@ -1,19 +1,68 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AudienceSegment, CampaignInsight, DailyMetrics, DateRange, Period, RegionSegment } from "@/lib/meta-ads-types";
+import type { CampaignInsight, DateRange, Period } from "@/lib/meta-ads-types";
 import { DATE_PRESETS } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatShortDate } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation, sumTotals } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
-import { fetchDashboardData, fetchScopedReach, DashboardFetchError } from "@/lib/dashboard-fetch";
-import { computeNarrowedCampaignIdsByAccount } from "@/lib/reach-scope";
-import { OBJECTIVE_NONE_KEY, resolveIdFilter, toSavedIdFilter, filterCampaignsByIds } from "@/lib/campaign-filters";
-import { downloadCampaignReportPdf, reportFileName, ReportPdfError, type ReportPdfInput } from "@/lib/pdf-report";
+import { toSavedIdFilter } from "@/lib/campaign-filters";
 import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-templates-types";
+import type { ClientAccessSummary } from "@/lib/client-access-types";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
+
+class ReportPdfError extends Error {}
+
+/** Slugified default filename mirror of pdf-report-core.ts's own reportFileName — used only for the pre-generation preview text; the real filename is the one the server actually sends in Content-Disposition. */
+function slugify(value: string): string {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "relatorio"
+  );
+}
+
+function previewFileNameFor(clientLabel: string | null, resolvedRange: DateRange): string {
+  const scope = slugify(clientLabel ?? "consolidado");
+  return `legado-intelligence_${scope}_${resolvedRange.since}_a_${resolvedRange.until}.pdf`;
+}
+
+/** Extracts a server-sent filename from Content-Disposition, falling back to the local preview name if the header is missing or unparsable. */
+function fileNameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const match = /filename="?([^";]+)"?/.exec(header);
+  return match?.[1] ?? fallback;
+}
+
+async function downloadPdfFromServer(body: { title: string; filters: ReportFilters; recipientClientId?: string | null }, fallbackFileName: string): Promise<void> {
+  const res = await fetch("/api/analise/reports/pdf/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ReportPdfError(errBody?.error ?? "Não foi possível gerar o PDF. Tente novamente.");
+  }
+  const blob = await res.blob();
+  const fileName = fileNameFromContentDisposition(res.headers.get("Content-Disposition"), fallbackFileName);
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 type ReportsPanelProps = {
   campaigns: CampaignInsight[];
@@ -25,26 +74,8 @@ type ReportsPanelProps = {
   period: Period;
   resolvedRange: DateRange;
   compare: boolean;
-  comparisonRange: DateRange | null;
-  dataGeneratedAt: string;
-
-  accounts: { id: string; name: string }[];
-  comparisonCampaigns: CampaignInsight[] | null;
-  daily: DailyMetrics[];
-  comparisonDaily: DailyMetrics[] | null;
-  /**
-   * Meta's own deduplicated reach for exactly the active filters, already
-   * summed across selected accounts — null means it could not be apurado
-   * com confiança (never a silent fallback to the whole-account figure).
-   * Same numbers as the on-screen "Alcance" KPI for this exact filter set.
-   */
-  reach: number | null;
-  comparisonReach: number | null;
-  /** True while the scoped reach recalculation triggered by a campaign/ad set/objective/status filter is still in flight — the ad-hoc PDF is held back rather than generated from a number that's about to change. */
+  /** True while the scoped reach recalculation triggered by a campaign/ad set/objective/status filter is still in flight — the ad-hoc PDF is held back rather than fired while this screen's own filters are still settling (the server recomputes reach itself from the submitted filters, never from anything held in the browser). */
   reachPending: boolean;
-  audience: AudienceSegment[];
-  regions: RegionSegment[];
-  partialAccountNames: string[];
 
   accountIds: Set<string>;
   accountOptions: FilterOption[];
@@ -94,33 +125,6 @@ function templateSummary(
   return parts.join(" · ");
 }
 
-/** Active-filter chips as printable "Label: valor" pairs for the PDF's cover page — only the ones actually narrowed, so an untouched filter doesn't clutter the report with "Todos". */
-function buildFiltersForPdf(
-  compare: boolean,
-  sets: { accountIds: Set<string>; campaignIds: Set<string>; adSetIds: Set<string>; objectiveIds: Set<string>; statusIds: Set<string> },
-  options: {
-    accountOptions: FilterOption[];
-    campaignOptions: FilterOption[];
-    adSetOptions: FilterOption[];
-    objectiveOptions: FilterOption[];
-    statusOptions: FilterOption[];
-  }
-): { label: string; value: string }[] {
-  const out: { label: string; value: string }[] = [];
-  const maybeAdd = (label: string, ids: Set<string>, opts: FilterOption[]) => {
-    if (opts.length > 0 && ids.size < opts.length) {
-      out.push({ label, value: idsSummary([...ids], opts) });
-    }
-  };
-  maybeAdd("Contas", sets.accountIds, options.accountOptions);
-  maybeAdd("Campanha", sets.campaignIds, options.campaignOptions);
-  maybeAdd("Conjunto", sets.adSetIds, options.adSetOptions);
-  maybeAdd("Objetivo", sets.objectiveIds, options.objectiveOptions);
-  maybeAdd("Status", sets.statusIds, options.statusOptions);
-  out.push({ label: "Comparação", value: compare ? "Ativada" : "Desativada" });
-  return out;
-}
-
 export default function ReportsPanel({
   campaigns,
   periodLabel,
@@ -130,18 +134,7 @@ export default function ReportsPanel({
   period,
   resolvedRange,
   compare,
-  comparisonRange,
-  dataGeneratedAt,
-  accounts,
-  comparisonCampaigns,
-  daily,
-  comparisonDaily,
-  reach,
-  comparisonReach,
   reachPending,
-  audience,
-  regions,
-  partialAccountNames,
   accountIds,
   accountOptions,
   campaignIds,
@@ -167,6 +160,15 @@ export default function ReportsPanel({
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Admin-only: which client this PDF should be generated FOR — "" means the
+  // administrator's own internal/unrestricted export, never silently treated
+  // as if it were already scoped to a specific client (see the cover page's
+  // own "RELATÓRIO INTERNO" banner for the unscoped case). The permissions
+  // actually applied are always resolved server-side from this id, never
+  // trusted from anything else sent by the browser.
+  const [recipientClients, setRecipientClients] = useState<ClientAccessSummary[] | null>(null);
+  const [recipientClientId, setRecipientClientId] = useState<string>("");
+
   useEffect(() => {
     if (!dbConfigured) return;
     let cancelled = false;
@@ -188,6 +190,24 @@ export default function ReportsPanel({
       cancelled = true;
     };
   }, [dbConfigured]);
+
+  useEffect(() => {
+    if (!isAdmin || !dbConfigured) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/analise/admin/clients/");
+        if (!res.ok) return;
+        const body = (await res.json()) as { clients: ClientAccessSummary[] };
+        if (!cancelled) setRecipientClients(body.clients);
+      } catch {
+        // Recipient selector simply stays unavailable — the admin can still generate their own internal report.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, dbConfigured]);
 
   function exportCampaigns() {
     const header = [
@@ -278,9 +298,10 @@ export default function ReportsPanel({
   async function downloadCurrentPdf() {
     if (generatingCurrent) return;
     // The campaign filter has narrowed the scope and the correctly
-    // deduplicated reach for that exact selection is still being fetched —
-    // never generate a "fotografia" that mixes this moment's campaigns with
-    // a reach number for a different scope, or with a stale whole-account one.
+    // deduplicated reach for that exact selection may still be settling on
+    // screen — the server recomputes reach itself from the filters below,
+    // so this is purely to avoid firing a request while this screen's own
+    // filters are still in flux.
     if (reachPending) {
       setCurrentError("Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF.");
       return;
@@ -288,28 +309,19 @@ export default function ReportsPanel({
     setGeneratingCurrent(true);
     setCurrentError(null);
     try {
-      const input: ReportPdfInput = {
-        title: "Relatório de campanhas",
-        clientLabel,
-        accounts,
-        periodLabel,
-        resolvedRange,
+      const filters: ReportFilters = {
+        period,
         compare,
-        comparisonRange,
-        filters: buildFiltersForPdf(compare, { accountIds, campaignIds, adSetIds, objectiveIds, statusIds }, { accountOptions, campaignOptions, adSetOptions, objectiveOptions, statusOptions }),
-        generatedAt: new Date(),
-        dataGeneratedAt,
-        campaigns,
-        comparisonCampaigns,
-        daily,
-        comparisonDaily,
-        reach,
-        comparisonReach,
-        audience,
-        regions,
-        partialAccountNames,
+        accountIds: toSavedIdFilter(accountIds, accountOptions),
+        campaignIds: toSavedIdFilter(campaignIds, campaignOptions),
+        adSetIds: toSavedIdFilter(adSetIds, adSetOptions),
+        objectiveIds: toSavedIdFilter(objectiveIds, objectiveOptions),
+        statusIds: toSavedIdFilter(statusIds, statusOptions),
       };
-      await downloadCampaignReportPdf(input);
+      await downloadPdfFromServer(
+        { title: "Relatório de campanhas", filters, recipientClientId: recipientClientId || null },
+        previewFileNameFor(clientLabel, resolvedRange)
+      );
     } catch (err) {
       setCurrentError(err instanceof ReportPdfError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
     } finally {
@@ -361,123 +373,19 @@ export default function ReportsPanel({
     setRowError(null);
     setGeneratingId(template.id);
     try {
-      const freshData = await fetchDashboardData(template.filters.period, template.filters.compare);
-
-      const resolvedAccountIds = resolveIdFilter(template.filters.accountIds, freshData.accounts.map((a) => a.id));
-      const resolvedCampaignIds = resolveIdFilter(template.filters.campaignIds, freshData.campaigns.map((c) => c.campaignId));
-      const resolvedAdSetIds = resolveIdFilter(template.filters.adSetIds, freshData.adSets.map((a) => a.adSetId));
-      const resolvedObjectiveIds = resolveIdFilter(
-        template.filters.objectiveIds,
-        freshData.campaigns.map((c) => c.objective ?? OBJECTIVE_NONE_KEY)
+      // The template only ever stored filter preferences (see
+      // report-templates-types.ts) — never indicators or access. The server
+      // re-resolves this session's (or the chosen recipient's) CURRENT
+      // permissions on every generation, so a template saved before a
+      // permission change can never reuse the older, wider access.
+      await downloadPdfFromServer(
+        { title: template.name, filters: template.filters, recipientClientId: recipientClientId || null },
+        previewFileNameFor(clientLabel, resolvedRange)
       );
-      const resolvedStatusIds = resolveIdFilter(template.filters.statusIds, freshData.campaigns.map((c) => c.status));
-
-      const filteredCampaigns = filterCampaignsByIds(freshData.campaigns, freshData.adSets, {
-        accountIds: resolvedAccountIds,
-        campaignIds: resolvedCampaignIds,
-        adSetIds: resolvedAdSetIds,
-        objectiveIds: resolvedObjectiveIds,
-        statusIds: resolvedStatusIds,
-      });
-
-      const resolvedPeriodLabel =
-        template.filters.period.kind === "preset"
-          ? `${periodSummary(template.filters.period)} (${formatShortDate(freshData.resolvedRange.since)} – ${formatShortDate(freshData.resolvedRange.until)})`
-          : `${formatShortDate(freshData.resolvedRange.since)} – ${formatShortDate(freshData.resolvedRange.until)}`;
-
-      const templateAccountOptions = freshData.accounts.map((a) => ({ id: a.id, label: a.name }));
-      const templateCampaignOptions = freshData.campaigns.map((c) => ({ id: c.campaignId, label: c.campaignName }));
-      const templateAdSetOptions = freshData.adSets.map((a) => ({ id: a.adSetId, label: a.adSetName }));
-      const templateObjectiveOptions = [...new Set(freshData.campaigns.map((c) => c.objective ?? OBJECTIVE_NONE_KEY))].map((id) => ({
-        id,
-        label: objectiveLabel(id === OBJECTIVE_NONE_KEY ? null : id),
-      }));
-      const templateStatusOptions = [...new Set(freshData.campaigns.map((c) => c.status))].map((id) => ({ id, label: statusLabel(id) }));
-
-      // Same scoped-reach logic as Dashboard.tsx's totalReachOutcome/
-      // comparisonReachOutcome, but as a one-shot await instead of reactive
-      // state — this flow fetches its own fresh snapshot and generates the
-      // PDF in one pass, so there's no "still loading" UI state to hold.
-      const narrowedCampaignIdsByAccount = computeNarrowedCampaignIdsByAccount(freshData.campaigns, filteredCampaigns, resolvedAccountIds);
-      let templateReach: number | null;
-      let templateComparisonReach: number | null = null;
-      if (Object.keys(narrowedCampaignIdsByAccount).length === 0) {
-        templateReach = freshData.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)).reduce((s, r) => s + r.reach, 0);
-        templateComparisonReach =
-          template.filters.compare && freshData.comparison
-            ? freshData.comparison.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)).reduce((s, r) => s + r.reach, 0)
-            : null;
-      } else {
-        const scoped = await fetchScopedReach(template.filters.period, template.filters.compare, narrowedCampaignIdsByAccount);
-        const failed = new Set(scoped.failedAccountIds);
-        const anyFailed = Object.keys(narrowedCampaignIdsByAccount).some((id) => failed.has(id));
-        if (anyFailed) {
-          templateReach = null;
-          templateComparisonReach = null;
-        } else {
-          const scopedMap = new Map(scoped.currentReach.map((r) => [r.accountId, r.reach]));
-          templateReach = 0;
-          for (const accountId of resolvedAccountIds) {
-            templateReach +=
-              narrowedCampaignIdsByAccount[accountId] !== undefined
-                ? (scopedMap.get(accountId) ?? 0)
-                : (freshData.accountReach.find((r) => r.accountId === accountId)?.reach ?? 0);
-          }
-          if (template.filters.compare && scoped.previousReach) {
-            const scopedPrevMap = new Map(scoped.previousReach.map((r) => [r.accountId, r.reach]));
-            templateComparisonReach = 0;
-            for (const accountId of resolvedAccountIds) {
-              templateComparisonReach +=
-                narrowedCampaignIdsByAccount[accountId] !== undefined
-                  ? (scopedPrevMap.get(accountId) ?? 0)
-                  : (freshData.comparison?.accountReach.find((r) => r.accountId === accountId)?.reach ?? 0);
-            }
-          }
-        }
-      }
-
-      const input: ReportPdfInput = {
-        title: template.name,
-        clientLabel,
-        accounts: freshData.accounts.filter((a) => resolvedAccountIds.has(a.id)),
-        periodLabel: resolvedPeriodLabel,
-        resolvedRange: freshData.resolvedRange,
-        compare: template.filters.compare,
-        comparisonRange: freshData.comparison?.period ?? null,
-        filters: buildFiltersForPdf(
-          template.filters.compare,
-          { accountIds: resolvedAccountIds, campaignIds: resolvedCampaignIds, adSetIds: resolvedAdSetIds, objectiveIds: resolvedObjectiveIds, statusIds: resolvedStatusIds },
-          {
-            accountOptions: templateAccountOptions,
-            campaignOptions: templateCampaignOptions,
-            adSetOptions: templateAdSetOptions,
-            objectiveOptions: templateObjectiveOptions,
-            statusOptions: templateStatusOptions,
-          }
-        ),
-        generatedAt: new Date(),
-        dataGeneratedAt: freshData.generatedAt,
-        campaigns: filteredCampaigns,
-        comparisonCampaigns: freshData.comparison ? freshData.comparison.campaigns.filter((c) => resolvedAccountIds.has(c.accountId)) : null,
-        daily: freshData.daily.filter((d) => resolvedAccountIds.has(d.accountId)),
-        comparisonDaily: freshData.comparison ? freshData.comparison.daily.filter((d) => resolvedAccountIds.has(d.accountId)) : null,
-        reach: templateReach,
-        comparisonReach: templateComparisonReach,
-        audience: freshData.audience.filter((a) => resolvedAccountIds.has(a.accountId)),
-        regions: freshData.regions.filter((r) => resolvedAccountIds.has(r.accountId)),
-        partialAccountNames: freshData.partialAccounts.map((a) => a.name),
-      };
-
-      await downloadCampaignReportPdf(input);
     } catch (err) {
       setRowError({
         id: template.id,
-        message:
-          err instanceof DashboardFetchError
-            ? err.message
-            : err instanceof ReportPdfError
-              ? err.message
-              : "Não foi possível gerar o PDF. Tente novamente.",
+        message: err instanceof ReportPdfError ? err.message : "Não foi possível gerar o PDF. Tente novamente.",
       });
     } finally {
       setGeneratingId(null);
@@ -495,15 +403,42 @@ export default function ReportsPanel({
   }
 
   const optionSets = { accountOptions, campaignOptions, adSetOptions, objectiveOptions, statusOptions };
-  const previewFileName = reportFileName({ clientLabel, resolvedRange });
+  const selectedRecipient = recipientClients?.find((c) => c.id === recipientClientId) ?? null;
+  const previewClientLabel = recipientClientId ? (selectedRecipient?.label ?? null) : clientLabel;
+  const previewFileName = previewFileNameFor(previewClientLabel, resolvedRange);
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Baixar relatório em PDF</h3>
         <p className="text-[12px] text-intel-text-dim mb-1">
-          Gera um PDF executivo com todos os indicadores da visão geral, evolução, distribuição, desempenho por campanha e análise — {periodLabel}.
+          Gera um PDF executivo com os indicadores autorizados da visão geral, evolução, distribuição, desempenho por campanha e conjunto de anúncios, e análise — {periodLabel}.
         </p>
+        {isAdmin && dbConfigured && (
+          <div className="mb-4 mt-3">
+            <label htmlFor="report-recipient" className={INTEL_LABEL}>
+              Gerar como
+            </label>
+            <select
+              id="report-recipient"
+              value={recipientClientId}
+              onChange={(e) => setRecipientClientId(e.target.value)}
+              className={`${INTEL_INPUT} mt-2`}
+            >
+              <option value="">Relatório interno (visão administrativa completa)</option>
+              {(recipientClients ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[11px] text-intel-text-dim/70">
+              {recipientClientId
+                ? "O PDF será gerado com as permissões de indicadores atuais deste cliente — nunca com os privilégios de administrador."
+                : "Sem destinatário selecionado, o PDF é um relatório interno com todos os indicadores — não deve ser distribuído como se fosse um relatório aprovado para um cliente."}
+            </p>
+          </div>
+        )}
         <p className="text-[11px] text-intel-text-dim/70 mb-5">Arquivo: {previewFileName}</p>
         <button
           type="button"
