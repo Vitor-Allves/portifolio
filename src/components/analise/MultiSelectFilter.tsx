@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatSelectionSummary } from "@/lib/format";
 import { INTEL_PILL_BASE, INTEL_PILL_INACTIVE, INTEL_PILL_ACTIVE, INTEL_POPOVER, INTEL_INPUT } from "./intel-styles";
 
 export type FilterOption = { id: string; label: string };
@@ -67,6 +68,10 @@ export default function MultiSelectFilter({
 
   const allSelected = options.length > 0 && selectedIds.size === options.length;
   const narrowed = !allSelected && options.length > 0 && selectedIds.size > 0;
+
+  // Prefer naming the actual selection over a bare "2 de 8" — a count only
+  // tells you something changed, not what. Falls back to a count once the
+  // names themselves would be too long to read as a pill label.
   const label =
     options.length === 0
       ? placeholder
@@ -74,7 +79,7 @@ export default function MultiSelectFilter({
         ? allLabel
         : selectedIds.size === 0
           ? "Nenhum selecionado"
-          : `${selectedIds.size} de ${options.length}`;
+          : formatSelectionSummary(selectedIds, options);
 
   return (
     <div className="relative" ref={rootRef}>
@@ -162,7 +167,7 @@ export default function MultiSelectFilter({
                         </svg>
                       )}
                     </span>
-                    <span className="truncate">{option.label}</span>
+                    <span className="min-w-0 truncate">{option.label}</span>
                   </button>
                 </li>
               );

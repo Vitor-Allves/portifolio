@@ -28,9 +28,9 @@ function formatSyncTime(iso: string): string {
 }
 
 const CONNECTION_COPY: Record<ConnectionState, { label: string; dot: string }> = {
-  ok: { label: "Conectado", dot: "bg-intel-green shadow-[0_0_6px_var(--color-intel-green)]" },
-  partial: { label: "Parcial", dot: "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]" },
-  down: { label: "Indisponível", dot: "bg-intel-red shadow-[0_0_6px_var(--color-intel-red)]" },
+  ok: { label: "Conectado", dot: "bg-intel-green" },
+  partial: { label: "Parcial", dot: "bg-amber-400" },
+  down: { label: "Indisponível", dot: "bg-intel-red" },
 };
 
 export default function IntelligenceTopBar({

@@ -50,7 +50,7 @@ export default async function AnaliseAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-intel-ambient bg-intel-grid">
+    <main className="min-h-screen overflow-x-hidden bg-intel-ambient bg-intel-grid">
       <AnaliseHeader isAdmin clientLabel={null} />
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
         <Link

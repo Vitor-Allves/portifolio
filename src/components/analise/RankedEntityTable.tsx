@@ -253,7 +253,11 @@ export default function RankedEntityTable({ title, nameLabel, rows, csvFilePrefi
             <tbody>
               {sorted.map((r) => (
                 <tr key={r.id} className="hover:bg-white/[0.035] transition-colors duration-150">
-                  <td className={td}>{r.name}</td>
+                  <td className={td}>
+                    <span className="block max-w-[240px] truncate" title={r.name}>
+                      {r.name}
+                    </span>
+                  </td>
                   {COLUMNS.map((col) => (
                     <td key={col.id} className={col.numeric ? tdNum : td}>
                       {col.id === "status" ? <StatusBadge status={r.status} /> : col.render(r)}

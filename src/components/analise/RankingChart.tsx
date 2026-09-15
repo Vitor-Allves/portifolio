@@ -111,7 +111,7 @@ export default function RankingChart({ campaigns }: RankingChartProps) {
             id="ranking-objective"
             value={objectiveFilter}
             onChange={(e) => setObjectiveFilter(e.target.value)}
-            className="rounded-lg border border-white/10 bg-intel-surface-2 px-3 py-1.5 text-[13px] text-intel-text focus:border-intel-cyan/50 focus:outline-none transition-colors duration-200 [color-scheme:dark]"
+            className="w-full max-w-full sm:w-auto rounded-lg border border-white/10 bg-intel-surface-2 px-3 py-1.5 text-[13px] text-intel-text focus:border-intel-cyan/50 focus:outline-none transition-colors duration-200 [color-scheme:dark]"
           >
             <option value="all">Todos os objetivos (mostrando o objetivo de cada campanha)</option>
             {objectiveOptions.map((o) => (
@@ -132,7 +132,7 @@ export default function RankingChart({ campaigns }: RankingChartProps) {
               <span className="w-5 shrink-0 text-[12px] tabular-nums text-intel-text-dim">{i + 1}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-3 mb-1">
-                  <span className="text-[13px] truncate text-intel-text-dim">
+                  <span className="min-w-0 truncate text-[13px] text-intel-text-dim">
                     {row.campaign.campaignName}
                     {objectiveFilter === "all" && (
                       <span className="ml-2 text-[10px] tracking-[0.04em] uppercase text-intel-text-dim/70">

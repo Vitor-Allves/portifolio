@@ -88,7 +88,7 @@ export default function AdminUsersPanel({ initialUsers }: AdminUsersPanelProps) 
   }
 
   return (
-    <div className="grid lg:grid-cols-[380px_1fr] gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h2 className="text-[13px] font-medium text-intel-text mb-4">Novo login</h2>
 

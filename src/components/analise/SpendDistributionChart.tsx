@@ -89,10 +89,16 @@ export default function SpendDistributionChart({
                 className={`group outline-none w-full text-left ${row.clickable ? "cursor-pointer" : ""}`}
               >
                 <div className="flex items-baseline justify-between gap-3 mb-1">
+                  {/* min-w-0 is load-bearing: a flex item's default min-width
+                      is "auto" (its content size), which silently defeats
+                      `truncate` — without this, a long campaign name pushes
+                      the whole row (and every ancestor up to the page) wider
+                      than the viewport instead of ellipsizing. */}
                   <span
-                    className={`text-[13px] truncate transition-colors duration-200 ${
+                    className={`min-w-0 text-[13px] truncate transition-colors duration-200 ${
                       isHovered || isFocused ? "text-intel-text" : "text-intel-text-dim"
                     }`}
+                    title={row.label}
                   >
                     {row.label}
                   </span>

@@ -10,6 +10,8 @@ import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange } from "@/lib/
 import { computeStrategicInsights } from "@/lib/strategic-insights";
 import { OBJECTIVE_NONE_KEY, filterCampaignsByIds } from "@/lib/campaign-filters";
 import { fetchDashboardData, DashboardFetchError } from "@/lib/dashboard-fetch";
+import { primaryKpiIds, type KpiId } from "@/lib/kpi-hierarchy";
+import type { DeltaPolarity } from "./KpiCard";
 import IntelligenceSidebar, { SECTIONS, type SectionId } from "./IntelligenceSidebar";
 import IntelligenceTopBar from "./IntelligenceTopBar";
 import FilterBar from "./FilterBar";
@@ -22,12 +24,15 @@ import CampaignsTable from "./CampaignsTable";
 import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
 import StrategicInsightsCompact from "./StrategicInsightsCompact";
+import ExecutiveSummary from "./ExecutiveSummary";
 import ReportsPanel from "./ReportsPanel";
 import IntegrationsPanel from "./IntegrationsPanel";
 
 type DashboardProps = {
   initialData: DashboardData;
   isAdmin: boolean;
+  /** Internal Legado viewer (admin or analyst) — distinct from isAdmin, which gates admin-only actions. Controls how much infra/technical detail is shown, never data access. */
+  isInternal: boolean;
   clientLabel: string | null;
   clientPermissions: ClientPermissions | null;
   dbConfigured: boolean;
@@ -114,7 +119,7 @@ function sparklineFor(daily: DailyAgg[], metric: "spend" | "impressions" | "clic
   });
 }
 
-export default function Dashboard({ initialData, isAdmin, clientLabel, clientPermissions, dbConfigured }: DashboardProps) {
+export default function Dashboard({ initialData, isAdmin, isInternal, clientLabel, clientPermissions, dbConfigured }: DashboardProps) {
   const hiddenFilterIds = useMemo(() => new Set<string>(clientPermissions?.hiddenFilters ?? []), [clientPermissions]);
   const hiddenColumnIds = useMemo(() => new Set<string>(clientPermissions?.hiddenColumns ?? []), [clientPermissions]);
   const hiddenSectionIds = useMemo(() => new Set<string>(clientPermissions?.hiddenSections ?? []), [clientPermissions]);
@@ -335,36 +340,54 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
     goToSection("campaigns");
   }
 
-  const kpis = [
+  const kpis: Array<{
+    id: KpiId;
+    label: string;
+    value: string;
+    unavailableReason?: string;
+    delta?: number | null;
+    deltaPolarity: DeltaPolarity;
+    sparkline?: number[];
+    tooltip: string;
+  }> = [
     {
+      id: "spend",
       label: "Investimento",
       value: formatCurrencyBRL(totals.spend),
       delta: compare ? (comparisonTotals ? pctChange(totals.spend, comparisonTotals.spend) : null) : undefined,
+      deltaPolarity: "neutral",
       sparkline: sparklineFor(dailyFiltered, "spend"),
-      tooltip: "Soma do investimento de todas as campanhas que atendem aos filtros ativos.",
+      tooltip: "Soma do investimento de todas as campanhas que atendem aos filtros ativos. Investir mais não é, por si só, um resultado positivo ou negativo.",
     },
     {
+      id: "impressions",
       label: "Impressões",
       value: formatInteger(totals.impressions),
       delta: compare ? (comparisonTotals ? pctChange(totals.impressions, comparisonTotals.impressions) : null) : undefined,
+      deltaPolarity: "neutral",
       sparkline: sparklineFor(dailyFiltered, "impressions"),
       tooltip: "Total de impressões (exibições do anúncio) somadas entre as campanhas filtradas.",
     },
     {
+      id: "clicks",
       label: "Cliques",
       value: formatInteger(totals.clicks),
       delta: compare ? (comparisonTotals ? pctChange(totals.clicks, comparisonTotals.clicks) : null) : undefined,
+      deltaPolarity: "higher-better",
       sparkline: sparklineFor(dailyFiltered, "clicks"),
       tooltip: "Campo “clicks” da Meta: todo tipo de clique no anúncio, não apenas cliques no link de destino.",
     },
     {
+      id: "linkClicks",
       label: "Conversa iniciada",
       value: formatInteger(totals.linkClicks),
       delta: compare ? (comparisonTotals ? pctChange(totals.linkClicks, comparisonTotals.linkClicks) : null) : undefined,
+      deltaPolarity: "higher-better",
       sparkline: sparklineFor(dailyFiltered, "linkClicks"),
       tooltip: "Campo inline_link_clicks da Meta: cliques que levam ao destino do anúncio, usado como indicador de conversa iniciada.",
     },
     {
+      id: "costPerConversation",
       label: "Custo/Conversa",
       value: totalCostPerConversation === null ? "—" : formatCurrencyBRL(totalCostPerConversation),
       unavailableReason: totalCostPerConversation === null ? "Sem conversas iniciadas no período" : undefined,
@@ -377,10 +400,12 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
               })()
             : null
           : undefined,
+      deltaPolarity: "lower-better",
       sparkline: sparklineFor(dailyFiltered, "costPerConversation"),
       tooltip: "Custo por conversa iniciada = investimento total ÷ total de conversas iniciadas (inline_link_clicks).",
     },
     {
+      id: "ctr",
       label: "CTR",
       value: totalCtr === null ? "—" : formatPercent(totalCtr),
       unavailableReason: totalCtr === null ? "Sem impressões no período" : undefined,
@@ -393,10 +418,12 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
               })()
             : null
           : undefined,
+      deltaPolarity: "higher-better",
       sparkline: sparklineFor(dailyFiltered, "ctr"),
       tooltip: "CTR = total de cliques ÷ total de impressões × 100. Calculado sobre os totais, não pela média das taxas de cada campanha.",
     },
     {
+      id: "cpc",
       label: "CPC",
       value: totalCpc === null ? "—" : formatCurrencyBRL(totalCpc),
       unavailableReason: totalCpc === null ? "Sem cliques no período" : undefined,
@@ -409,10 +436,12 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
               })()
             : null
           : undefined,
+      deltaPolarity: "lower-better",
       sparkline: sparklineFor(dailyFiltered, "cpc"),
       tooltip: "CPC = investimento total ÷ total de cliques.",
     },
     {
+      id: "cpm",
       label: "CPM",
       value: totalCpm === null ? "—" : formatCurrencyBRL(totalCpm),
       unavailableReason: totalCpm === null ? "Sem impressões no período" : undefined,
@@ -425,13 +454,16 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
               })()
             : null
           : undefined,
+      deltaPolarity: "lower-better",
       sparkline: sparklineFor(dailyFiltered, "cpm"),
       tooltip: "CPM = investimento total ÷ total de impressões × 1.000.",
     },
     {
+      id: "reach",
       label: "Alcance",
       value: formatInteger(totalReach),
       delta: compare ? (comparisonReach !== null ? pctChange(totalReach, comparisonReach) : null) : undefined,
+      deltaPolarity: "neutral",
       // Each point here is that single day's own independent reach value —
       // never summed into the card's total above (which comes from the
       // separate, correctly-deduplicated whole-period fetch). Plotting a
@@ -443,6 +475,19 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
     },
   ];
 
+  // Which 4 indicators lead depends on what the filtered campaigns are
+  // actually optimizing for (falls back to general delivery indicators the
+  // moment objectives are mixed) — never a conversion metric presented as
+  // universal. The rest stay fully visible in a smaller second row, never
+  // removed, just organized by importance. Ordered by primaryKpiIds' own
+  // ranking (e.g. Alcance leads for an awareness objective), not by the
+  // kpis array's fixed declaration order.
+  const kpisById = new Map(kpis.map((k) => [k.id, k]));
+  const primaryOrder = primaryKpiIds(filteredCampaigns);
+  const primaryKpis = primaryOrder.map((id) => kpisById.get(id)!).filter(Boolean);
+  const primaryIds = new Set(primaryOrder);
+  const secondaryKpis = kpis.filter((k) => !primaryIds.has(k.id));
+
   const trendCurrent = dailyFiltered;
   const trendComparison = compare ? comparisonDailyFiltered : null;
 
@@ -451,7 +496,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
     data.accounts.length === 0 ? "down" : data.partialAccounts.length > 0 ? "partial" : "ok";
 
   return (
-    <div className="flex min-h-screen bg-intel-ambient bg-intel-grid">
+    <div className="flex min-h-screen bg-intel-ambient bg-intel-grid overflow-x-hidden">
       <IntelligenceSidebar
         active={section}
         onSelect={setSection}
@@ -532,18 +577,53 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                 disabled={isPending}
               />
 
+              {isPending && (
+                <div className="mb-4 flex items-center gap-2 text-[12.5px] text-intel-text-dim" role="status" aria-live="polite">
+                  <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  </svg>
+                  Atualizando dados do período selecionado...
+                </div>
+              )}
+
               <div className={`transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                      {kpis.map((kpi, i) => (
+                    {!hiddenSectionIds.has("insights") && (
+                      <m.div custom={0} initial="hidden" animate="visible" variants={fadeUp}>
+                        <ExecutiveSummary insights={insights} compare={compare} />
+                      </m.div>
+                    )}
+
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      {primaryKpis.map((kpi, i) => (
                         <m.div key={kpi.label} custom={i} initial="hidden" animate="visible" variants={fadeUp}>
-                          <KpiCard {...kpi} />
+                          <KpiCard {...kpi} size="primary" />
                         </m.div>
                       ))}
                     </div>
 
-                    <div className={hiddenSectionIds.has("insights") ? "grid gap-4" : "grid lg:grid-cols-[1fr_360px] gap-4 items-stretch"}>
+                    <div>
+                      <p className="text-[10.5px] tracking-[0.12em] uppercase text-intel-text-dim mb-2.5">
+                        Outros indicadores
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {secondaryKpis.map((kpi, i) => (
+                          <m.div key={kpi.label} custom={i + 4} initial="hidden" animate="visible" variants={fadeUp}>
+                            <KpiCard {...kpi} size="secondary" />
+                          </m.div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      className={
+                        hiddenSectionIds.has("insights")
+                          ? "grid grid-cols-1 gap-4"
+                          : "grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-stretch"
+                      }
+                    >
                       <m.div custom={7} initial="hidden" animate="visible" variants={fadeUp}>
                         <TrendChart
                           current={trendCurrent}
@@ -564,7 +644,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                       )}
                     </div>
 
-                    <div className="grid lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <m.div custom={9} initial="hidden" animate="visible" variants={fadeUp}>
                         <SpendDistributionChart
                           campaigns={filteredCampaigns}
@@ -577,7 +657,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                       </m.div>
                     </div>
 
-                    <div className="grid lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <m.div custom={11} initial="hidden" animate="visible" variants={fadeUp}>
                         <BreakdownAnalysis
                           title="Público por idade"
@@ -665,6 +745,7 @@ export default function Dashboard({ initialData, isAdmin, clientLabel, clientPer
                     partialAccountsCount={data.partialAccounts.length}
                     generatedAt={data.generatedAt}
                     dbConfigured={dbConfigured}
+                    isInternal={isInternal}
                   />
                 )}
               </div>

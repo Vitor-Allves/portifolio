@@ -211,7 +211,7 @@ function CheckboxGroup<T extends string>({
                     </svg>
                   )}
                 </span>
-                <span className="truncate">{option.label}</span>
+                <span className="min-w-0 truncate">{option.label}</span>
                 {hidden && <span className="ml-auto shrink-0 text-[11px] text-intel-text-dim/60">oculto</span>}
               </button>
             </li>
@@ -353,7 +353,7 @@ export default function AdminClientsPanel({
   }
 
   return (
-    <div className="grid lg:grid-cols-[380px_1fr] gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h2 className="text-[13px] font-medium text-intel-text mb-4">Novo acesso</h2>
 
@@ -405,7 +405,7 @@ export default function AdminClientsPanel({
                           </svg>
                         )}
                       </span>
-                      <span className="truncate">{account.name}</span>
+                      <span className="min-w-0 truncate">{account.name}</span>
                     </button>
                   </li>
                 );

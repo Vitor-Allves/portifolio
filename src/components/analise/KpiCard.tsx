@@ -1,13 +1,24 @@
 import { formatSignedPercent } from "@/lib/format";
 
+/** Whether a rise in this metric is inherently good, bad, or neither — a
+ * higher CPC is worse, a higher Alcance isn't automatically better or worse
+ * (it's exposure, not a result), and spend going up is neither a win nor a
+ * loss on its own. Coloring every delta green-up/red-down regardless of the
+ * metric would misrepresent that, e.g. more investment isn't a "positive"
+ * result the way more conversions is. */
+export type DeltaPolarity = "higher-better" | "lower-better" | "neutral";
+
 type KpiCardProps = {
   label: string;
   value: string;
   unavailableReason?: string;
   /** undefined = comparison not enabled; null = no previous-period baseline to compare against; number = % change */
   delta?: number | null;
+  deltaPolarity: DeltaPolarity;
   sparkline?: number[];
   tooltip: string;
+  /** "primary" = the up-to-4 KPIs highlighted for the current objective; "secondary" = every other indicator, still fully visible just less prominent. */
+  size?: "primary" | "secondary";
 };
 
 // Fixed viewBox coordinate space, but the <svg> itself fills whatever width
@@ -53,37 +64,39 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-export default function KpiCard({ label, value, unavailableReason, delta, sparkline, tooltip }: KpiCardProps) {
+function deltaColor(delta: number | null | undefined, polarity: DeltaPolarity): string {
+  if (delta === undefined || delta === null || delta === 0 || polarity === "neutral") return "text-intel-text-dim";
+  const isGood = polarity === "higher-better" ? delta > 0 : delta < 0;
+  return isGood ? "text-intel-green" : "text-intel-red";
+}
+
+export default function KpiCard({ label, value, unavailableReason, delta, deltaPolarity, sparkline, tooltip, size = "secondary" }: KpiCardProps) {
   const isUnavailable = value === "—";
-  const deltaColor =
-    delta === undefined || delta === null
-      ? "text-intel-text-dim"
-      : delta > 0
-        ? "text-intel-green"
-        : delta < 0
-          ? "text-intel-red"
-          : "text-intel-text-dim";
+  const isPrimary = size === "primary";
 
   return (
-    <div className="group relative rounded-2xl border border-white/[0.07] bg-intel-surface-1 px-5 py-4 transition-colors duration-200 hover:border-white/[0.14]">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-intel-cyan/[0.03] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-      />
-
+    <div
+      className={`group relative rounded-2xl border bg-intel-surface-1 transition-colors duration-200 hover:border-white/[0.14] ${
+        isPrimary ? "border-white/[0.09] px-5 py-4.5" : "border-white/[0.07] px-4 py-3.5"
+      }`}
+    >
       {/* min-h reserves two lines' worth of label height regardless of
           whether THIS card's own label happens to wrap — otherwise a
           two-word label (e.g. "Conversa iniciada") pushes its value down
           a row further than every single-word sibling, breaking the
           row's alignment. */}
       <div className="relative flex items-start justify-between gap-2 min-h-[2.3em]">
-        <p className="text-[10.5px] leading-tight tracking-[0.12em] uppercase text-intel-text-dim">{label}</p>
+        <p
+          className={`leading-tight tracking-[0.1em] uppercase text-intel-text-dim ${isPrimary ? "text-[11px]" : "text-[10px]"}`}
+        >
+          {label}
+        </p>
         <div className="group/tip relative shrink-0">
           <button
             type="button"
             aria-label={`O que é ${label}`}
             title={tooltip}
-            className="flex h-4 w-4 items-center justify-center rounded-full border border-white/15 text-[10px] text-intel-text-dim hover:border-intel-cyan/50 hover:text-intel-cyan transition-colors duration-200"
+            className="flex h-4 w-4 items-center justify-center rounded-full border border-white/20 text-[10px] text-intel-text-dim hover:border-intel-cyan/50 hover:text-intel-cyan transition-colors duration-200"
           >
             i
           </button>
@@ -97,9 +110,9 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
           never allowed to run past the card's own edge. min-h keeps every
           card the same height whether or not its own value needed to wrap. */}
       <p
-        className={`relative mt-2 font-sans text-[22px] leading-tight font-semibold tabular-nums break-words min-h-[1.2em] ${
-          isUnavailable ? "text-intel-text-dim" : "text-intel-text"
-        }`}
+        className={`relative mt-2 font-sans leading-tight font-semibold tabular-nums break-words min-h-[1.2em] ${
+          isPrimary ? "text-[25px]" : "text-[19px]"
+        } ${isUnavailable ? "text-intel-text-dim" : "text-intel-text"}`}
       >
         {value}
       </p>
@@ -108,16 +121,18 @@ export default function KpiCard({ label, value, unavailableReason, delta, sparkl
           plot (e.g. Alcance, which has no daily breakdown) — otherwise that
           card's border ends up visibly shorter than its siblings, since a
           card's box doesn't stretch to match the row on its own. */}
-      <div className="relative mt-2 h-6">
-        {sparkline && sparkline.length > 1 && <Sparkline values={sparkline} />}
-      </div>
+      {isPrimary && (
+        <div className="relative mt-2 h-6">
+          {sparkline && sparkline.length > 1 && <Sparkline values={sparkline} />}
+        </div>
+      )}
 
       {isUnavailable && unavailableReason && (
         <p className="relative mt-1 text-[11px] text-intel-text-dim">{unavailableReason}</p>
       )}
 
       {delta !== undefined && (
-        <p className={`relative mt-1.5 text-[12px] tabular-nums ${deltaColor}`}>
+        <p className={`relative mt-1.5 text-[12px] tabular-nums ${deltaColor(delta, deltaPolarity)}`}>
           {delta === null ? "Sem período anterior para comparar" : `${formatSignedPercent(delta)} vs. período anterior`}
         </p>
       )}

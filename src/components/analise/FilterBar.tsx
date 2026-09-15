@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Period } from "@/lib/meta-ads-types";
-import { formatShortDate } from "@/lib/format";
+import { formatShortDate, formatSelectionSummary } from "@/lib/format";
 import MultiSelectFilter, { type FilterOption } from "./MultiSelectFilter";
 import PeriodFilter from "./PeriodFilter";
 import ComparisonToggle from "./ComparisonToggle";
@@ -75,7 +75,7 @@ export default function FilterBar({
   if (accountOptions.length > 1 && accountIds.size !== accountOptions.length) {
     chips.push({
       key: "accounts",
-      label: `Cliente: ${accountIds.size} de ${accountOptions.length}`,
+      label: `Cliente: ${formatSelectionSummary(accountIds, accountOptions)}`,
       onRemove: () => onAccountIdsChange(new Set(accountOptions.map((o) => o.id))),
     });
   }
@@ -95,7 +95,7 @@ export default function FilterBar({
   if (!hiddenFilterIds.has("campaign") && campaignOptions.length > 0 && campaignIds.size !== campaignOptions.length) {
     chips.push({
       key: "campaigns",
-      label: `Campanha: ${campaignIds.size} de ${campaignOptions.length}`,
+      label: `Campanha: ${formatSelectionSummary(campaignIds, campaignOptions)}`,
       onRemove: () => onCampaignIdsChange(new Set(campaignOptions.map((o) => o.id))),
     });
   }
@@ -103,7 +103,7 @@ export default function FilterBar({
   if (!hiddenFilterIds.has("adSet") && adSetOptions.length > 0 && adSetIds.size !== adSetOptions.length) {
     chips.push({
       key: "adsets",
-      label: `Conjunto: ${adSetIds.size} de ${adSetOptions.length}`,
+      label: `Conjunto: ${formatSelectionSummary(adSetIds, adSetOptions)}`,
       onRemove: () => onAdSetIdsChange(new Set(adSetOptions.map((o) => o.id))),
     });
   }
@@ -111,7 +111,7 @@ export default function FilterBar({
   if (!hiddenFilterIds.has("objective") && objectiveOptions.length > 0 && objectiveIds.size !== objectiveOptions.length) {
     chips.push({
       key: "objectives",
-      label: `Objetivo: ${objectiveIds.size} de ${objectiveOptions.length}`,
+      label: `Objetivo: ${formatSelectionSummary(objectiveIds, objectiveOptions)}`,
       onRemove: () => onObjectiveIdsChange(new Set(objectiveOptions.map((o) => o.id))),
     });
   }
@@ -119,7 +119,7 @@ export default function FilterBar({
   if (!hiddenFilterIds.has("status") && statusOptions.length > 0 && statusIds.size !== statusOptions.length) {
     chips.push({
       key: "statuses",
-      label: `Status: ${statusIds.size} de ${statusOptions.length}`,
+      label: `Status: ${formatSelectionSummary(statusIds, statusOptions)}`,
       onRemove: () => onStatusIdsChange(new Set(statusOptions.map((o) => o.id))),
     });
   }

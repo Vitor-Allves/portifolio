@@ -65,7 +65,7 @@ function NavButton({
     >
       <span
         aria-hidden="true"
-        className={`absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2.5px] rounded-full bg-intel-cyan transition-opacity duration-200 shadow-[0_0_6px_var(--color-intel-cyan)] ${
+        className={`absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2.5px] rounded-full bg-intel-cyan transition-opacity duration-200 ${
           isActive ? "opacity-100" : "opacity-0"
         }`}
       />
@@ -105,13 +105,13 @@ function SidebarContent({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className={`pt-6 pb-5 border-b border-white/[0.06] ${collapsed ? "px-3" : "px-5"}`}>
+      <div className={`pt-7 pb-6 border-b border-white/[0.06] ${collapsed ? "px-3" : "px-5"}`}>
         {collapsed ? (
-          <img src="/icon.png" alt="Legado" width={28} height={28} className="mx-auto" />
+          <img src="/icon.png" alt="Legado" width={34} height={34} className="mx-auto" />
         ) : (
           <>
-            <Logo variant="onDark" size="sm" className="!h-9" />
-            <p className="mt-2 text-[10px] tracking-[0.18em] uppercase text-intel-text-dim">
+            <Logo variant="onDark" size="sm" className="!h-11" />
+            <p className="mt-2.5 text-[10.5px] tracking-[0.2em] uppercase text-intel-text-dim">
               Intelligence
             </p>
           </>

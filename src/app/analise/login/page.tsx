@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function AnaliseLoginPage() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-intel-ambient bg-intel-grid px-6 py-16">
+    <main className="min-h-screen overflow-x-hidden flex items-center justify-center bg-intel-ambient bg-intel-grid px-6 py-16">
       <div className="w-full max-w-sm animate-intel-in">
         <div className="mb-10 flex justify-center">
           <Logo variant="onDark" className="!h-16" />
