@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { MetaAdAccount } from "@/lib/meta-ads-types";
 import { STAFF_ROLES, STAFF_ROLE_LABELS, type StaffRole } from "@/lib/session-scope";
 import type { InternalUserSummary } from "@/lib/internal-users-types";
@@ -73,6 +73,127 @@ function AccountsChecklist({
   );
 }
 
+/** Inline edit form for an existing staff account — name, username, role, authorized companies and permissions. Reset/revoke stay separate actions (not part of this form), matching the brief's "revogar acesso separado do formulário". */
+function EditStaffRow({
+  user,
+  accounts,
+  onSave,
+  onCancel,
+}: {
+  user: InternalUserSummary;
+  accounts: MetaAdAccount[];
+  onSave: (id: string, input: { name: string; username: string; role: StaffRole; accountIds: string[]; permissions: ClientPermissions }) => Promise<string | null>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(user.name);
+  const [username, setUsername] = useState(user.username);
+  const [role, setRole] = useState<StaffRole>(user.role);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set(user.accountIds));
+  const [permissions, setPermissions] = useState<ClientPermissions>(user.permissions);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleAccount(id: string) {
+    setSelectedAccountIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!name.trim()) {
+      setError("Informe o nome.");
+      return;
+    }
+    if (role !== "administrador_geral" && selectedAccountIds.size === 0) {
+      setError("Selecione ao menos uma empresa autorizada.");
+      return;
+    }
+    setSubmitting(true);
+    const err = await onSave(user.id, { name: name.trim(), username: username.trim(), role, accountIds: [...selectedAccountIds], permissions });
+    setSubmitting(false);
+    if (err) setError(err);
+  }
+
+  return (
+    <tr>
+      <td colSpan={6} className="border-t border-white/[0.05] bg-intel-surface-2/40 px-4 py-4">
+        <form onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={INTEL_LABEL}>Nome completo</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} className={`${INTEL_INPUT} mt-2 !py-2.5`} />
+            </div>
+            <div>
+              <label className={INTEL_LABEL}>Nome de usuário</label>
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className={`${INTEL_INPUT} mt-2 !py-2.5 font-mono`}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+            </div>
+          </div>
+
+          <p className={`${INTEL_LABEL} mt-4`}>Perfil de acesso</p>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {STAFF_ROLES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRole(r)}
+                className={`rounded-lg border px-3 py-2 text-[12.5px] text-left transition-colors duration-150 ${
+                  role === r ? "border-intel-cyan/40 bg-intel-cyan/[0.1] text-intel-text" : "border-white/10 text-intel-text-dim hover:border-white/20"
+                }`}
+              >
+                {STAFF_ROLE_LABELS[r]}
+              </button>
+            ))}
+          </div>
+
+          {role !== "administrador_geral" && (
+            <>
+              <p className={`${INTEL_LABEL} mt-4`}>Empresas autorizadas</p>
+              <AccountsChecklist accounts={accounts} selected={selectedAccountIds} onToggle={toggleAccount} />
+            </>
+          )}
+
+          <details className="mt-4 group">
+            <summary className="cursor-pointer text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
+              Permissões de módulos e ações
+            </summary>
+            <PermissionsEditor permissions={permissions} onChange={setPermissions} />
+          </details>
+
+          {error && <p className="mt-3 text-[12.5px] text-intel-red">{error}</p>}
+
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-full border border-white/15 px-4 py-2 text-[12px] tracking-[0.08em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-full bg-intel-cyan px-4 py-2 text-[12px] font-semibold tracking-[0.08em] uppercase text-[#04121a] hover:brightness-110 transition-[filter] duration-200 disabled:opacity-60"
+            >
+              {submitting ? "Salvando..." : "Salvar alterações"}
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
 export default function AdminUsersPanel({ accounts, accountsError, initialUsers }: AdminUsersPanelProps) {
   const [users, setUsers] = useState(initialUsers);
   const [name, setName] = useState("");
@@ -87,6 +208,7 @@ export default function AdminUsersPanel({ accounts, accountsError, initialUsers 
   const [created, setCreated] = useState<{ name: string; password: string } | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<InternalUserSummary | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
   function toggleAccount(id: string) {
     setSelectedAccountIds((prev) => {
@@ -177,6 +299,33 @@ export default function AdminUsersPanel({ accounts, accountsError, initialUsers 
     setConfirmingRevoke(null);
     setUsers((prev) => prev.filter((u) => u.id !== id));
     await fetch(`/api/analise/admin/users/${id}/`, { method: "DELETE" }).catch(() => {});
+  }
+
+  async function handleSaveEdit(
+    id: string,
+    input: { name: string; username: string; role: StaffRole; accountIds: string[]; permissions: ClientPermissions }
+  ): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/analise/admin/users/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const body = await res.json();
+      if (!res.ok) return body?.error ?? "Não foi possível salvar as alterações.";
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === id
+            ? { ...u, name: input.name, username: input.username.toLowerCase(), role: input.role, accountIds: input.accountIds, permissions: input.permissions }
+            : u
+        )
+      );
+      setEditingUserId(null);
+      return null;
+    } catch {
+      return "Falha de conexão. Tente novamente.";
+    }
   }
 
   return (
@@ -314,50 +463,62 @@ export default function AdminUsersPanel({ accounts, accountsError, initialUsers 
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user.id} className="hover:bg-white/[0.03] transition-colors duration-150">
-                  <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
-                    {user.name}
-                    {user.mustChangePassword && (
-                      <span className="ml-2 text-[10.5px] uppercase tracking-[0.06em] text-amber-300/80">1º acesso pendente</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05] font-mono">
-                    {user.username}
-                  </td>
-                  <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
-                    {STAFF_ROLE_LABELS[user.role]}
-                    {user.role === "administrador_geral" && (
-                      <span className={`ml-2 text-[10.5px] uppercase tracking-[0.06em] ${user.totpEnabled ? "text-intel-green" : "text-intel-red"}`}>
-                        {user.totpEnabled ? "2FA ativo" : "2FA pendente"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
-                    {user.role === "administrador_geral" ? "Todas" : accountNames(user.accountIds, accounts) || "—"}
-                  </td>
-                  <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
-                    {permissionsSummary(user.permissions)}
-                  </td>
-                  <td className="py-2.5 px-3 text-right border-t border-white/[0.05] whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setResetTarget(user)}
-                      className="text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200 mr-4"
-                    >
-                      Resetar senha
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRevoke(user.id)}
-                      onBlur={() => setConfirmingRevoke(null)}
-                      className={`text-[12px] tracking-[0.06em] uppercase transition-colors duration-200 ${
-                        confirmingRevoke === user.id ? "text-intel-red font-medium" : "text-intel-text-dim hover:text-intel-red"
-                      }`}
-                    >
-                      {confirmingRevoke === user.id ? "Confirmar?" : "Revogar"}
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={user.id}>
+                  <tr className="hover:bg-white/[0.03] transition-colors duration-150">
+                    <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
+                      {user.name}
+                      {user.mustChangePassword && (
+                        <span className="ml-2 text-[10.5px] uppercase tracking-[0.06em] text-amber-300/80">1º acesso pendente</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05] font-mono">
+                      {user.username}
+                    </td>
+                    <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
+                      {STAFF_ROLE_LABELS[user.role]}
+                      {user.role === "administrador_geral" && (
+                        <span className={`ml-2 text-[10.5px] uppercase tracking-[0.06em] ${user.totpEnabled ? "text-intel-green" : "text-intel-red"}`}>
+                          {user.totpEnabled ? "2FA ativo" : "2FA pendente"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
+                      {user.role === "administrador_geral" ? "Todas" : accountNames(user.accountIds, accounts) || "—"}
+                    </td>
+                    <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
+                      {permissionsSummary(user.permissions)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right border-t border-white/[0.05] whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setEditingUserId(editingUserId === user.id ? null : user.id)}
+                        className="text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200 mr-4"
+                      >
+                        {editingUserId === user.id ? "Fechar" : "Editar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setResetTarget(user)}
+                        className="text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200 mr-4"
+                      >
+                        Resetar senha
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRevoke(user.id)}
+                        onBlur={() => setConfirmingRevoke(null)}
+                        className={`text-[12px] tracking-[0.06em] uppercase transition-colors duration-200 ${
+                          confirmingRevoke === user.id ? "text-intel-red font-medium" : "text-intel-text-dim hover:text-intel-red"
+                        }`}
+                      >
+                        {confirmingRevoke === user.id ? "Confirmar?" : "Revogar"}
+                      </button>
+                    </td>
+                  </tr>
+                  {editingUserId === user.id && (
+                    <EditStaffRow user={user} accounts={accounts} onSave={handleSaveEdit} onCancel={() => setEditingUserId(null)} />
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
