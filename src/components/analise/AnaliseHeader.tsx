@@ -41,7 +41,7 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
               href="/analise/admin/"
               className="text-[13px] tracking-[0.1em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200"
             >
-              Clientes
+              Usuários e acessos
             </Link>
           )}
           <button

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
-import { isFullAdmin } from "@/lib/session-scope";
+import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
+import { isFullAdmin, type SessionScope } from "@/lib/session-scope";
+import { isActionAllowed } from "@/lib/client-permissions";
 import { createReportTemplate, listReportTemplates } from "@/lib/report-templates";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
 import { DbConfigError } from "@/lib/db";
@@ -10,13 +11,20 @@ export const runtime = "nodejs";
 const DB_NOT_CONFIGURED_MESSAGE =
   "Banco de dados não configurado. Veja docs/client-access-setup.md.";
 
-function requireSession(req: NextRequest) {
-  return verifySessionToken(req.cookies.get(ANALISE_SESSION_COOKIE)?.value);
+// Template CRUD is a shared, platform-wide resource — clients never manage
+// it regardless of their own permissions (that field only ever governs
+// their own data visibility/export). Staff below administrador_geral may,
+// unless an admin explicitly disabled it for them.
+function canManageReportTemplates(scope: SessionScope): boolean {
+  if (isFullAdmin(scope)) return true;
+  if (scope.kind !== "staff") return false;
+  return isActionAllowed(scope.permissions, "manage_report_templates");
 }
 
-/** Any authenticated session (admin, analyst, or client) can list templates — they're read-only presets to apply, not something a viewer manages. */
+/** Any session with data access (staff or client) can list templates — they're read-only presets to apply, not something every viewer manages. */
 export async function GET(req: NextRequest) {
-  if (!requireSession(req)) {
+  const scope = await sessionScopeFromRequest(req);
+  if (!hasDataAccess(scope)) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   }
 
@@ -33,8 +41,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const scope = requireSession(req);
-  if (!isFullAdmin(scope)) {
+  const scope = await sessionScopeFromRequest(req);
+  if (!hasDataAccess(scope) || !canManageReportTemplates(scope)) {
     return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
   }
 

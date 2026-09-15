@@ -33,17 +33,23 @@ export type RecipientError = { error: string; status: number };
 
 /** Resolves who this export is FOR and, from that, the ONE permission record that governs it — the requesting session's own scope (self-export) or, for a full admin explicitly naming a client, that client's own client_access row. Never accepts a permission set from the caller; the recipientClientId is only ever an id to look up. */
 export async function resolveRecipient(scope: SessionScope, recipientClientId: string | null): Promise<Recipient | RecipientError> {
-  if (scope.kind === "client") {
-    // A client can only ever export their own data — a recipientClientId in
-    // the request is simply ignored for this session kind rather than
-    // honored or rejected, since it changes nothing about what this session
-    // may see.
-    return { isClientScoped: true, label: scope.label, accountIds: scope.accountIds, permissions: scope.permissions };
+  if (!isFullAdmin(scope)) {
+    // Both a client and a staff member below administrador_geral can only
+    // ever export their own scoped data — a recipientClientId in the
+    // request is simply ignored for these session kinds rather than
+    // honored or rejected, since it changes nothing about what this
+    // session may see.
+    return {
+      isClientScoped: scope.kind === "client",
+      label: scope.kind === "client" ? scope.label : null,
+      accountIds: scope.accountIds,
+      permissions: scope.permissions,
+    };
   }
 
-  // Internal (admin/analyst) session, no explicit recipient: this is the
-  // administrator's own internal export — never labeled or restricted as if
-  // it were already scoped to a specific client.
+  // Full admin, no explicit recipient: this is the administrator's own
+  // internal export — never labeled or restricted as if it were already
+  // scoped to a specific client.
   if (!recipientClientId) {
     return { isClientScoped: false, label: null, accountIds: null, permissions: null };
   }

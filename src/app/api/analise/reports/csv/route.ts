@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MetaApiError } from "@/lib/meta-ads";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
+import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
+import { isFullAdmin } from "@/lib/session-scope";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
 import { resolveRecipient, isRecipientError, buildAllowedColumns, applyHiddenFilters, fetchFilteredReportData } from "@/lib/report-data";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
@@ -9,7 +10,8 @@ import { ctr, cpc, cpm, costPerConversation, sumTotals, type Totals } from "@/li
 import { rowsToCsv } from "@/lib/csv";
 import type { CampaignInsight } from "@/lib/meta-ads-types";
 import type { AllowedColumns } from "@/lib/pdf-report-core";
-import type { CampaignColumnId } from "@/lib/client-permissions";
+import { isActionAllowed, type CampaignColumnId } from "@/lib/client-permissions";
+import { writeAudit } from "@/lib/audit-log";
 
 export const runtime = "nodejs";
 
@@ -138,9 +140,12 @@ function slugify(value: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const scope = verifySessionToken(req.cookies.get(ANALISE_SESSION_COOKIE)?.value);
-  if (!scope) {
+  const scope = await sessionScopeFromRequest(req);
+  if (!hasDataAccess(scope)) {
     return NextResponse.json({ error: "Sessão inválida ou expirada. Faça login novamente." }, { status: 401 });
+  }
+  if (!isFullAdmin(scope) && !isActionAllowed(scope.permissions, "export_reports")) {
+    return NextResponse.json({ error: "Sem permissão para gerar relatórios." }, { status: 403 });
   }
 
   let body: RequestBody;
@@ -172,8 +177,18 @@ export async function POST(req: NextRequest) {
     const { filteredCampaigns } = await fetchFilteredReportData(effectiveFilters, recipient);
     const csv = kind === "campaigns" ? buildCampaignsCsv(filteredCampaigns, allowedColumns) : buildAccountSummaryCsv(filteredCampaigns, allowedColumns);
 
-    const scope = slugify(recipient.label ?? "consolidado");
-    const fileName = `${kind === "campaigns" ? "campanhas" : "resumo-por-conta"}_${scope}_${effectiveFilters.period.kind === "custom" ? `${effectiveFilters.period.range.since}_a_${effectiveFilters.period.range.until}` : effectiveFilters.period.preset}.csv`;
+    const recipientSlug = slugify(recipient.label ?? "consolidado");
+    const fileName = `${kind === "campaigns" ? "campanhas" : "resumo-por-conta"}_${recipientSlug}_${effectiveFilters.period.kind === "custom" ? `${effectiveFilters.period.range.since}_a_${effectiveFilters.period.range.until}` : effectiveFilters.period.preset}.csv`;
+
+    await writeAudit({
+      actorUserId: scope.userId,
+      actorLabel: scope.userName,
+      actorKind: scope.kind === "staff" ? "admin" : "client",
+      action: "report.generate",
+      targetType: "report",
+      targetLabel: recipient.label ?? "Interno",
+      metadata: { format: "csv", kind, recipientClientId },
+    });
 
     // Leading BOM so Excel opens the accented pt-BR text as UTF-8 instead of guessing Latin-1 (matches the client-side downloadCsv helper's own format).
     const body = `﻿${csv}`;
