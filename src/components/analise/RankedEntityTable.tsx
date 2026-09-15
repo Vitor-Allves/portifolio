@@ -18,6 +18,7 @@ export type RankedRow = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  conversations: number | null;
   reach: number;
 };
 
@@ -29,6 +30,7 @@ type ColumnId =
   | "impressions"
   | "clicks"
   | "linkClicks"
+  | "conversations"
   | "costPerConversation"
   | "ctr"
   | "cpc"
@@ -50,7 +52,14 @@ const COLUMNS: Column[] = [
   { id: "spend", label: "Investimento", numeric: true, value: (r) => r.spend, render: (r) => formatCurrencyBRL(r.spend) },
   { id: "impressions", label: "Impressões", numeric: true, value: (r) => r.impressions, render: (r) => formatInteger(r.impressions) },
   { id: "clicks", label: "Cliques", numeric: true, value: (r) => r.clicks, render: (r) => formatInteger(r.clicks) },
-  { id: "linkClicks", label: "Conversa iniciada", numeric: true, value: (r) => r.linkClicks, render: (r) => formatInteger(r.linkClicks) },
+  { id: "linkClicks", label: "Cliques no link", numeric: true, value: (r) => r.linkClicks, render: (r) => formatInteger(r.linkClicks) },
+  {
+    id: "conversations",
+    label: "Conversa iniciada",
+    numeric: true,
+    value: (r) => r.conversations,
+    render: (r) => (r.conversations === null ? "Não disponível" : formatInteger(r.conversations)),
+  },
   {
     id: "costPerConversation",
     label: "Custo/Conversa",

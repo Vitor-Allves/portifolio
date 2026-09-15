@@ -18,7 +18,7 @@ export default function ExecutiveSummary({ insights, compare }: ExecutiveSummary
     {
       label: "Principal mudança",
       text: compare
-        ? insights.summary[1]?.text ?? "Sem dados do período anterior para comparar."
+        ? insights.changes[0]?.text ?? "Sem dados do período anterior para comparar."
         : "Comparação com o período anterior não está ativada — ative o filtro de comparação para ver a principal mudança.",
     },
     {

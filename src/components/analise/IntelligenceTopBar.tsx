@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { REFERENCE_TIME_ZONE } from "@/lib/format";
 
 type ConnectionState = "ok" | "partial" | "down";
 
@@ -14,6 +15,9 @@ type IntelligenceTopBarProps = {
   onOpenMobileMenu: () => void;
 };
 
+// Always horário de Brasília, regardless of the viewer's own device
+// timezone — matches the PDF report's "Fuso horário de referência" so the
+// two never disagree on when the data was last updated.
 function formatSyncTime(iso: string): string {
   try {
     return new Intl.DateTimeFormat("pt-BR", {
@@ -21,6 +25,7 @@ function formatSyncTime(iso: string): string {
       month: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: REFERENCE_TIME_ZONE,
     }).format(new Date(iso));
   } catch {
     return iso;
@@ -82,7 +87,7 @@ export default function IntelligenceTopBar({
             <span className={`h-1.5 w-1.5 rounded-full ${connection.dot}`} aria-hidden="true" />
             <span>{connection.label}</span>
             <span className="text-white/15">·</span>
-            <span>Sync {formatSyncTime(lastSyncIso)}</span>
+            <span title="Horário de Brasília (America/Sao_Paulo)">Atualizado {formatSyncTime(lastSyncIso)} (BRT)</span>
           </div>
 
           <button

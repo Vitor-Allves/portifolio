@@ -23,12 +23,12 @@ export function formatInteger(value: number): string {
 }
 
 export function formatPercent(value: number, digits = 2): string {
-  return `${value.toFixed(digits)}%`;
+  return `${value.toFixed(digits).replace(".", ",")}%`;
 }
 
 export function formatSignedPercent(value: number, digits = 1): string {
   const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(digits)}%`;
+  return `${sign}${value.toFixed(digits).replace(".", ",")}%`;
 }
 
 /** For a metric that's itself already a percentage (CTR), the comparison delta must read in percentage points, not a relative "% of %" change. */
@@ -46,6 +46,18 @@ export function formatSelectionSummary(
   const selected = options.filter((o) => selectedIds.has(o.id));
   const joined = selected.map((o) => o.label).join(", ");
   return joined.length > 0 && joined.length <= maxLength ? joined : `${selectedIds.size} de ${options.length}`;
+}
+
+// Single source of truth for "when" across the live dashboard and the PDF
+// report — always rendered in horário de Brasília regardless of the
+// viewer's own device timezone, and always labeled as such, so "última
+// atualização" never reads as ambiguous between the data source's clock,
+// the server's clock, and the viewer's own.
+export const REFERENCE_TIME_ZONE = "America/Sao_Paulo";
+
+export function formatDateTimeTz(date: Date): string {
+  const formatted = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: REFERENCE_TIME_ZONE }).format(date);
+  return `${formatted} (horário de Brasília)`;
 }
 
 export function formatShortDate(isoDate: string): string {

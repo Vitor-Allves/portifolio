@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
 import type { AdSetInsight, CampaignInsight, DashboardData, Period } from "@/lib/meta-ads-types";
 import type { ClientPermissions } from "@/lib/client-permissions";
@@ -9,7 +9,8 @@ import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate } from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
 import { OBJECTIVE_NONE_KEY, filterCampaignsByIds } from "@/lib/campaign-filters";
-import { fetchDashboardData, DashboardFetchError } from "@/lib/dashboard-fetch";
+import { fetchDashboardData, fetchScopedReach, DashboardFetchError, type ScopedReachResult } from "@/lib/dashboard-fetch";
+import { computeNarrowedCampaignIdsByAccount } from "@/lib/reach-scope";
 import { primaryKpiIds, type KpiId } from "@/lib/kpi-hierarchy";
 import type { DeltaPolarity } from "./KpiCard";
 import IntelligenceSidebar, { SECTIONS, type SectionId } from "./IntelligenceSidebar";
@@ -70,9 +71,12 @@ function uniqueAdSetOptions(adSets: AdSetInsight[]) {
   return [...seen.entries()].map(([id, l]) => ({ id, label: l }));
 }
 
-type DailyAgg = { spend: number; impressions: number; clicks: number; linkClicks: number; reach: number };
+type DailyAgg = { spend: number; impressions: number; clicks: number; linkClicks: number; conversations: number | null; reach: number };
 
-function sparklineFor(daily: DailyAgg[], metric: "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "costPerConversation" | "reach") {
+function sparklineFor(
+  daily: DailyAgg[],
+  metric: "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "conversations" | "costPerConversation" | "reach"
+) {
   return daily.map((d) => {
     switch (metric) {
       case "spend":
@@ -89,8 +93,10 @@ function sparklineFor(daily: DailyAgg[], metric: "spend" | "impressions" | "clic
         return d.impressions > 0 ? (d.spend / d.impressions) * 1000 : 0;
       case "linkClicks":
         return d.linkClicks;
+      case "conversations":
+        return d.conversations ?? 0;
       case "costPerConversation":
-        return d.linkClicks > 0 ? d.spend / d.linkClicks : 0;
+        return d.conversations !== null && d.conversations > 0 ? d.spend / d.conversations : 0;
       case "reach":
         return d.reach;
     }
@@ -217,6 +223,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         impressions: a.impressions,
         clicks: a.clicks,
         linkClicks: a.linkClicks,
+        conversations: a.conversations,
         reach: a.reach,
       })),
     [filteredAdSets, campaignNameById, accountNameById]
@@ -234,6 +241,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         impressions: ad.impressions,
         clicks: ad.clicks,
         linkClicks: ad.linkClicks,
+        conversations: ad.conversations,
         reach: ad.reach,
       })),
     [filteredAds, campaignNameById, accountNameById]
@@ -269,13 +277,17 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // Reach is only ever summed per account, never per campaign or per day —
   // Meta already deduplicates it within one account-level call for the whole
   // period, and re-summing a finer breakdown would count the same person
-  // again for every campaign or day that reached them.
-  const totalReach = useMemo(
-    () =>
-      data.accountReach.filter((r) => accountIds.has(r.accountId)).reduce((sum, r) => sum + r.reach, 0),
+  // again for every campaign or day that reached them. This is the correct
+  // number ONLY when every campaign in each selected account is still in
+  // view — the moment the campaign/ad set/objective/status filters narrow
+  // an account's own campaign set, this whole-account figure stops being a
+  // valid answer for "reach of what's currently shown" and the scoped fetch
+  // below takes over instead.
+  const wholeAccountTotalReach = useMemo(
+    () => data.accountReach.filter((r) => accountIds.has(r.accountId)).reduce((sum, r) => sum + r.reach, 0),
     [data.accountReach, accountIds]
   );
-  const comparisonReach = useMemo(
+  const wholeAccountComparisonReach = useMemo(
     () =>
       data.comparison
         ? data.comparison.accountReach.filter((r) => accountIds.has(r.accountId)).reduce((sum, r) => sum + r.reach, 0)
@@ -301,6 +313,105 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     () => (data.comparison ? data.comparison.accountReach.filter((r) => accountIds.has(r.accountId)) : null),
     [data.comparison, accountIds]
   );
+
+  // ---- Campaign-narrowed reach (see comment on wholeAccountTotalReach) ----
+  // An account is "narrowed" the moment its filtered campaign subset is
+  // smaller than its full roster — shared with ReportsPanel.tsx's
+  // template-based generation flow so both agree on exactly when the
+  // whole-account reach number stops being valid.
+  const narrowedCampaignIdsByAccount = useMemo(
+    () => computeNarrowedCampaignIdsByAccount(data.campaigns, filteredCampaigns, accountIds),
+    [data.campaigns, filteredCampaigns, accountIds]
+  );
+
+  const isReachNarrowed = Object.keys(narrowedCampaignIdsByAccount).length > 0;
+
+  const [scopedReachStatus, setScopedReachStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [scopedReachResult, setScopedReachResult] = useState<ScopedReachResult | null>(null);
+  const scopedReachRequestId = useRef(0);
+
+  useEffect(() => {
+    // Nothing to fetch once un-narrowed — and nothing to reset either, since
+    // every consumer below (totalReachOutcome, comparisonReachOutcome,
+    // reachPending) checks isReachNarrowed before ever looking at this
+    // status/result pair, so a stale "loading"/"error" left over from a
+    // previous narrowed filter is simply never read.
+    if (!isReachNarrowed) return;
+    const requestId = ++scopedReachRequestId.current;
+    (async () => {
+      setScopedReachStatus("loading");
+      try {
+        const result = await fetchScopedReach(period, compare, narrowedCampaignIdsByAccount);
+        if (scopedReachRequestId.current !== requestId) return; // superseded by a newer filter change
+        setScopedReachResult(result);
+        setScopedReachStatus("ready");
+      } catch {
+        if (scopedReachRequestId.current !== requestId) return;
+        setScopedReachResult(null);
+        setScopedReachStatus("error");
+      }
+    })();
+  }, [isReachNarrowed, period, compare, narrowedCampaignIdsByAccount]);
+
+  // Never silently falls back to the whole-account number once narrowed:
+  // "ok" only once the scoped call actually confirms a value for every
+  // narrowed account; otherwise the KPI shows a loading or explicit
+  // unavailable state instead of a wrong-but-plausible-looking one.
+  const totalReachOutcome = useMemo((): { value: number | null; status: "ok" | "loading" | "error" } => {
+    if (!isReachNarrowed) return { value: wholeAccountTotalReach, status: "ok" };
+    if (scopedReachStatus !== "ready" || !scopedReachResult) {
+      return { value: null, status: scopedReachStatus === "error" ? "error" : "loading" };
+    }
+    const failed = new Set(scopedReachResult.failedAccountIds);
+    if (Object.keys(narrowedCampaignIdsByAccount).some((id) => failed.has(id))) return { value: null, status: "error" };
+    const scopedMap = new Map(scopedReachResult.currentReach.map((r) => [r.accountId, r.reach]));
+    let sum = 0;
+    for (const accountId of accountIds) {
+      sum +=
+        narrowedCampaignIdsByAccount[accountId] !== undefined
+          ? (scopedMap.get(accountId) ?? 0)
+          : (scopedAccountReach.find((r) => r.accountId === accountId)?.reach ?? 0);
+    }
+    return { value: sum, status: "ok" };
+  }, [isReachNarrowed, wholeAccountTotalReach, scopedReachStatus, scopedReachResult, narrowedCampaignIdsByAccount, accountIds, scopedAccountReach]);
+
+  const comparisonReachOutcome = useMemo((): { value: number | null; status: "ok" | "loading" | "error" } => {
+    if (!compare) return { value: null, status: "ok" };
+    if (!isReachNarrowed) return { value: wholeAccountComparisonReach, status: "ok" };
+    if (scopedReachStatus !== "ready" || !scopedReachResult || !scopedReachResult.previousReach) {
+      return { value: null, status: scopedReachStatus === "error" ? "error" : "loading" };
+    }
+    const failed = new Set(scopedReachResult.failedAccountIds);
+    if (Object.keys(narrowedCampaignIdsByAccount).some((id) => failed.has(id))) return { value: null, status: "error" };
+    const scopedMap = new Map(scopedReachResult.previousReach.map((r) => [r.accountId, r.reach]));
+    let sum = 0;
+    for (const accountId of accountIds) {
+      sum +=
+        narrowedCampaignIdsByAccount[accountId] !== undefined
+          ? (scopedMap.get(accountId) ?? 0)
+          : (scopedComparisonAccountReach?.find((r) => r.accountId === accountId)?.reach ?? 0);
+    }
+    return { value: sum, status: "ok" };
+  }, [
+    compare,
+    isReachNarrowed,
+    wholeAccountComparisonReach,
+    scopedReachStatus,
+    scopedReachResult,
+    narrowedCampaignIdsByAccount,
+    accountIds,
+    scopedComparisonAccountReach,
+  ]);
+
+  // Reach for exports (CSV/PDF) — the exact same number as the on-screen
+  // "Alcance" KPI, so a generated report never diverges from what the
+  // screen shows for the same filter. null means "não disponível", never a
+  // silent fallback to the whole-account figure; `reachPending` gates
+  // report generation entirely while the scoped fetch is still in flight,
+  // so a report is never built from a number that's about to change.
+  const reachPending = isReachNarrowed && scopedReachStatus === "loading";
+  const reachForExport = totalReachOutcome.status === "ok" ? totalReachOutcome.value : null;
+  const comparisonReachForExport = comparisonReachOutcome.status === "ok" ? comparisonReachOutcome.value : null;
 
   const totalCtr = ctr(totals);
   const totalCpc = cpc(totals);
@@ -351,7 +462,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       id: "spend",
       label: "Investimento",
       value: formatCurrencyBRL(totals.spend),
-      delta: compare ? (comparisonTotals ? pctChange(totals.spend, comparisonTotals.spend) : null) : undefined,
+      delta: compare && !isPending ? (comparisonTotals ? pctChange(totals.spend, comparisonTotals.spend) : null) : undefined,
       deltaPolarity: "neutral",
       sparkline: sparklineFor(dailyFiltered, "spend"),
       tooltip: "Soma do investimento de todas as campanhas que atendem aos filtros ativos. Investir mais não é, por si só, um resultado positivo ou negativo.",
@@ -360,7 +471,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       id: "impressions",
       label: "Impressões",
       value: formatInteger(totals.impressions),
-      delta: compare ? (comparisonTotals ? pctChange(totals.impressions, comparisonTotals.impressions) : null) : undefined,
+      delta: compare && !isPending ? (comparisonTotals ? pctChange(totals.impressions, comparisonTotals.impressions) : null) : undefined,
       deltaPolarity: "neutral",
       sparkline: sparklineFor(dailyFiltered, "impressions"),
       tooltip: "Total de impressões (exibições do anúncio) somadas entre as campanhas filtradas.",
@@ -369,27 +480,54 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       id: "clicks",
       label: "Cliques",
       value: formatInteger(totals.clicks),
-      delta: compare ? (comparisonTotals ? pctChange(totals.clicks, comparisonTotals.clicks) : null) : undefined,
+      delta: compare && !isPending ? (comparisonTotals ? pctChange(totals.clicks, comparisonTotals.clicks) : null) : undefined,
       deltaPolarity: "higher-better",
       sparkline: sparklineFor(dailyFiltered, "clicks"),
       tooltip: "Campo “clicks” da Meta: todo tipo de clique no anúncio, não apenas cliques no link de destino.",
     },
     {
       id: "linkClicks",
-      label: "Conversa iniciada",
+      label: "Cliques no link",
       value: formatInteger(totals.linkClicks),
-      delta: compare ? (comparisonTotals ? pctChange(totals.linkClicks, comparisonTotals.linkClicks) : null) : undefined,
+      delta: compare && !isPending ? (comparisonTotals ? pctChange(totals.linkClicks, comparisonTotals.linkClicks) : null) : undefined,
       deltaPolarity: "higher-better",
       sparkline: sparklineFor(dailyFiltered, "linkClicks"),
-      tooltip: "Campo inline_link_clicks da Meta: cliques que levam ao destino do anúncio, usado como indicador de conversa iniciada.",
+      tooltip:
+        "Campo inline_link_clicks da Meta: cliques que levam ao destino do anúncio. Não é o mesmo que uma conversa iniciada — veja o indicador “Conversa iniciada” para isso.",
+    },
+    {
+      id: "conversations",
+      label: "Conversa iniciada",
+      value: totals.conversations === null ? "Não disponível" : formatInteger(totals.conversations),
+      unavailableReason:
+        totals.conversations === null
+          ? "Nenhuma campanha filtrada reporta esta métrica (objetivo sem suporte a conversas por mensagem, ou destino incompatível)."
+          : undefined,
+      delta:
+        compare && !isPending && totals.conversations !== null
+          ? comparisonTotals
+            ? comparisonTotals.conversations === null
+              ? null
+              : pctChange(totals.conversations, comparisonTotals.conversations)
+            : null
+          : undefined,
+      deltaPolarity: "higher-better",
+      sparkline: sparklineFor(dailyFiltered, "conversations"),
+      tooltip:
+        "Campo actions da Meta, action_type onsite_conversion.messaging_conversation_started_7d (atribuição de 7 dias após clique): conversas por mensagem efetivamente iniciadas. Disponível apenas para campanhas com objetivo de mensagens; “Não disponível” não significa zero.",
     },
     {
       id: "costPerConversation",
       label: "Custo/Conversa",
       value: totalCostPerConversation === null ? "—" : formatCurrencyBRL(totalCostPerConversation),
-      unavailableReason: totalCostPerConversation === null ? "Sem conversas iniciadas no período" : undefined,
+      unavailableReason:
+        totalCostPerConversation === null
+          ? totals.conversations === null
+            ? "Conversa iniciada não disponível para os filtros atuais"
+            : "Sem conversas iniciadas no período"
+          : undefined,
       delta:
-        compare && totalCostPerConversation !== null
+        compare && !isPending && totalCostPerConversation !== null
           ? comparisonTotals
             ? (() => {
                 const prev = costPerConversation(comparisonTotals);
@@ -399,7 +537,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           : undefined,
       deltaPolarity: "lower-better",
       sparkline: sparklineFor(dailyFiltered, "costPerConversation"),
-      tooltip: "Custo por conversa iniciada = investimento total ÷ total de conversas iniciadas (inline_link_clicks).",
+      tooltip:
+        "Custo por conversa iniciada = investimento total ÷ total de conversas iniciadas válidas (onsite_conversion.messaging_conversation_started_7d), usando apenas o investimento do mesmo escopo filtrado.",
     },
     {
       id: "ctr",
@@ -407,7 +546,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       value: totalCtr === null ? "—" : formatPercent(totalCtr),
       unavailableReason: totalCtr === null ? "Sem impressões no período" : undefined,
       delta:
-        compare && totalCtr !== null
+        compare && !isPending && totalCtr !== null
           ? comparisonTotals
             ? (() => {
                 const prevCtr = ctr(comparisonTotals);
@@ -425,7 +564,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       value: totalCpc === null ? "—" : formatCurrencyBRL(totalCpc),
       unavailableReason: totalCpc === null ? "Sem cliques no período" : undefined,
       delta:
-        compare && totalCpc !== null
+        compare && !isPending && totalCpc !== null
           ? comparisonTotals
             ? (() => {
                 const prevCpc = cpc(comparisonTotals);
@@ -443,7 +582,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       value: totalCpm === null ? "—" : formatCurrencyBRL(totalCpm),
       unavailableReason: totalCpm === null ? "Sem impressões no período" : undefined,
       delta:
-        compare && totalCpm !== null
+        compare && !isPending && totalCpm !== null
           ? comparisonTotals
             ? (() => {
                 const prevCpm = cpm(comparisonTotals);
@@ -458,17 +597,37 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     {
       id: "reach",
       label: "Alcance",
-      value: formatInteger(totalReach),
-      delta: compare ? (comparisonReach !== null ? pctChange(totalReach, comparisonReach) : null) : undefined,
+      value:
+        totalReachOutcome.status === "ok" && totalReachOutcome.value !== null
+          ? formatInteger(totalReachOutcome.value)
+          : totalReachOutcome.status === "loading"
+            ? "…"
+            : "—",
+      unavailableReason:
+        totalReachOutcome.status === "loading"
+          ? "Recalculando o alcance deduplicado para os filtros atuais…"
+          : totalReachOutcome.status === "error"
+            ? "Não foi possível apurar o alcance para esta combinação de filtros. O alcance consolidado da conta não é uma aproximação válida aqui."
+            : undefined,
+      delta:
+        !isPending && compare && totalReachOutcome.status === "ok" && totalReachOutcome.value !== null
+          ? comparisonReachOutcome.status === "ok" && comparisonReachOutcome.value !== null
+            ? pctChange(totalReachOutcome.value, comparisonReachOutcome.value)
+            : null
+          : undefined,
       deltaPolarity: "neutral",
-      // Each point here is that single day's own independent reach value —
-      // never summed into the card's total above (which comes from the
-      // separate, correctly-deduplicated whole-period fetch). Plotting a
-      // trend this way can't double-count anyone; only adding two days'
-      // numbers together would.
-      sparkline: sparklineFor(dailyFiltered, "reach"),
-      tooltip:
-        "Pessoas únicas estimadas pela Meta, somadas entre as contas selecionadas. É deduplicado dentro de cada conta, mas não entre contas diferentes — a mesma pessoa pode contar mais de uma vez se aparecer em mais de uma conta selecionada.",
+      // Each point here is that single day's own independent whole-account
+      // reach value — never summed into the card's total above (which comes
+      // from the separate, correctly-deduplicated whole-period fetch).
+      // Plotting a trend this way can't double-count anyone; only adding two
+      // days' numbers together would. Once a campaign filter has narrowed
+      // the scope, the daily series is still whole-account-only and would
+      // misrepresent the filtered total, so it's omitted rather than shown
+      // as if it tracked the same number as the card above.
+      sparkline: isReachNarrowed ? undefined : sparklineFor(dailyFiltered, "reach"),
+      tooltip: isReachNarrowed
+        ? "Pessoas únicas estimadas pela Meta para exatamente esta seleção de campanhas, recalculado a partir da origem para preservar a deduplicação — não é uma soma de alcances individuais. Ainda deduplicado apenas dentro de cada conta, não entre contas diferentes."
+        : "Pessoas únicas estimadas pela Meta, somadas entre as contas selecionadas. É deduplicado dentro de cada conta, mas não entre contas diferentes — a mesma pessoa pode contar mais de uma vez se aparecer em mais de uma conta selecionada.",
     },
   ];
 
@@ -558,6 +717,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                 defaultPeriod={defaultPeriod}
                 compare={compare}
                 onCompareChange={(c) => refetch(period, c)}
+                comparisonRange={data.comparison?.period ?? null}
                 campaignOptions={campaignOptions}
                 campaignIds={campaignIds}
                 onCampaignIdsChange={setCampaignIds}
@@ -663,7 +823,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                           bucketKey={(s) => s.age}
                           bucketLabel={unknownAsNaoInformado}
                           order={AGE_ORDER}
-                          defaultMetric="linkClicks"
+                          defaultMetric="conversations"
                         />
                       </m.div>
                       <m.div custom={12} initial="hidden" animate="visible" variants={fadeUp}>
@@ -674,7 +834,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                           bucketKey={(s) => s.gender}
                           bucketLabel={(k) => GENDER_LABEL[k] ?? k}
                           order={GENDER_ORDER}
-                          defaultMetric="linkClicks"
+                          defaultMetric="conversations"
                         />
                       </m.div>
                     </div>
@@ -729,8 +889,9 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     comparisonCampaigns={comparisonCampaigns}
                     daily={scopedDaily}
                     comparisonDaily={scopedComparisonDaily}
-                    accountReach={scopedAccountReach}
-                    comparisonAccountReach={scopedComparisonAccountReach}
+                    reach={reachForExport}
+                    comparisonReach={comparisonReachForExport}
+                    reachPending={reachPending}
                     audience={filteredAudience}
                     regions={filteredRegions}
                     partialAccountNames={data.partialAccounts.map((a) => a.name)}

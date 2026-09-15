@@ -15,7 +15,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type {
-  AccountReach,
   AudienceSegment,
   CampaignInsight,
   DailyMetrics,
@@ -30,6 +29,8 @@ import {
   formatSignedPercent,
   formatSignedPercentagePoints,
   formatShortDate,
+  formatDateTimeTz,
+  REFERENCE_TIME_ZONE,
 } from "./format";
 import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate, type Totals } from "./metrics";
 import { computeStrategicInsights, type StrategicInsights, type InsightItem } from "./strategic-insights";
@@ -61,8 +62,15 @@ export type ReportPdfInput = {
   /** Raw per-account daily rows, already scoped to the selected accounts — NOT pre-aggregated, so per-account breakdowns stay possible. */
   daily: DailyMetrics[];
   comparisonDaily: DailyMetrics[] | null;
-  accountReach: AccountReach[];
-  comparisonAccountReach: AccountReach[] | null;
+  /**
+   * Meta's own deduplicated reach for exactly the filters above, already
+   * summed across accounts by the caller — null means it could not be
+   * apurado com confiança for this filter combination (never a silent
+   * fallback to an unfiltered/consolidated number). See the same-named
+   * outcome in Dashboard.tsx for how this is produced.
+   */
+  reach: number | null;
+  comparisonReach: number | null;
   audience: AudienceSegment[];
   regions: RegionSegment[];
   /** Accounts that failed to load for this request — surfaced so totals are never mistaken for "genuinely zero". */
@@ -283,7 +291,7 @@ type KpiDef = {
   unitNote: string;
   polarity: DeltaPolarity;
   isPercent: boolean; // percentage-point delta instead of relative % delta
-  value: (t: Totals, reach: number) => number | null;
+  value: (t: Totals, reach: number | null) => number | null;
   format: (n: number) => string;
 };
 
@@ -309,11 +317,20 @@ const KPI_DEFS: KpiDef[] = [
   },
   {
     id: "linkClicks",
+    label: "Cliques no link",
+    unitNote: "cliques",
+    polarity: "higher-better",
+    isPercent: false,
+    value: (t) => t.linkClicks,
+    format: formatInteger,
+  },
+  {
+    id: "conversations",
     label: "Conversa iniciada",
     unitNote: "conversas",
     polarity: "higher-better",
     isPercent: false,
-    value: (t) => t.linkClicks,
+    value: (t) => t.conversations,
     format: formatInteger,
   },
   {
@@ -346,17 +363,26 @@ function deltaColor(delta: number, polarity: DeltaPolarity): [number, number, nu
   return isGood ? GOOD : BAD;
 }
 
+const KPI_GRID_COLS = 3;
+const KPI_GRID_GAP = 5;
+
+function kpiGridHeight(hasComparison: boolean): number {
+  const cardH = hasComparison ? 25 : 22;
+  const rows = Math.ceil(KPI_DEFS.length / KPI_GRID_COLS);
+  return rows * cardH + (rows - 1) * KPI_GRID_GAP + 8;
+}
+
 function drawKpiGrid(
   doc: jsPDF,
   ctx: Ctx,
   y: number,
   totals: Totals,
-  reach: number,
+  reach: number | null,
   comparisonTotals: Totals | null,
   comparisonReach: number | null
 ): number {
-  const cols = 3;
-  const gap = 5;
+  const cols = KPI_GRID_COLS;
+  const gap = KPI_GRID_GAP;
   const cardW = (CONTENT_W - gap * (cols - 1)) / cols;
   const cardH = ctx.periodLine && comparisonTotals ? 25 : 22;
 
@@ -386,7 +412,7 @@ function drawKpiGrid(
     doc.text(valueText, x + 5, cardY + 15);
 
     if (comparisonTotals) {
-      const prevRaw = def.value(comparisonTotals, comparisonReach ?? 0);
+      const prevRaw = def.value(comparisonTotals, comparisonReach);
       doc.setFont(ctx.fonts.body, "normal");
       doc.setFontSize(7.6);
       if (raw === null || prevRaw === null) {
@@ -559,7 +585,10 @@ function drawBarList(
 // Derived per-day series for whichever KPI the dominant objective calls out
 // ---------------------------------------------------------------------------
 
-function derivedDailySeries(daily: { date: string; spend: number; impressions: number; clicks: number; linkClicks: number }[], kpi: KpiId): (number | null)[] {
+function derivedDailySeries(
+  daily: { date: string; spend: number; impressions: number; clicks: number; linkClicks: number; conversations: number | null }[],
+  kpi: KpiId
+): (number | null)[] {
   return daily.map((d) => {
     switch (kpi) {
       case "spend":
@@ -570,6 +599,8 @@ function derivedDailySeries(daily: { date: string; spend: number; impressions: n
         return d.clicks;
       case "linkClicks":
         return d.linkClicks;
+      case "conversations":
+        return d.conversations;
       case "ctr":
         return d.impressions > 0 ? (d.clicks / d.impressions) * 100 : null;
       case "cpc":
@@ -577,7 +608,7 @@ function derivedDailySeries(daily: { date: string; spend: number; impressions: n
       case "cpm":
         return d.impressions > 0 ? (d.spend / d.impressions) * 1000 : null;
       case "costPerConversation":
-        return d.linkClicks > 0 ? d.spend / d.linkClicks : null;
+        return d.conversations !== null && d.conversations > 0 ? d.spend / d.conversations : null;
       case "reach":
         return null; // daily reach isn't part of DailyMetrics' derivable set here
     }
@@ -588,7 +619,8 @@ const KPI_LABEL: Record<KpiId, string> = {
   spend: "Investimento",
   impressions: "Impressões",
   clicks: "Cliques totais",
-  linkClicks: "Conversa iniciada",
+  linkClicks: "Cliques no link",
+  conversations: "Conversa iniciada",
   costPerConversation: "Custo por conversa",
   ctr: "CTR",
   cpc: "CPC",
@@ -601,6 +633,7 @@ const KPI_FORMAT: Record<KpiId, (n: number) => string> = {
   impressions: formatInteger,
   clicks: formatInteger,
   linkClicks: formatInteger,
+  conversations: formatInteger,
   costPerConversation: formatCurrencyBRL,
   ctr: (n) => formatPercent(n),
   cpc: formatCurrencyBRL,
@@ -690,14 +723,15 @@ function drawCampaignTables(doc: jsPDF, ctx: Ctx, y: number, campaigns: Campaign
     headStyles,
     alternateRowStyles: { fillColor: SILVER_TINT },
     columnStyles: {
-      0: { cellWidth: 111 },
-      1: { cellWidth: 26, halign: "right" },
-      2: { cellWidth: 20, halign: "right" },
-      3: { cellWidth: 22, halign: "right" },
-      4: { cellWidth: 32, halign: "right" },
-      5: { cellWidth: 32, halign: "right" },
+      0: { cellWidth: 88 },
+      1: { cellWidth: 20, halign: "right" },
+      2: { cellWidth: 22, halign: "right" },
+      3: { cellWidth: 16, halign: "right" },
+      4: { cellWidth: 18, halign: "right" },
+      5: { cellWidth: 26, halign: "right" },
+      6: { cellWidth: 28, halign: "right" },
     },
-    head: [["Campanha", "Cliques totais", "CTR", "CPC", "Conversa iniciada", "Custo/conversa"]],
+    head: [["Campanha", "Cliques totais", "Cliques no link", "CTR", "CPC", "Conversa iniciada", "Custo/conversa"]],
     body: campaigns.map((c) => {
       const cCtr = ctr(c);
       const cCpc = cpc(c);
@@ -705,9 +739,10 @@ function drawCampaignTables(doc: jsPDF, ctx: Ctx, y: number, campaigns: Campaign
       return [
         c.campaignName,
         formatInteger(c.clicks),
+        formatInteger(c.linkClicks),
         cCtr === null ? "—" : formatPercent(cCtr),
         cCpc === null ? "—" : formatCurrencyBRL(cCpc),
-        formatInteger(c.linkClicks),
+        c.conversations === null ? "Não disponível" : formatInteger(c.conversations),
         cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
       ];
     }),
@@ -738,27 +773,40 @@ function drawInsightBlock(doc: jsPDF, ctx: Ctx, y: number, heading: string, dotC
 
   for (const item of items) {
     const lines = wrapText(doc, item.text, CONTENT_W - 12);
-    y = ensureSpace(doc, ctx, y, lines.length * 4.6 + 3);
+    // Each recommendation also carries its own limitation/hypothesis and,
+    // when actionable, a suggested next step plus the indicator to watch —
+    // never just the headline claim on its own.
+    const limitationLines = item.limitation ? wrapText(doc, item.limitation, CONTENT_W - 12) : [];
+    const actionText = [item.action, item.watchIndicator ? `Indicador a acompanhar: ${item.watchIndicator}` : null].filter(Boolean).join(" · ");
+    const actionLines = actionText ? wrapText(doc, actionText, CONTENT_W - 12) : [];
+
+    y = ensureSpace(doc, ctx, y, lines.length * 4.6 + limitationLines.length * 3.6 + actionLines.length * 3.6 + 4);
     setColor(doc, "setFillColor", dotColor);
     doc.circle(MARGIN_X + 5, y - 1.3, 0.9, "F");
     doc.setFont(ctx.fonts.body, "normal");
     doc.setFontSize(8.3);
     setColor(doc, "setTextColor", TEXT);
     doc.text(lines, MARGIN_X + 9, y);
-    y += lines.length * 4.6 + 2.5;
+    y += lines.length * 4.6;
+
+    if (limitationLines.length > 0) {
+      doc.setFontSize(7.3);
+      setColor(doc, "setTextColor", TEXT_MUTED);
+      doc.text(limitationLines, MARGIN_X + 9, y + 2.6);
+      y += limitationLines.length * 3.6 + 2.6;
+    }
+    if (actionLines.length > 0) {
+      doc.setFontSize(7.3);
+      setColor(doc, "setTextColor", NAVY);
+      doc.text(actionLines, MARGIN_X + 9, y + (limitationLines.length > 0 ? 1 : 2.6));
+      y += actionLines.length * 3.6 + (limitationLines.length > 0 ? 1 : 2.6);
+    }
+    y += 2.5;
   }
   return y + 3;
 }
 
-function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, label: string | null, insights: StrategicInsights): number {
-  if (label) {
-    y = ensureSpace(doc, ctx, y, 24);
-    doc.setFont(ctx.fonts.body, "bold");
-    doc.setFontSize(10.5);
-    setColor(doc, "setTextColor", NAVY);
-    doc.text(label, MARGIN_X, y);
-    y += 6;
-  }
+function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, insights: StrategicInsights): number {
   if (!insights.hasData) {
     doc.setFont(ctx.fonts.body, "normal");
     doc.setFontSize(8.6);
@@ -766,7 +814,17 @@ function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, label: string | n
     doc.text(wrapText(doc, insights.summary[0]?.text ?? "Sem dados suficientes para interpretação neste escopo.", CONTENT_W - 8), MARGIN_X + 4, y);
     return y + 10;
   }
+
+  y = ensureSpace(doc, ctx, y, 14);
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.6);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  const scopeLines = wrapText(doc, insights.scopeNote, CONTENT_W - 8);
+  doc.text(scopeLines, MARGIN_X + 4, y);
+  y += scopeLines.length * 3.8 + 4;
+
   y = drawInsightBlock(doc, ctx, y, "Principais resultados", NAVY, insights.summary);
+  y = drawInsightBlock(doc, ctx, y, "Principais mudanças", NAVY, insights.changes);
   y = drawInsightBlock(doc, ctx, y, "Pontos de atenção", BAD, insights.attention);
   y = drawInsightBlock(doc, ctx, y, "Oportunidades", GOOD, insights.opportunities);
   y = drawInsightBlock(doc, ctx, y, "Próximas ações priorizadas", NAVY, insights.nextActions);
@@ -776,19 +834,6 @@ function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, label: string | n
 // ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
-
-function tz(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return "";
-  }
-}
-
-function formatDateTimeTz(date: Date): string {
-  const formatted = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(date);
-  return `${formatted} (horário de Brasília)`;
-}
 
 function slugify(value: string): string {
   return (
@@ -820,9 +865,9 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   const ctx: Ctx = { fonts, assets, scopeLine, periodLine, footerLeft };
 
   const totals = sumTotals(input.campaigns);
-  const totalReach = input.accountReach.reduce((s, r) => s + r.reach, 0);
+  const totalReach = input.reach;
   const comparisonTotals = input.comparisonCampaigns ? sumTotals(input.comparisonCampaigns) : null;
-  const comparisonReach = input.comparisonAccountReach ? input.comparisonAccountReach.reduce((s, r) => s + r.reach, 0) : null;
+  const comparisonReach = input.comparisonReach;
 
   const accountIdSet = new Set(input.accounts.map((a) => a.id));
   const dailyAgg = aggregateDailyByDate(input.daily, accountIdSet);
@@ -864,7 +909,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     ["Contas incluídas", input.accounts.length === 0 ? "Nenhuma" : input.accounts.map((a) => a.name).join(", ")],
     ["Gerado em", formatDateTimeTz(input.generatedAt)],
     ["Dados atualizados em", formatDateTimeTz(new Date(input.dataGeneratedAt))],
-    ["Fuso horário de referência", tz() || "America/Sao_Paulo"],
+    ["Fuso horário de referência", `${REFERENCE_TIME_ZONE} (horário de Brasília) — usado nos horários acima`],
   ];
   const metaRowH = 14;
   metaRows.forEach(([label, value], i) => {
@@ -905,6 +950,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   }
 
   y += 2;
+  y = ensureSpace(doc, ctx, y, kpiGridHeight(Boolean(ctx.periodLine && comparisonTotals)));
   y = drawKpiGrid(doc, ctx, y, totals, totalReach, comparisonTotals, comparisonReach);
 
   y = ensureSpace(doc, ctx, y, 20);
@@ -994,11 +1040,15 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
 
   if (input.audience.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
+    // null-propagation: a bucket only accumulates a number once at least one
+    // of its rows actually reports conversations; buckets that never do stay
+    // out of the bar list entirely rather than rendering a fabricated zero.
     const byAge = new Map<string, number>();
     const byGender = new Map<string, number>();
     for (const a of input.audience) {
-      byAge.set(a.age, (byAge.get(a.age) ?? 0) + a.linkClicks);
-      byGender.set(a.gender, (byGender.get(a.gender) ?? 0) + a.linkClicks);
+      if (a.conversations === null) continue;
+      byAge.set(a.age, (byAge.get(a.age) ?? 0) + a.conversations);
+      byGender.set(a.gender, (byGender.get(a.gender) ?? 0) + a.conversations);
     }
     const genderLabel: Record<string, string> = { male: "Masculino", female: "Feminino", unknown: "Não informado" };
     drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW, h: 52 }, {
@@ -1043,24 +1093,11 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   doc.text(limitLines, MARGIN_X, y);
   y += limitLines.length * 3.8 + 6;
 
-  if (input.accounts.length > 1) {
-    for (const account of input.accounts) {
-      const accCampaigns = input.campaigns.filter((c) => c.accountId === account.id);
-      if (accCampaigns.length === 0) continue;
-      const accComparison = input.comparisonCampaigns ? input.comparisonCampaigns.filter((c) => c.accountId === account.id) : null;
-      const accDaily = aggregateDailyByDate(input.daily, new Set([account.id]));
-      const accInsights = computeStrategicInsights({
-        campaigns: accCampaigns,
-        comparisonCampaigns: accComparison,
-        daily: accDaily,
-        resolvedRange: input.resolvedRange,
-        partialAccountNames: [],
-      });
-      y = drawAnalysisForScope(doc, ctx, y, account.name, accInsights);
-    }
-  } else {
-    y = drawAnalysisForScope(doc, ctx, y, null, insights);
-  }
+  // The engine itself groups findings by client and objective before ever
+  // comparing two campaigns (see strategic-insights.ts) — a single call over
+  // the full filtered set is already scoped correctly, so there's no need
+  // to loop per account here and re-run the engine once per client.
+  y = drawAnalysisForScope(doc, ctx, y, insights);
 
   // ---- Methodology notes ----
   y = ensureSpace(doc, ctx, y, 60);
@@ -1070,13 +1107,13 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     {
       heading: "Definições das métricas",
       body:
-        "Investimento: valor gasto no período. Impressões: exibições dos anúncios. Cliques totais: todo tipo de clique registrado pelo Meta. Conversa iniciada: cliques no link de destino (proxy disponível para início de conversa/contato). Custo por conversa = Investimento ÷ Conversa iniciada. CTR = Cliques totais ÷ Impressões × 100. CPC = Investimento ÷ Cliques totais. CPM = Investimento ÷ Impressões × 1.000. Alcance: pessoas únicas estimadas alcançadas no período (ver limitação de deduplicação abaixo).",
+        "Investimento: valor gasto no período. Impressões: exibições dos anúncios. Cliques totais: todo tipo de clique registrado pelo Meta, não apenas cliques no link de destino. Cliques no link: cliques que levam ao destino do anúncio (campo inline_link_clicks) — não é uma conversa iniciada. Conversa iniciada: conversas por mensagem efetivamente iniciadas no Messenger/Instagram/WhatsApp, com atribuição de 7 dias após clique (campo actions, action_type onsite_conversion.messaging_conversation_started_7d) — disponível apenas para campanhas com objetivo de mensagens; quando o objetivo da campanha não suporta essa métrica, ela aparece como \"Não disponível\", nunca como zero. Custo por conversa = Investimento ÷ Conversa iniciada válida, usando apenas o investimento do mesmo escopo filtrado. CTR = Cliques totais ÷ Impressões × 100. CPC = Investimento ÷ Cliques totais. CPM = Investimento ÷ Impressões × 1.000. Alcance: pessoas únicas estimadas alcançadas no período (ver limitação de deduplicação abaixo).",
     },
     { heading: "Fonte dos dados", body: "Meta Ads API, via os Business Managers configurados para esta conta Legado Enterprise, agregados por conta de anúncios e por campanha." },
     {
       heading: "Limitações de alcance e deduplicação",
       body:
-        "O Alcance é uma estimativa do Meta, deduplicada apenas dentro de uma única consulta (uma conta, um período). Por isso o Alcance total nunca é a soma do alcance de cada campanha ou de cada dia — somar essas quebras contaria a mesma pessoa mais de uma vez. Os valores diários de alcance servem para observar tendência, nunca para somar em um total.",
+        "O Alcance é uma estimativa do Meta, deduplicada apenas dentro de uma única consulta (uma conta, um período, e — quando os filtros deste relatório restringem a campanhas específicas — o mesmo conjunto de campanhas). Por isso o Alcance total nunca é a soma do alcance de cada campanha ou de cada dia — somar essas quebras contaria a mesma pessoa mais de uma vez; quando o filtro seleciona um subconjunto de campanhas, o Alcance é recalculado na origem para esse subconjunto exato, preservando a deduplicação, em vez de somar valores individuais. Os valores diários de alcance servem para observar tendência, nunca para somar em um total. Se essa apuração não puder ser concluída com confiança para os filtros aplicados, o indicador é exibido como \"Não disponível\" em vez do valor consolidado da conta.",
     },
     {
       heading: "Critério de atribuição",

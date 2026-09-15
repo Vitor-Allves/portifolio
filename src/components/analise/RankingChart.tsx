@@ -6,13 +6,14 @@ import { objectiveLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatCompactNumber, formatPercent } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation } from "@/lib/metrics";
 
-type RankingMetric = "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "costPerConversation";
+type RankingMetric = "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "conversations" | "costPerConversation";
 
 const METRICS: { id: RankingMetric; label: string }[] = [
   { id: "spend", label: "Investimento" },
   { id: "impressions", label: "Impressões" },
   { id: "clicks", label: "Cliques" },
-  { id: "linkClicks", label: "Conversa iniciada" },
+  { id: "linkClicks", label: "Cliques no link" },
+  { id: "conversations", label: "Conversa iniciada" },
   { id: "costPerConversation", label: "Custo/Conversa" },
   { id: "ctr", label: "CTR" },
   { id: "cpc", label: "CPC" },
@@ -29,6 +30,8 @@ function rankingValue(c: CampaignInsight, metric: RankingMetric): number | null 
       return c.clicks;
     case "linkClicks":
       return c.linkClicks;
+    case "conversations":
+      return c.conversations;
     case "costPerConversation":
       return costPerConversation(c);
     case "ctr":
@@ -50,6 +53,7 @@ function formatValue(value: number, metric: RankingMetric): string {
     case "impressions":
     case "clicks":
     case "linkClicks":
+    case "conversations":
       return formatCompactNumber(value);
     case "ctr":
       return formatPercent(value);

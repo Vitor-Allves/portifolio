@@ -32,14 +32,15 @@ export default function StrategicInsightsCompact({
   return (
     <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-intel-violet/35 via-white/[0.06] to-transparent h-full">
       <div className="rounded-2xl bg-intel-surface-1 p-5 h-full flex flex-col">
-        <div className="flex items-center gap-2.5 mb-3">
+        <div className="flex items-center gap-2.5 mb-1">
           <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center rounded-full bg-intel-violet/12 text-intel-violet">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2Zm-2 18h4a1 1 0 0 1-1 2h-2a1 1 0 0 1-1-2Z" />
             </svg>
           </span>
-          <h3 className="font-sans text-[14px] font-semibold text-intel-text">Inteligência estratégica</h3>
+          <h3 className="font-sans text-[14px] font-semibold text-intel-text">Análises estratégicas</h3>
         </div>
+        <p className="text-[10.5px] text-intel-text-dim/70 mb-3 ml-[34px]">Origem: estatística (regras), sem IA generativa</p>
 
         <div className="flex-1">
           {isProcessing ? (

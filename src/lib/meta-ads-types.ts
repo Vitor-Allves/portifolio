@@ -67,7 +67,15 @@ export type CampaignInsight = {
   spend: number;
   impressions: number;
   clicks: number; // Meta's "clicks" field — every click type, not just link clicks
-  linkClicks: number; // Meta's "inline_link_clicks" — clicks to the destination link only
+  linkClicks: number; // Meta's "inline_link_clicks" — clicks to the destination link only. NOT a conversation: purely a click count, always <= clicks except for known Meta counting quirks on on-platform destinations (Instant Experience, lead forms, carousel cards).
+  // Meta's `actions` array, action_type "onsite_conversion.messaging_conversation_started_7d"
+  // (7-day click attribution). null means this row's actions array didn't
+  // contain that action type at all — either the objective/destination
+  // can't produce it, or it genuinely happened zero times; Meta's API gives
+  // no way to tell those two apart, so null always means "não disponível",
+  // never "zero". A real number (0 included, on the rare row where Meta
+  // does return an explicit zero) means the metric applies here.
+  conversations: number | null;
   reach: number;
 };
 
@@ -87,6 +95,9 @@ export type DailyMetrics = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  // See CampaignInsight.conversations — same "null means not reported for
+  // this row" rule, applied per day here.
+  conversations: number | null;
   reach: number;
 };
 
@@ -105,6 +116,8 @@ export type AdSetInsight = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  // See CampaignInsight.conversations.
+  conversations: number | null;
   reach: number;
 };
 
@@ -121,6 +134,8 @@ export type AdInsight = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  // See CampaignInsight.conversations.
+  conversations: number | null;
   reach: number;
 };
 
@@ -144,6 +159,8 @@ export type AudienceSegment = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  // See CampaignInsight.conversations.
+  conversations: number | null;
   reach: number;
 };
 
@@ -158,6 +175,8 @@ export type RegionSegment = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  // See CampaignInsight.conversations.
+  conversations: number | null;
   reach: number;
 };
 

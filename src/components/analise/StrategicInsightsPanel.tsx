@@ -3,10 +3,11 @@
 import { useState } from "react";
 import type { StrategicInsights, InsightItem } from "@/lib/strategic-insights";
 
-type TabId = "summary" | "attention" | "opportunities" | "actions";
+type TabId = "summary" | "changes" | "attention" | "opportunities" | "actions";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "summary", label: "Resumo do período" },
+  { id: "summary", label: "Resumo executivo" },
+  { id: "changes", label: "Principais mudanças" },
   { id: "attention", label: "Pontos de atenção" },
   { id: "opportunities", label: "Oportunidades" },
   { id: "actions", label: "Próximas ações" },
@@ -17,7 +18,7 @@ function ItemList({ items, emptyLabel }: { items: InsightItem[]; emptyLabel: str
     return <p className="text-[13px] text-intel-text-dim">{emptyLabel}</p>;
   }
   return (
-    <ul className="space-y-4">
+    <ul className="space-y-5">
       {items.map((item, i) => (
         <li key={i} className="border-l-2 border-intel-violet/25 pl-4">
           <p className="text-[13px] text-intel-text leading-relaxed">{item.text}</p>
@@ -30,6 +31,14 @@ function ItemList({ items, emptyLabel }: { items: InsightItem[]; emptyLabel: str
                 </div>
               ))}
             </dl>
+          )}
+          {item.limitation && <p className="mt-1.5 text-[11.5px] leading-relaxed text-intel-text-dim/80">{item.limitation}</p>}
+          {(item.action || item.watchIndicator) && (
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-intel-violet/90">
+              {item.action}
+              {item.action && item.watchIndicator && " · "}
+              {item.watchIndicator && `Indicador a acompanhar: ${item.watchIndicator}`}
+            </p>
           )}
         </li>
       ))}
@@ -66,7 +75,7 @@ export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaign
       },
     },
     { label: "Como o investimento está distribuído?", action: () => setTab("opportunities") },
-    { label: "O que mudou em relação ao período anterior?", action: () => setTab("summary") },
+    { label: "O que mudou em relação ao período anterior?", action: () => setTab("changes") },
   ];
 
   return (
@@ -82,12 +91,13 @@ export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaign
                 <path d="M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2Zm-2 18h4a1 1 0 0 1-1 2h-2a1 1 0 0 1-1-2Z" />
               </svg>
             </span>
-            <h3 className="font-sans text-[15px] font-semibold text-intel-text">Inteligência estratégica</h3>
+            <h3 className="font-sans text-[15px] font-semibold text-intel-text">Análises estratégicas</h3>
           </div>
         </div>
-        <p className="text-[11.5px] text-intel-text-dim mb-4 ml-[34px]">
-          Análise automática (baseada em regras) · {insights.periodLabel}
+        <p className="text-[11.5px] text-intel-text-dim mb-1 ml-[34px]">
+          Origem: estatística (regras) — sem modelo de IA generativa configurado · {insights.periodLabel}
         </p>
+        <p className="text-[11.5px] text-intel-text-dim/80 mb-4 ml-[34px] leading-relaxed">{insights.scopeNote}</p>
 
         <div className="flex flex-wrap gap-2 mb-4">
           {quickPrompts.map((prompt) => (
@@ -125,6 +135,9 @@ export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaign
           ) : (
             <>
               {tab === "summary" && <ItemList items={insights.summary} emptyLabel="Sem dados suficientes para um resumo." />}
+              {tab === "changes" && (
+                <ItemList items={insights.changes} emptyLabel="Sem dados do período anterior para comparar." />
+              )}
               {tab === "attention" && (
                 <ItemList items={insights.attention} emptyLabel="Nenhum desvio relevante identificado nos dados do período." />
               )}

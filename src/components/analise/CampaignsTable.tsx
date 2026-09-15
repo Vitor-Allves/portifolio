@@ -53,11 +53,19 @@ const COLUMNS: Column[] = [
   { id: "clicks", label: "Cliques (todos)", numeric: true, defaultVisible: true, value: (c) => c.clicks, render: (c) => formatInteger(c.clicks) },
   {
     id: "linkClicks",
-    label: "Conversa iniciada",
+    label: "Cliques no link",
     numeric: true,
     defaultVisible: true,
     value: (c) => c.linkClicks,
     render: (c) => formatInteger(c.linkClicks),
+  },
+  {
+    id: "conversations",
+    label: "Conversa iniciada",
+    numeric: true,
+    defaultVisible: true,
+    value: (c) => c.conversations,
+    render: (c) => (c.conversations === null ? "Não disponível" : formatInteger(c.conversations)),
   },
   {
     id: "costPerConversation",
@@ -472,7 +480,8 @@ function AdSetList({ adSets }: { adSets: AdSetInsight[] }) {
             <span>Investimento: {formatCurrencyBRL(a.spend)}</span>
             <span>Impressões: {formatInteger(a.impressions)}</span>
             <span>Cliques: {formatInteger(a.clicks)}</span>
-            <span>Conversa iniciada: {formatInteger(a.linkClicks)}</span>
+            <span>Cliques no link: {formatInteger(a.linkClicks)}</span>
+            <span>Conversa iniciada: {a.conversations === null ? "Não disponível" : formatInteger(a.conversations)}</span>
             <span>
               Custo/conversa:{" "}
               {(() => {
@@ -514,9 +523,14 @@ function CampaignDetailPanel({
     },
     { label: "Cliques (todos)", current: formatInteger(campaign.clicks), previous: comparison ? formatInteger(comparison.clicks) : undefined },
     {
-      label: "Conversa iniciada",
+      label: "Cliques no link",
       current: formatInteger(campaign.linkClicks),
       previous: comparison ? formatInteger(comparison.linkClicks) : undefined,
+    },
+    {
+      label: "Conversa iniciada",
+      current: campaign.conversations === null ? "Não disponível" : formatInteger(campaign.conversations),
+      previous: comparison ? (comparison.conversations === null ? "Não disponível" : formatInteger(comparison.conversations)) : undefined,
     },
     {
       label: "Custo por conversa iniciada",
@@ -572,9 +586,11 @@ function CampaignDetailPanel({
         </dl>
 
         <p className="mt-6 text-[11px] leading-relaxed text-intel-text-dim/70">
-          “Cliques (todos)” é o campo clicks da Meta (todo tipo de clique no anúncio); “Conversa iniciada” é
-          inline_link_clicks — cliques que levam ao destino do anúncio, usado aqui como indicador de conversa
-          iniciada; “Custo por conversa iniciada” é o investimento dividido por esse número.
+          “Cliques (todos)” é o campo clicks da Meta (todo tipo de clique no anúncio); “Cliques no link” é
+          inline_link_clicks — cliques que levam ao destino do anúncio, mas não é uma conversa iniciada;
+          “Conversa iniciada” conta conversas por mensagem efetivamente iniciadas (atribuição de 7 dias após
+          clique) e aparece como “Não disponível” quando o objetivo da campanha não suporta essa métrica;
+          “Custo por conversa iniciada” é o investimento dividido apenas por conversas iniciadas válidas.
         </p>
 
         <div className="mt-6">
@@ -604,7 +620,8 @@ function CampaignDetailPanel({
                   </p>
                   <div className="mt-2 pl-[22px] flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-intel-text-dim tabular-nums">
                     <span>Investimento: {formatCurrencyBRL(ad.spend)}</span>
-                    <span>Conversa iniciada: {formatInteger(ad.linkClicks)}</span>
+                    <span>Cliques no link: {formatInteger(ad.linkClicks)}</span>
+                    <span>Conversa iniciada: {ad.conversations === null ? "Não disponível" : formatInteger(ad.conversations)}</span>
                     <span>
                       Custo/conversa:{" "}
                       {(() => {

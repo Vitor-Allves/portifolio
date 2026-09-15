@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Period } from "@/lib/meta-ads-types";
+import type { DateRange, Period } from "@/lib/meta-ads-types";
 import { formatShortDate, formatSelectionSummary } from "@/lib/format";
 import MultiSelectFilter, { type FilterOption } from "./MultiSelectFilter";
 import PeriodFilter from "./PeriodFilter";
@@ -21,6 +21,8 @@ export type FilterBarProps = {
 
   compare: boolean;
   onCompareChange: (checked: boolean) => void;
+  /** The resolved previous-period dates once loaded — null while still loading or when there's no comparable prior period. Shown on the chip so "comparando" never leaves the actual dates implicit. */
+  comparisonRange: DateRange | null;
 
   campaignOptions: FilterOption[];
   campaignIds: Set<string>;
@@ -53,6 +55,7 @@ export default function FilterBar({
   defaultPeriod,
   compare,
   onCompareChange,
+  comparisonRange,
   campaignOptions,
   campaignIds,
   onCampaignIdsChange,
@@ -89,7 +92,13 @@ export default function FilterBar({
   }
 
   if (!hiddenFilterIds.has("compare") && compare) {
-    chips.push({ key: "compare", label: "Comparando com período anterior", onRemove: () => onCompareChange(false) });
+    chips.push({
+      key: "compare",
+      label: comparisonRange
+        ? `Comparando com ${formatShortDate(comparisonRange.since)} – ${formatShortDate(comparisonRange.until)}`
+        : "Comparando com período anterior (calculando datas...)",
+      onRemove: () => onCompareChange(false),
+    });
   }
 
   if (!hiddenFilterIds.has("campaign") && campaignOptions.length > 0 && campaignIds.size !== campaignOptions.length) {

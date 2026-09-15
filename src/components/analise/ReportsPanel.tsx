@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AccountReach, AudienceSegment, CampaignInsight, DailyMetrics, DateRange, Period, RegionSegment } from "@/lib/meta-ads-types";
+import type { AudienceSegment, CampaignInsight, DailyMetrics, DateRange, Period, RegionSegment } from "@/lib/meta-ads-types";
 import { DATE_PRESETS } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatShortDate } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation, sumTotals } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
-import { fetchDashboardData, DashboardFetchError } from "@/lib/dashboard-fetch";
+import { fetchDashboardData, fetchScopedReach, DashboardFetchError } from "@/lib/dashboard-fetch";
+import { computeNarrowedCampaignIdsByAccount } from "@/lib/reach-scope";
 import { OBJECTIVE_NONE_KEY, resolveIdFilter, toSavedIdFilter, filterCampaignsByIds } from "@/lib/campaign-filters";
 import { downloadCampaignReportPdf, reportFileName, ReportPdfError, type ReportPdfInput } from "@/lib/pdf-report";
 import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-templates-types";
@@ -31,8 +32,16 @@ type ReportsPanelProps = {
   comparisonCampaigns: CampaignInsight[] | null;
   daily: DailyMetrics[];
   comparisonDaily: DailyMetrics[] | null;
-  accountReach: AccountReach[];
-  comparisonAccountReach: AccountReach[] | null;
+  /**
+   * Meta's own deduplicated reach for exactly the active filters, already
+   * summed across selected accounts — null means it could not be apurado
+   * com confiança (never a silent fallback to the whole-account figure).
+   * Same numbers as the on-screen "Alcance" KPI for this exact filter set.
+   */
+  reach: number | null;
+  comparisonReach: number | null;
+  /** True while the scoped reach recalculation triggered by a campaign/ad set/objective/status filter is still in flight — the ad-hoc PDF is held back rather than generated from a number that's about to change. */
+  reachPending: boolean;
   audience: AudienceSegment[];
   regions: RegionSegment[];
   partialAccountNames: string[];
@@ -127,8 +136,9 @@ export default function ReportsPanel({
   comparisonCampaigns,
   daily,
   comparisonDaily,
-  accountReach,
-  comparisonAccountReach,
+  reach,
+  comparisonReach,
+  reachPending,
   audience,
   regions,
   partialAccountNames,
@@ -188,12 +198,13 @@ export default function ReportsPanel({
       "Investimento",
       "Impressões",
       "Cliques (todos)",
+      "Cliques no link",
       "Conversa iniciada",
       "Custo por conversa iniciada",
       "CTR",
       "CPC",
       "CPM",
-      "Alcance",
+      "Alcance (campanha, não some entre linhas)",
     ];
     const rows = campaigns.map((c) => {
       const cCtr = ctr(c);
@@ -209,6 +220,7 @@ export default function ReportsPanel({
         formatInteger(c.impressions),
         formatInteger(c.clicks),
         formatInteger(c.linkClicks),
+        c.conversations === null ? "Não disponível" : formatInteger(c.conversations),
         cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
         cCtr === null ? "—" : formatPercent(cCtr),
         cCpc === null ? "—" : formatCurrencyBRL(cCpc),
@@ -233,6 +245,7 @@ export default function ReportsPanel({
       "Investimento",
       "Impressões",
       "Cliques (todos)",
+      "Cliques no link",
       "Conversa iniciada",
       "Custo por conversa iniciada",
       "CTR",
@@ -252,6 +265,7 @@ export default function ReportsPanel({
         formatInteger(entryTotals.impressions),
         formatInteger(entryTotals.clicks),
         formatInteger(entryTotals.linkClicks),
+        entryTotals.conversations === null ? "Não disponível" : formatInteger(entryTotals.conversations),
         cCostPerConversation === null ? "—" : formatCurrencyBRL(cCostPerConversation),
         cCtr === null ? "—" : formatPercent(cCtr),
         cCpc === null ? "—" : formatCurrencyBRL(cCpc),
@@ -263,6 +277,14 @@ export default function ReportsPanel({
 
   async function downloadCurrentPdf() {
     if (generatingCurrent) return;
+    // The campaign filter has narrowed the scope and the correctly
+    // deduplicated reach for that exact selection is still being fetched —
+    // never generate a "fotografia" that mixes this moment's campaigns with
+    // a reach number for a different scope, or with a stale whole-account one.
+    if (reachPending) {
+      setCurrentError("Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF.");
+      return;
+    }
     setGeneratingCurrent(true);
     setCurrentError(null);
     try {
@@ -281,8 +303,8 @@ export default function ReportsPanel({
         comparisonCampaigns,
         daily,
         comparisonDaily,
-        accountReach,
-        comparisonAccountReach,
+        reach,
+        comparisonReach,
         audience,
         regions,
         partialAccountNames,
@@ -372,6 +394,48 @@ export default function ReportsPanel({
       }));
       const templateStatusOptions = [...new Set(freshData.campaigns.map((c) => c.status))].map((id) => ({ id, label: statusLabel(id) }));
 
+      // Same scoped-reach logic as Dashboard.tsx's totalReachOutcome/
+      // comparisonReachOutcome, but as a one-shot await instead of reactive
+      // state — this flow fetches its own fresh snapshot and generates the
+      // PDF in one pass, so there's no "still loading" UI state to hold.
+      const narrowedCampaignIdsByAccount = computeNarrowedCampaignIdsByAccount(freshData.campaigns, filteredCampaigns, resolvedAccountIds);
+      let templateReach: number | null;
+      let templateComparisonReach: number | null = null;
+      if (Object.keys(narrowedCampaignIdsByAccount).length === 0) {
+        templateReach = freshData.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)).reduce((s, r) => s + r.reach, 0);
+        templateComparisonReach =
+          template.filters.compare && freshData.comparison
+            ? freshData.comparison.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)).reduce((s, r) => s + r.reach, 0)
+            : null;
+      } else {
+        const scoped = await fetchScopedReach(template.filters.period, template.filters.compare, narrowedCampaignIdsByAccount);
+        const failed = new Set(scoped.failedAccountIds);
+        const anyFailed = Object.keys(narrowedCampaignIdsByAccount).some((id) => failed.has(id));
+        if (anyFailed) {
+          templateReach = null;
+          templateComparisonReach = null;
+        } else {
+          const scopedMap = new Map(scoped.currentReach.map((r) => [r.accountId, r.reach]));
+          templateReach = 0;
+          for (const accountId of resolvedAccountIds) {
+            templateReach +=
+              narrowedCampaignIdsByAccount[accountId] !== undefined
+                ? (scopedMap.get(accountId) ?? 0)
+                : (freshData.accountReach.find((r) => r.accountId === accountId)?.reach ?? 0);
+          }
+          if (template.filters.compare && scoped.previousReach) {
+            const scopedPrevMap = new Map(scoped.previousReach.map((r) => [r.accountId, r.reach]));
+            templateComparisonReach = 0;
+            for (const accountId of resolvedAccountIds) {
+              templateComparisonReach +=
+                narrowedCampaignIdsByAccount[accountId] !== undefined
+                  ? (scopedPrevMap.get(accountId) ?? 0)
+                  : (freshData.comparison?.accountReach.find((r) => r.accountId === accountId)?.reach ?? 0);
+            }
+          }
+        }
+      }
+
       const input: ReportPdfInput = {
         title: template.name,
         clientLabel,
@@ -397,8 +461,8 @@ export default function ReportsPanel({
         comparisonCampaigns: freshData.comparison ? freshData.comparison.campaigns.filter((c) => resolvedAccountIds.has(c.accountId)) : null,
         daily: freshData.daily.filter((d) => resolvedAccountIds.has(d.accountId)),
         comparisonDaily: freshData.comparison ? freshData.comparison.daily.filter((d) => resolvedAccountIds.has(d.accountId)) : null,
-        accountReach: freshData.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)),
-        comparisonAccountReach: freshData.comparison ? freshData.comparison.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)) : null,
+        reach: templateReach,
+        comparisonReach: templateComparisonReach,
         audience: freshData.audience.filter((a) => resolvedAccountIds.has(a.accountId)),
         regions: freshData.regions.filter((r) => resolvedAccountIds.has(r.accountId)),
         partialAccountNames: freshData.partialAccounts.map((a) => a.name),
@@ -444,7 +508,7 @@ export default function ReportsPanel({
         <button
           type="button"
           onClick={downloadCurrentPdf}
-          disabled={generatingCurrent}
+          disabled={generatingCurrent || reachPending}
           aria-busy={generatingCurrent}
           className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-wait"
         >
@@ -454,8 +518,13 @@ export default function ReportsPanel({
               <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
           )}
-          {generatingCurrent ? "Gerando relatório..." : "Baixar PDF do período atual"}
+          {generatingCurrent ? "Gerando relatório..." : reachPending ? "Calculando alcance dos filtros..." : "Baixar PDF do período atual"}
         </button>
+        {reachPending && !currentError && (
+          <p className="mt-2 text-[12px] text-intel-text-dim">
+            Recalculando o alcance deduplicado para os filtros de campanha atuais antes de liberar o download.
+          </p>
+        )}
         {currentError && (
           <div className="mt-3 flex flex-wrap items-center gap-3" role="alert">
             <p className="text-[12px] text-intel-red">{currentError}</p>

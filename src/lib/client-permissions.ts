@@ -23,6 +23,7 @@ export type CampaignColumnId =
   | "impressions"
   | "clicks"
   | "linkClicks"
+  | "conversations"
   | "costPerConversation"
   | "ctr"
   | "cpc"
@@ -36,7 +37,8 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "spend", label: "Investimento" },
   { id: "impressions", label: "Impressões" },
   { id: "clicks", label: "Cliques (todos)" },
-  { id: "linkClicks", label: "Conversa iniciada" },
+  { id: "linkClicks", label: "Cliques no link" },
+  { id: "conversations", label: "Conversa iniciada" },
   { id: "costPerConversation", label: "Custo por conversa iniciada" },
   { id: "ctr", label: "CTR" },
   { id: "cpc", label: "CPC" },
@@ -50,7 +52,7 @@ export type HideableSectionId = "campaigns" | "insights" | "reports" | "integrat
 
 export const HIDEABLE_SECTION_OPTIONS: { id: HideableSectionId; label: string }[] = [
   { id: "campaigns", label: "Campanhas" },
-  { id: "insights", label: "Análises com IA" },
+  { id: "insights", label: "Análises estratégicas" },
   { id: "reports", label: "Relatórios" },
   { id: "integrations", label: "Integrações" },
 ];
