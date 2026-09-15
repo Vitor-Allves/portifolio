@@ -295,16 +295,6 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     [data.comparison, accountIds]
   );
 
-  // Row-level (not date-aggregated) scoping for the PDF report generator,
-  // which re-aggregates internally per its own needs (a single cross-account
-  // trend line here, per-account breakdowns there) — passing the raw rows
-  // keeps both consumers deriving from the same one filtered set.
-  const scopedAccounts = useMemo(() => data.accounts.filter((a) => accountIds.has(a.id)), [data.accounts, accountIds]);
-  const scopedDaily = useMemo(() => data.daily.filter((d) => accountIds.has(d.accountId)), [data.daily, accountIds]);
-  const scopedComparisonDaily = useMemo(
-    () => (data.comparison ? data.comparison.daily.filter((d) => accountIds.has(d.accountId)) : null),
-    [data.comparison, accountIds]
-  );
   const scopedAccountReach = useMemo(
     () => data.accountReach.filter((r) => accountIds.has(r.accountId)),
     [data.accountReach, accountIds]
@@ -403,15 +393,12 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     scopedComparisonAccountReach,
   ]);
 
-  // Reach for exports (CSV/PDF) — the exact same number as the on-screen
-  // "Alcance" KPI, so a generated report never diverges from what the
-  // screen shows for the same filter. null means "não disponível", never a
-  // silent fallback to the whole-account figure; `reachPending` gates
-  // report generation entirely while the scoped fetch is still in flight,
-  // so a report is never built from a number that's about to change.
+  // Gates ad-hoc PDF generation while the scoped reach recalculation for the
+  // current campaign/ad set/objective/status filters is still in flight —
+  // the server route recomputes reach itself from the submitted filters, so
+  // this only prevents firing a request while this screen's own filters are
+  // still settling, never a stand-in for the server's own computation.
   const reachPending = isReachNarrowed && scopedReachStatus === "loading";
-  const reachForExport = totalReachOutcome.status === "ok" ? totalReachOutcome.value : null;
-  const comparisonReachForExport = comparisonReachOutcome.status === "ok" ? comparisonReachOutcome.value : null;
 
   const totalCtr = ctr(totals);
   const totalCpc = cpc(totals);
@@ -883,18 +870,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     period={period}
                     resolvedRange={data.resolvedRange}
                     compare={compare}
-                    comparisonRange={data.comparison?.period ?? null}
-                    dataGeneratedAt={data.generatedAt}
-                    accounts={scopedAccounts}
-                    comparisonCampaigns={comparisonCampaigns}
-                    daily={scopedDaily}
-                    comparisonDaily={scopedComparisonDaily}
-                    reach={reachForExport}
-                    comparisonReach={comparisonReachForExport}
                     reachPending={reachPending}
-                    audience={filteredAudience}
-                    regions={filteredRegions}
-                    partialAccountNames={data.partialAccounts.map((a) => a.name)}
                     accountIds={accountIds}
                     accountOptions={accountOptions}
                     campaignIds={campaignIds}

@@ -35,7 +35,7 @@
 import type { CampaignInsight } from "./meta-ads-types";
 import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, type Totals } from "./metrics";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent, formatShortDate } from "./format";
-import { objectiveGroup, OBJECTIVE_GROUP_LABEL, type ObjectiveGroup } from "./kpi-hierarchy";
+import { objectiveGroup, OBJECTIVE_GROUP_LABEL, type ObjectiveGroup, type KpiId } from "./kpi-hierarchy";
 
 export type InsightEvidence = { label: string; value: string };
 
@@ -88,6 +88,16 @@ const LOW_SHARE_FOR_OPPORTUNITY = 0.15; // "receives little budget relative to t
 const CONCENTRATION_THRESHOLD = 0.5; // one campaign holding >50% of ITS OWN CLIENT's investment
 const DEVIATION_MULTIPLIER = 1.5; // "50% worse than the group's own average"
 const OPPORTUNITY_BETTER_MULTIPLIER = 0.7; // "30% better than the group's own average"
+
+// `allowedMetrics` mirrors the same permission set the dashboard/PDF use for
+// KPI columns (see client-permissions.ts). undefined means "no restriction"
+// (the live Dashboard's own calls, which pass nothing) — every check below
+// must treat that as fully unrestricted so existing behavior never changes.
+// A metric that's disallowed is skipped everywhere it would appear, directly
+// or as the basis of a comparison/derived value — never just relabeled.
+function isMetricAllowed(allowed: ReadonlySet<KpiId> | undefined, id: KpiId): boolean {
+  return !allowed || allowed.has(id);
+}
 
 function periodLabel(range: { since: string; until: string }): string {
   return `${formatShortDate(range.since)} a ${formatShortDate(range.until)}`;
@@ -143,9 +153,15 @@ function buildBuckets(campaigns: CampaignInsight[]): Bucket[] {
 
 type GroupMetric = { value: number; label: string; format: (n: number) => string; volumeOk: boolean; volumeNote: string };
 
-function groupMetricFor(group: ObjectiveGroup, totals: Totals, volume: { impressions: number; clicks: number }): GroupMetric | null {
+function groupMetricFor(
+  group: ObjectiveGroup,
+  totals: Totals,
+  volume: { impressions: number; clicks: number },
+  allowed: ReadonlySet<KpiId> | undefined
+): GroupMetric | null {
   switch (group) {
     case "awareness": {
+      if (!isMetricAllowed(allowed, "cpm")) return null;
       const v = cpm(totals);
       if (v === null) return null;
       return {
@@ -157,6 +173,7 @@ function groupMetricFor(group: ObjectiveGroup, totals: Totals, volume: { impress
       };
     }
     case "messages": {
+      if (!isMetricAllowed(allowed, "costPerConversation")) return null;
       const v = costPerConversation(totals);
       if (v === null) return null;
       const conversations = totals.conversations ?? 0;
@@ -171,6 +188,7 @@ function groupMetricFor(group: ObjectiveGroup, totals: Totals, volume: { impress
     case "traffic":
     case "engagement":
     case "conversion-other": {
+      if (!isMetricAllowed(allowed, "cpc")) return null;
       const v = cpc(totals);
       if (v === null) return null;
       return {
@@ -193,11 +211,13 @@ function evaluateCampaignVsBucket(
   multiAccount: boolean,
   bucketLabel: string,
   period: string,
-  shortPeriodNote: string | null
+  shortPeriodNote: string | null,
+  allowed: ReadonlySet<KpiId> | undefined
 ): { attention?: InsightItem; opportunity?: InsightItem } {
+  const spendAllowed = isMetricAllowed(allowed, "spend");
   const spendShare = bucketTotals.spend > 0 ? c.spend / bucketTotals.spend : 0;
-  const cMetric = groupMetricFor(bucket.group, campaignTotals(c), { impressions: c.impressions, clicks: c.clicks });
-  const bucketMetric = groupMetricFor(bucket.group, bucketTotals, { impressions: bucketTotals.impressions, clicks: bucketTotals.clicks });
+  const cMetric = groupMetricFor(bucket.group, campaignTotals(c), { impressions: c.impressions, clicks: c.clicks }, allowed);
+  const bucketMetric = groupMetricFor(bucket.group, bucketTotals, { impressions: bucketTotals.impressions, clicks: bucketTotals.clicks }, allowed);
   if (!cMetric || !bucketMetric || !cMetric.volumeOk) return {};
 
   const namePrefix = multiAccount ? `${c.accountName} · ${c.campaignName}` : c.campaignName;
@@ -216,7 +236,7 @@ function evaluateCampaignVsBucket(
       evidence: [
         { label: `${cMetric.label} da campanha`, value: cMetric.format(cMetric.value) },
         { label: `${cMetric.label} médio do grupo`, value: cMetric.format(bucketMetric.value) },
-        { label: "Investimento da campanha", value: formatCurrencyBRL(c.spend) },
+        ...(spendAllowed ? [{ label: "Investimento da campanha", value: formatCurrencyBRL(c.spend) }] : []),
       ],
       period,
       limitation: `Comparado apenas com outras campanhas de ${bucketLabel} deste mesmo cliente — nunca com outro cliente ou objetivo. ${commercialCaveat}${shortPeriodNote ? ` ${shortPeriodNote}` : ""}`,
@@ -229,11 +249,11 @@ function evaluateCampaignVsBucket(
     result.opportunity = {
       text: `${namePrefix} tem ${cMetric.label} de ${cMetric.format(cMetric.value)} (mais eficiente que a média de ${bucketLabel}, ${cMetric.format(
         bucketMetric.value
-      )}), mas responde por apenas ${formatPercent(spendShare * 100)} do investimento do grupo, com base em ${cMetric.volumeNote}.`,
+      )})${spendAllowed ? `, mas responde por apenas ${formatPercent(spendShare * 100)} do investimento do grupo` : ""}, com base em ${cMetric.volumeNote}.`,
       evidence: [
         { label: `${cMetric.label} da campanha`, value: cMetric.format(cMetric.value) },
         { label: `${cMetric.label} médio do grupo`, value: cMetric.format(bucketMetric.value) },
-        { label: "Participação no investimento do grupo", value: formatPercent(spendShare * 100) },
+        ...(spendAllowed ? [{ label: "Participação no investimento do grupo", value: formatPercent(spendShare * 100) }] : []),
       ],
       period,
       limitation: `Resultado isolado dentro do grupo de ${bucketLabel} — a amostra ainda é pequena frente ao grupo, e ${cMetric.label} não mede vendas, receita ou retorno. Não é uma campanha "vencedora", é uma hipótese a validar.${shortPeriodNote ? ` ${shortPeriodNote}` : ""}`,
@@ -252,18 +272,41 @@ function evaluateCampaignVsBucket(
 // ranking, exactly to head off "different budgets = one client's problem".
 // ---------------------------------------------------------------------------
 
-function buildSummary(totals: Totals, label: string, campaigns: CampaignInsight[], multiAccount: boolean, accountNames: Map<string, string>): InsightItem[] {
+function buildSummary(
+  totals: Totals,
+  label: string,
+  campaigns: CampaignInsight[],
+  multiAccount: boolean,
+  accountNames: Map<string, string>,
+  allowed: ReadonlySet<KpiId> | undefined
+): InsightItem[] {
+  const spendAllowed = isMetricAllowed(allowed, "spend");
+  const impressionsAllowed = isMetricAllowed(allowed, "impressions");
+  const clicksAllowed = isMetricAllowed(allowed, "clicks");
+  const ctrAllowed = isMetricAllowed(allowed, "ctr");
   const totalCtr = ctr(totals);
+
+  const clauses: string[] = [];
+  if (spendAllowed) clauses.push(`investimento total de ${formatCurrencyBRL(totals.spend)}`);
+  if (impressionsAllowed) clauses.push(`${formatInteger(totals.impressions)} impressões`);
+  if (clicksAllowed) clauses.push(`${formatInteger(totals.clicks)} cliques${ctrAllowed && totalCtr !== null ? ` (CTR de ${formatPercent(totalCtr)})` : ""}`);
+
+  const evidence: InsightEvidence[] = [];
+  if (spendAllowed) evidence.push({ label: "Investimento", value: formatCurrencyBRL(totals.spend) });
+  if (impressionsAllowed) evidence.push({ label: "Impressões", value: formatInteger(totals.impressions) });
+  if (clicksAllowed) evidence.push({ label: "Cliques", value: formatInteger(totals.clicks) });
+
+  const summaryText =
+    clauses.length === 0
+      ? `Nenhum indicador autorizado para exibição do resumo no período de ${label}.`
+      : `${clauses[0].charAt(0).toUpperCase()}${clauses[0].slice(1)} no período de ${label}${
+          clauses.length > 1 ? `, gerando ${clauses.slice(1).join(" e ")}` : ""
+        }.`;
+
   const items: InsightItem[] = [
     {
-      text: `Investimento total de ${formatCurrencyBRL(totals.spend)} no período de ${label}, gerando ${formatInteger(
-        totals.impressions
-      )} impressões e ${formatInteger(totals.clicks)} cliques${totalCtr !== null ? ` (CTR de ${formatPercent(totalCtr)})` : ""}.`,
-      evidence: [
-        { label: "Investimento", value: formatCurrencyBRL(totals.spend) },
-        { label: "Impressões", value: formatInteger(totals.impressions) },
-        { label: "Cliques", value: formatInteger(totals.clicks) },
-      ],
+      text: summaryText,
+      evidence,
       period: label,
       limitation:
         "Total consolidado do filtro atual — quando há mais de um cliente ou grupo de objetivo selecionado, use os Pontos de atenção e Oportunidades para comparações, que são sempre feitas dentro do mesmo cliente e objetivo, nunca contra este total combinado.",
@@ -272,7 +315,7 @@ function buildSummary(totals: Totals, label: string, campaigns: CampaignInsight[
     },
   ];
 
-  if (multiAccount) {
+  if (multiAccount && spendAllowed) {
     const byAccount = new Map<string, number>();
     for (const c of campaigns) byAccount.set(c.accountId, (byAccount.get(c.accountId) ?? 0) + c.spend);
     const parts = [...byAccount.entries()].map(([id, spend]) => `${accountNames.get(id) ?? id}: ${formatCurrencyBRL(spend)}`).join(" · ");
@@ -295,8 +338,22 @@ function buildChanges(
   comparisonCampaigns: CampaignInsight[],
   multiAccount: boolean,
   accountNames: Map<string, string>,
-  label: string
+  label: string,
+  allowed: ReadonlySet<KpiId> | undefined
 ): InsightItem[] {
+  if (!isMetricAllowed(allowed, "spend")) {
+    return [
+      {
+        text: "Comparação com o período anterior indisponível: o indicador de investimento não está autorizado para exibição neste relatório.",
+        evidence: [],
+        period: label,
+        limitation: "",
+        action: null,
+        watchIndicator: null,
+      },
+    ];
+  }
+
   if (!multiAccount) {
     const totals = sumTotals(campaigns);
     const prevTotals = sumTotals(comparisonCampaigns);
@@ -387,8 +444,10 @@ export function computeStrategicInsights(input: {
   daily: { date: string; spend: number }[];
   resolvedRange: { since: string; until: string };
   partialAccountNames: string[];
+  /** Metric ids authorized for the requesting recipient — undefined (the live Dashboard's own calls) means unrestricted. When set, every finding, comparison and derived text below is gated to never mention a metric outside this set. */
+  allowedMetrics?: ReadonlySet<KpiId>;
 }): StrategicInsights {
-  const { campaigns, comparisonCampaigns, daily, resolvedRange, partialAccountNames } = input;
+  const { campaigns, comparisonCampaigns, daily, resolvedRange, partialAccountNames, allowedMetrics } = input;
   const label = periodLabel(resolvedRange);
   const periodDays = daysBetween(resolvedRange);
 
@@ -420,9 +479,9 @@ export function computeStrategicInsights(input: {
     : null;
 
   const scopeNote = buildScopeNote(campaigns, accountIds, accountNames, objectiveGroups, periodDays);
-  const summary = buildSummary(totals, label, campaigns, multiAccount, accountNames);
+  const summary = buildSummary(totals, label, campaigns, multiAccount, accountNames, allowedMetrics);
   const changes = comparisonCampaigns
-    ? buildChanges(campaigns, comparisonCampaigns, multiAccount, accountNames, label)
+    ? buildChanges(campaigns, comparisonCampaigns, multiAccount, accountNames, label, allowedMetrics)
     : [
         {
           text: "Comparação com o período anterior não está ativada — ative o filtro de comparação para ver as principais mudanças.",
@@ -458,7 +517,7 @@ export function computeStrategicInsights(input: {
     const bucketTotals = sumTotals(bucket.campaigns);
     const bucketLabel = multiAccount ? `${bucket.accountName} · ${OBJECTIVE_GROUP_LABEL[bucket.group]}` : OBJECTIVE_GROUP_LABEL[bucket.group];
     for (const c of bucket.campaigns) {
-      const { attention: a, opportunity: o } = evaluateCampaignVsBucket(c, bucketTotals, bucket, multiAccount, bucketLabel, label, shortPeriodNote);
+      const { attention: a, opportunity: o } = evaluateCampaignVsBucket(c, bucketTotals, bucket, multiAccount, bucketLabel, label, shortPeriodNote, allowedMetrics);
       if (a) {
         attention.push(a);
         flagged.add(c.campaignId);
@@ -470,7 +529,9 @@ export function computeStrategicInsights(input: {
   // Concentration — evaluated per client, on that client's own spend only,
   // and only when the client has at least 2 campaigns in view (a single
   // filtered campaign is trivially "100%" and that's not a finding).
-  for (const accountId of accountIds) {
+  // Skipped entirely when "spend" itself isn't authorized, since every part
+  // of this finding (share, evidence) is derived from spend values.
+  for (const accountId of isMetricAllowed(allowedMetrics, "spend") ? accountIds : []) {
     const accCampaigns = campaigns.filter((c) => c.accountId === accountId);
     if (accCampaigns.length < 2) continue;
     const accSpend = accCampaigns.reduce((s, c) => s + c.spend, 0);
@@ -499,8 +560,9 @@ export function computeStrategicInsights(input: {
 
   // Daily spend spikes — an aggregate-trend observation (not a cross-client
   // comparison), so it's fine to look at the combined series; just needs
-  // enough days to have a baseline average worth comparing against.
-  if (periodDays >= MIN_PERIOD_DAYS_FOR_SPIKE && daily.length > 1) {
+  // enough days to have a baseline average worth comparing against. Skipped
+  // when "spend" isn't authorized, since the finding is entirely spend values.
+  if (isMetricAllowed(allowedMetrics, "spend") && periodDays >= MIN_PERIOD_DAYS_FOR_SPIKE && daily.length > 1) {
     const avgDaily = daily.reduce((s, d) => s + d.spend, 0) / daily.length;
     const spikes = daily.filter((d) => avgDaily > 0 && d.spend > avgDaily * 2).slice(0, 2);
     for (const spike of spikes) {
