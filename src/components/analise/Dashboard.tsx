@@ -2,11 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
-import type { AdSetInsight, CampaignInsight, DashboardData, DailyMetrics, Period } from "@/lib/meta-ads-types";
+import type { AdSetInsight, CampaignInsight, DashboardData, Period } from "@/lib/meta-ads-types";
 import type { ClientPermissions } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange } from "@/lib/metrics";
+import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate } from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
 import { OBJECTIVE_NONE_KEY, filterCampaignsByIds } from "@/lib/campaign-filters";
 import { fetchDashboardData, DashboardFetchError } from "@/lib/dashboard-fetch";
@@ -68,28 +68,6 @@ function uniqueAdSetOptions(adSets: AdSetInsight[]) {
     if (!seen.has(a.adSetId)) seen.set(a.adSetId, a.adSetName);
   }
   return [...seen.entries()].map(([id, l]) => ({ id, label: l }));
-}
-
-function aggregateDaily(daily: DailyMetrics[], accountIds: Set<string>) {
-  const byDate = new Map<string, { spend: number; impressions: number; clicks: number; linkClicks: number; reach: number }>();
-  for (const row of daily) {
-    if (!accountIds.has(row.accountId)) continue;
-    const entry = byDate.get(row.date) ?? { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 };
-    entry.spend += row.spend;
-    entry.impressions += row.impressions;
-    entry.clicks += row.clicks;
-    entry.linkClicks += row.linkClicks;
-    // Same day, possibly several accounts — summing here is the same
-    // documented cross-account caveat the Alcance KPI already has (not
-    // deduplicated between accounts). Never summed across DATES: each
-    // date is its own bucket, so this stays a same-day snapshot, not a
-    // running total — safe for a day-by-day trend line.
-    entry.reach += row.reach;
-    byDate.set(row.date, entry);
-  }
-  return [...byDate.entries()]
-    .map(([date, v]) => ({ date, ...v }))
-    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 type DailyAgg = { spend: number; impressions: number; clicks: number; linkClicks: number; reach: number };
@@ -276,9 +254,9 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     [comparisonCampaigns]
   );
 
-  const dailyFiltered = useMemo(() => aggregateDaily(data.daily, accountIds), [data.daily, accountIds]);
+  const dailyFiltered = useMemo(() => aggregateDailyByDate(data.daily, accountIds), [data.daily, accountIds]);
   const comparisonDailyFiltered = useMemo(
-    () => (data.comparison ? aggregateDaily(data.comparison.daily, accountIds) : null),
+    () => (data.comparison ? aggregateDailyByDate(data.comparison.daily, accountIds) : null),
     [data.comparison, accountIds]
   );
 
@@ -302,6 +280,25 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       data.comparison
         ? data.comparison.accountReach.filter((r) => accountIds.has(r.accountId)).reduce((sum, r) => sum + r.reach, 0)
         : null,
+    [data.comparison, accountIds]
+  );
+
+  // Row-level (not date-aggregated) scoping for the PDF report generator,
+  // which re-aggregates internally per its own needs (a single cross-account
+  // trend line here, per-account breakdowns there) — passing the raw rows
+  // keeps both consumers deriving from the same one filtered set.
+  const scopedAccounts = useMemo(() => data.accounts.filter((a) => accountIds.has(a.id)), [data.accounts, accountIds]);
+  const scopedDaily = useMemo(() => data.daily.filter((d) => accountIds.has(d.accountId)), [data.daily, accountIds]);
+  const scopedComparisonDaily = useMemo(
+    () => (data.comparison ? data.comparison.daily.filter((d) => accountIds.has(d.accountId)) : null),
+    [data.comparison, accountIds]
+  );
+  const scopedAccountReach = useMemo(
+    () => data.accountReach.filter((r) => accountIds.has(r.accountId)),
+    [data.accountReach, accountIds]
+  );
+  const scopedComparisonAccountReach = useMemo(
+    () => (data.comparison ? data.comparison.accountReach.filter((r) => accountIds.has(r.accountId)) : null),
     [data.comparison, accountIds]
   );
 
@@ -720,12 +717,23 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                   <ReportsPanel
                     campaigns={filteredCampaigns}
                     periodLabel={insights.periodLabel}
-                    totalReach={totalReach}
                     clientLabel={clientLabel}
                     isAdmin={isAdmin}
                     dbConfigured={dbConfigured}
                     period={period}
+                    resolvedRange={data.resolvedRange}
                     compare={compare}
+                    comparisonRange={data.comparison?.period ?? null}
+                    dataGeneratedAt={data.generatedAt}
+                    accounts={scopedAccounts}
+                    comparisonCampaigns={comparisonCampaigns}
+                    daily={scopedDaily}
+                    comparisonDaily={scopedComparisonDaily}
+                    accountReach={scopedAccountReach}
+                    comparisonAccountReach={scopedComparisonAccountReach}
+                    audience={filteredAudience}
+                    regions={filteredRegions}
+                    partialAccountNames={data.partialAccounts.map((a) => a.name)}
                     accountIds={accountIds}
                     accountOptions={accountOptions}
                     campaignIds={campaignIds}

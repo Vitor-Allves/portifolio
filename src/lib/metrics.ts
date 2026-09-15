@@ -7,7 +7,7 @@
 // own rate — averaging rates weights every campaign equally regardless of
 // spend or volume, which silently misrepresents the account.
 
-import type { CampaignInsight } from "./meta-ads-types";
+import type { CampaignInsight, DailyMetrics } from "./meta-ads-types";
 
 export type Totals = {
   spend: number;
@@ -58,4 +58,28 @@ export function costPerConversation(totals: Pick<Totals, "spend" | "linkClicks">
 export function pctChange(current: number, previous: number): number | null {
   if (previous === 0) return current === 0 ? 0 : null;
   return ((current - previous) / previous) * 100;
+}
+
+export type DailyPoint = { date: string; spend: number; impressions: number; clicks: number; linkClicks: number; reach: number };
+
+/**
+ * Collapses per-account daily rows into one point per date, scoped to the
+ * given account set. Shared by the dashboard's own trend chart and the PDF
+ * report generator so both ever plot the exact same numbers for the same
+ * filters. `reach` here inherits DailyMetrics' own caveat: safe as a
+ * same-day snapshot in a trend line, never safe to sum across dates.
+ */
+export function aggregateDailyByDate(daily: DailyMetrics[], accountIds: Set<string>): DailyPoint[] {
+  const byDate = new Map<string, DailyPoint>();
+  for (const row of daily) {
+    if (!accountIds.has(row.accountId)) continue;
+    const entry = byDate.get(row.date) ?? { date: row.date, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 };
+    entry.spend += row.spend;
+    entry.impressions += row.impressions;
+    entry.clicks += row.clicks;
+    entry.linkClicks += row.linkClicks;
+    entry.reach += row.reach;
+    byDate.set(row.date, entry);
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
