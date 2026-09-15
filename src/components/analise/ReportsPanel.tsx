@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CampaignInsight, Period } from "@/lib/meta-ads-types";
+import type { AccountReach, AudienceSegment, CampaignInsight, DailyMetrics, DateRange, Period, RegionSegment } from "@/lib/meta-ads-types";
 import { DATE_PRESETS } from "@/lib/meta-ads-types";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatShortDate } from "@/lib/format";
@@ -9,7 +9,7 @@ import { ctr, cpc, cpm, costPerConversation, sumTotals } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { fetchDashboardData, DashboardFetchError } from "@/lib/dashboard-fetch";
 import { OBJECTIVE_NONE_KEY, resolveIdFilter, toSavedIdFilter, filterCampaignsByIds } from "@/lib/campaign-filters";
-import { downloadCampaignReportPdf } from "@/lib/pdf-report";
+import { downloadCampaignReportPdf, reportFileName, ReportPdfError, type ReportPdfInput } from "@/lib/pdf-report";
 import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-templates-types";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
@@ -17,13 +17,26 @@ import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 type ReportsPanelProps = {
   campaigns: CampaignInsight[];
   periodLabel: string;
-  totalReach: number;
   clientLabel: string | null;
   isAdmin: boolean;
   dbConfigured: boolean;
 
   period: Period;
+  resolvedRange: DateRange;
   compare: boolean;
+  comparisonRange: DateRange | null;
+  dataGeneratedAt: string;
+
+  accounts: { id: string; name: string }[];
+  comparisonCampaigns: CampaignInsight[] | null;
+  daily: DailyMetrics[];
+  comparisonDaily: DailyMetrics[] | null;
+  accountReach: AccountReach[];
+  comparisonAccountReach: AccountReach[] | null;
+  audience: AudienceSegment[];
+  regions: RegionSegment[];
+  partialAccountNames: string[];
+
   accountIds: Set<string>;
   accountOptions: FilterOption[];
   campaignIds: Set<string>;
@@ -72,15 +85,53 @@ function templateSummary(
   return parts.join(" · ");
 }
 
+/** Active-filter chips as printable "Label: valor" pairs for the PDF's cover page — only the ones actually narrowed, so an untouched filter doesn't clutter the report with "Todos". */
+function buildFiltersForPdf(
+  compare: boolean,
+  sets: { accountIds: Set<string>; campaignIds: Set<string>; adSetIds: Set<string>; objectiveIds: Set<string>; statusIds: Set<string> },
+  options: {
+    accountOptions: FilterOption[];
+    campaignOptions: FilterOption[];
+    adSetOptions: FilterOption[];
+    objectiveOptions: FilterOption[];
+    statusOptions: FilterOption[];
+  }
+): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  const maybeAdd = (label: string, ids: Set<string>, opts: FilterOption[]) => {
+    if (opts.length > 0 && ids.size < opts.length) {
+      out.push({ label, value: idsSummary([...ids], opts) });
+    }
+  };
+  maybeAdd("Contas", sets.accountIds, options.accountOptions);
+  maybeAdd("Campanha", sets.campaignIds, options.campaignOptions);
+  maybeAdd("Conjunto", sets.adSetIds, options.adSetOptions);
+  maybeAdd("Objetivo", sets.objectiveIds, options.objectiveOptions);
+  maybeAdd("Status", sets.statusIds, options.statusOptions);
+  out.push({ label: "Comparação", value: compare ? "Ativada" : "Desativada" });
+  return out;
+}
+
 export default function ReportsPanel({
   campaigns,
   periodLabel,
-  totalReach,
   clientLabel,
   isAdmin,
   dbConfigured,
   period,
+  resolvedRange,
   compare,
+  comparisonRange,
+  dataGeneratedAt,
+  accounts,
+  comparisonCampaigns,
+  daily,
+  comparisonDaily,
+  accountReach,
+  comparisonAccountReach,
+  audience,
+  regions,
+  partialAccountNames,
   accountIds,
   accountOptions,
   campaignIds,
@@ -93,12 +144,12 @@ export default function ReportsPanel({
   statusOptions,
 }: ReportsPanelProps) {
   const today = new Date().toISOString().slice(0, 10);
-  const totals = sumTotals(campaigns);
 
   const [templates, setTemplates] = useState<ReportTemplateSummary[] | null>(null);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [generatingCurrent, setGeneratingCurrent] = useState(false);
+  const [currentError, setCurrentError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
@@ -211,17 +262,34 @@ export default function ReportsPanel({
   }
 
   async function downloadCurrentPdf() {
+    if (generatingCurrent) return;
     setGeneratingCurrent(true);
+    setCurrentError(null);
     try {
-      await downloadCampaignReportPdf({
+      const input: ReportPdfInput = {
         title: "Relatório de campanhas",
         clientLabel,
+        accounts,
         periodLabel,
+        resolvedRange,
+        compare,
+        comparisonRange,
+        filters: buildFiltersForPdf(compare, { accountIds, campaignIds, adSetIds, objectiveIds, statusIds }, { accountOptions, campaignOptions, adSetOptions, objectiveOptions, statusOptions }),
         generatedAt: new Date(),
+        dataGeneratedAt,
         campaigns,
-        totals,
-        totalReach,
-      });
+        comparisonCampaigns,
+        daily,
+        comparisonDaily,
+        accountReach,
+        comparisonAccountReach,
+        audience,
+        regions,
+        partialAccountNames,
+      };
+      await downloadCampaignReportPdf(input);
+    } catch (err) {
+      setCurrentError(err instanceof ReportPdfError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
     } finally {
       setGeneratingCurrent(false);
     }
@@ -267,6 +335,7 @@ export default function ReportsPanel({
   }
 
   async function applyTemplateAndDownload(template: ReportTemplateSummary) {
+    if (generatingId) return;
     setRowError(null);
     setGeneratingId(template.id);
     try {
@@ -289,29 +358,62 @@ export default function ReportsPanel({
         statusIds: resolvedStatusIds,
       });
 
-      const templateTotals = sumTotals(filteredCampaigns);
-      const templateTotalReach = freshData.accountReach
-        .filter((r) => resolvedAccountIds.has(r.accountId))
-        .reduce((sum, r) => sum + r.reach, 0);
-
       const resolvedPeriodLabel =
         template.filters.period.kind === "preset"
           ? `${periodSummary(template.filters.period)} (${formatShortDate(freshData.resolvedRange.since)} – ${formatShortDate(freshData.resolvedRange.until)})`
           : `${formatShortDate(freshData.resolvedRange.since)} – ${formatShortDate(freshData.resolvedRange.until)}`;
 
-      await downloadCampaignReportPdf({
+      const templateAccountOptions = freshData.accounts.map((a) => ({ id: a.id, label: a.name }));
+      const templateCampaignOptions = freshData.campaigns.map((c) => ({ id: c.campaignId, label: c.campaignName }));
+      const templateAdSetOptions = freshData.adSets.map((a) => ({ id: a.adSetId, label: a.adSetName }));
+      const templateObjectiveOptions = [...new Set(freshData.campaigns.map((c) => c.objective ?? OBJECTIVE_NONE_KEY))].map((id) => ({
+        id,
+        label: objectiveLabel(id === OBJECTIVE_NONE_KEY ? null : id),
+      }));
+      const templateStatusOptions = [...new Set(freshData.campaigns.map((c) => c.status))].map((id) => ({ id, label: statusLabel(id) }));
+
+      const input: ReportPdfInput = {
         title: template.name,
         clientLabel,
+        accounts: freshData.accounts.filter((a) => resolvedAccountIds.has(a.id)),
         periodLabel: resolvedPeriodLabel,
+        resolvedRange: freshData.resolvedRange,
+        compare: template.filters.compare,
+        comparisonRange: freshData.comparison?.period ?? null,
+        filters: buildFiltersForPdf(
+          template.filters.compare,
+          { accountIds: resolvedAccountIds, campaignIds: resolvedCampaignIds, adSetIds: resolvedAdSetIds, objectiveIds: resolvedObjectiveIds, statusIds: resolvedStatusIds },
+          {
+            accountOptions: templateAccountOptions,
+            campaignOptions: templateCampaignOptions,
+            adSetOptions: templateAdSetOptions,
+            objectiveOptions: templateObjectiveOptions,
+            statusOptions: templateStatusOptions,
+          }
+        ),
         generatedAt: new Date(),
+        dataGeneratedAt: freshData.generatedAt,
         campaigns: filteredCampaigns,
-        totals: templateTotals,
-        totalReach: templateTotalReach,
-      });
+        comparisonCampaigns: freshData.comparison ? freshData.comparison.campaigns.filter((c) => resolvedAccountIds.has(c.accountId)) : null,
+        daily: freshData.daily.filter((d) => resolvedAccountIds.has(d.accountId)),
+        comparisonDaily: freshData.comparison ? freshData.comparison.daily.filter((d) => resolvedAccountIds.has(d.accountId)) : null,
+        accountReach: freshData.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)),
+        comparisonAccountReach: freshData.comparison ? freshData.comparison.accountReach.filter((r) => resolvedAccountIds.has(r.accountId)) : null,
+        audience: freshData.audience.filter((a) => resolvedAccountIds.has(a.accountId)),
+        regions: freshData.regions.filter((r) => resolvedAccountIds.has(r.accountId)),
+        partialAccountNames: freshData.partialAccounts.map((a) => a.name),
+      };
+
+      await downloadCampaignReportPdf(input);
     } catch (err) {
       setRowError({
         id: template.id,
-        message: err instanceof DashboardFetchError ? err.message : "Não foi possível gerar o PDF. Tente novamente.",
+        message:
+          err instanceof DashboardFetchError
+            ? err.message
+            : err instanceof ReportPdfError
+              ? err.message
+              : "Não foi possível gerar o PDF. Tente novamente.",
       });
     } finally {
       setGeneratingId(null);
@@ -329,22 +431,43 @@ export default function ReportsPanel({
   }
 
   const optionSets = { accountOptions, campaignOptions, adSetOptions, objectiveOptions, statusOptions };
+  const previewFileName = reportFileName({ clientLabel, resolvedRange });
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Baixar relatório em PDF</h3>
-        <p className="text-[12px] text-intel-text-dim mb-5">
-          Gera um PDF com o resumo e a tabela de campanhas do que está filtrado agora — {periodLabel}.
+        <p className="text-[12px] text-intel-text-dim mb-1">
+          Gera um PDF executivo com todos os indicadores da visão geral, evolução, distribuição, desempenho por campanha e análise — {periodLabel}.
         </p>
+        <p className="text-[11px] text-intel-text-dim/70 mb-5">Arquivo: {previewFileName}</p>
         <button
           type="button"
           onClick={downloadCurrentPdf}
           disabled={generatingCurrent}
-          className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-busy={generatingCurrent}
+          className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-wait"
         >
-          {generatingCurrent ? "Gerando PDF..." : "Baixar PDF do período atual"}
+          {generatingCurrent && (
+            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          )}
+          {generatingCurrent ? "Gerando relatório..." : "Baixar PDF do período atual"}
         </button>
+        {currentError && (
+          <div className="mt-3 flex flex-wrap items-center gap-3" role="alert">
+            <p className="text-[12px] text-intel-red">{currentError}</p>
+            <button
+              type="button"
+              onClick={downloadCurrentPdf}
+              className="text-[11.5px] tracking-[0.06em] uppercase text-intel-cyan hover:text-intel-text transition-colors duration-200"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
@@ -376,7 +499,16 @@ export default function ReportsPanel({
                   <p className="text-[13px] text-intel-text font-medium truncate">{template.name}</p>
                   <p className="text-[11.5px] text-intel-text-dim mt-0.5">{templateSummary(template.filters, optionSets)}</p>
                   {rowError?.id === template.id && (
-                    <p className="text-[11.5px] text-intel-red mt-1">{rowError.message}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-[11.5px] text-intel-red">{rowError.message}</p>
+                      <button
+                        type="button"
+                        onClick={() => applyTemplateAndDownload(template)}
+                        className="text-[11px] tracking-[0.06em] uppercase text-intel-cyan hover:text-intel-text transition-colors duration-200"
+                      >
+                        Tentar novamente
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -384,6 +516,7 @@ export default function ReportsPanel({
                     type="button"
                     onClick={() => applyTemplateAndDownload(template)}
                     disabled={generatingId === template.id}
+                    aria-busy={generatingId === template.id}
                     className="text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50 disabled:cursor-wait"
                   >
                     {generatingId === template.id ? "Gerando..." : "Gerar PDF"}
