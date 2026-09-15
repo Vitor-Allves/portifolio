@@ -25,6 +25,10 @@ export default async function AnalisePage() {
 
   const allowedAccountIds = scope.kind === "client" ? scope.accountIds : undefined;
   const clientPermissions = scope.kind === "client" ? scope.permissions : null;
+  // Internal Legado viewer (admin or analyst) — distinct from isFullAdmin,
+  // which gates the admin *panel* specifically. Used only to decide how
+  // much technical/infra detail a viewer is shown, never data access.
+  const isInternal = scope.kind === "admin";
   // Header subtitle: a client's business name, or — for a named internal
   // login — who's signed in. The legacy shared admin password has no
   // identity to show, so it falls back to the header's own default text.
@@ -51,6 +55,7 @@ export default async function AnalisePage() {
         <NotConfigured
           reason={loadError instanceof MetaConfigError ? "config" : "api"}
           detail={loadError instanceof MetaApiError ? loadError.message : undefined}
+          isInternal={isInternal}
         />
       </main>
     );
@@ -60,6 +65,7 @@ export default async function AnalisePage() {
     <Dashboard
       initialData={data}
       isAdmin={isFullAdmin(scope)}
+      isInternal={isInternal}
       clientLabel={viewerLabel}
       clientPermissions={clientPermissions}
       dbConfigured={dbConfigured}

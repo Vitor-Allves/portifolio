@@ -31,6 +31,17 @@ export function formatSignedPercent(value: number, digits = 1): string {
   return `${sign}${value.toFixed(digits)}%`;
 }
 
+/** Names the current selection ("Ativa, Pausada") instead of a bare count when it's short enough to read as a label — falls back to "2 de 8" once the names themselves would run too long for a filter pill/chip. */
+export function formatSelectionSummary(
+  selectedIds: Set<string>,
+  options: { id: string; label: string }[],
+  maxLength = 32
+): string {
+  const selected = options.filter((o) => selectedIds.has(o.id));
+  const joined = selected.map((o) => o.label).join(", ");
+  return joined.length > 0 && joined.length <= maxLength ? joined : `${selectedIds.size} de ${options.length}`;
+}
+
 export function formatShortDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);
   if (!year || !month || !day) return isoDate;

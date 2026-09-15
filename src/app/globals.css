@@ -35,15 +35,18 @@
      under the intel-* prefix so it never touches the public site's navy/
      silver/ice palette above. Values are the exact ones specified for the
      "central de inteligência" redesign, not derived from the brand ramp. */
-  --color-intel-bg: #070d1a;
+  --color-intel-bg: #081527;
   --color-intel-surface-1: #101b2d;
   --color-intel-surface-2: #15243a;
   --color-intel-surface-3: #1c2f4a;
   --color-intel-brand: #1f3a63;
   --color-intel-cyan: #38d9f5;
   --color-intel-violet: #a78bfa;
-  --color-intel-text: #f1f5f9;
-  --color-intel-text-dim: #94a3b8;
+  --color-intel-text: #ffffff;
+  /* Secondary text/legends/labels — the brand's own prata (#BFC3C9), used
+     in place of a generic slate gray so filters, tooltips and captions stay
+     legible against the dark surfaces instead of fading into them. */
+  --color-intel-text-dim: #bfc3c9;
   --color-intel-green: #34d399;
   --color-intel-red: #f87171;
 
@@ -180,16 +183,14 @@ select:focus-visible {
     radial-gradient(ellipse 60% 40% at 100% 100%, rgba(31, 58, 99, 0.03), transparent 60%);
 }
 
-/* Legado Intelligence background: near-black base with two very soft
-   ambient glows (cyan + violet, the dashboard's data and AI accents) and an
-   almost imperceptible technical grid — fixed so it doesn't repeat oddly as
-   content scrolls past it. */
+/* Legado Intelligence background: deep navy base with a single, understated
+   vignette (no colored glow blobs) and an almost imperceptible technical
+   grid — fixed so it doesn't repeat oddly as content scrolls past it.
+   Sophistication over shine: the brand's own navy carries the "premium"
+   read instead of cyan/violet bloom. */
 .bg-intel-ambient {
   background-color: var(--color-intel-bg);
-  background-image:
-    radial-gradient(ellipse 60% 45% at 12% -8%, rgba(56, 217, 245, 0.08), transparent 60%),
-    radial-gradient(ellipse 55% 40% at 100% 8%, rgba(167, 139, 250, 0.07), transparent 60%),
-    radial-gradient(ellipse 70% 50% at 50% 115%, rgba(31, 58, 99, 0.18), transparent 60%);
+  background-image: radial-gradient(ellipse 70% 50% at 50% 115%, rgba(31, 58, 99, 0.22), transparent 60%);
   background-attachment: fixed;
 }
 
@@ -200,11 +201,14 @@ select:focus-visible {
   background-size: 48px 48px;
 }
 
+/* Neutral loading-skeleton sheen — silver, not violet, since a loading
+   state shouldn't visually announce itself as "AI" before there's anything
+   to show. */
 .bg-intel-shimmer {
   background-image: linear-gradient(
     100deg,
     transparent 35%,
-    rgba(167, 139, 250, 0.16) 50%,
+    rgba(191, 195, 201, 0.14) 50%,
     transparent 65%
   );
   background-size: 200% 100%;

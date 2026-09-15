@@ -369,7 +369,7 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
                       className="cursor-pointer hover:bg-white/[0.035] transition-colors duration-150"
                     >
                       <td className={td}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -392,9 +392,12 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
                               <path d="M3 1.5L7 5L3 8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </button>
-                          <span>{c.campaignName}</span>
+                          {/* Capped so one very long technical name can't force this column (and, with it, every column to its right) wider than a reasonable width — the full name is always available via this title tooltip and, untruncated, in the detail panel and CSV export. */}
+                          <span className="block max-w-[260px] truncate text-intel-text" title={c.campaignName}>
+                            {c.campaignName}
+                          </span>
                           {campaignAdSets.length > 0 && (
-                            <span className="text-[11px] text-intel-text-dim/70">
+                            <span className="shrink-0 text-[11px] text-intel-text-dim/70">
                               ({campaignAdSets.length} {campaignAdSets.length === 1 ? "conjunto" : "conjuntos"})
                             </span>
                           )}
@@ -592,7 +595,7 @@ function CampaignDetailPanel({
                   <div className="flex items-start justify-between gap-2">
                     <span className="flex items-start gap-2 min-w-0">
                       <span className="shrink-0 text-[11px] tabular-nums text-intel-text-dim">{i + 1}</span>
-                      <span className="text-[13px] text-intel-text truncate">{ad.adName}</span>
+                      <span className="min-w-0 text-[13px] text-intel-text truncate">{ad.adName}</span>
                     </span>
                     <StatusBadge status={ad.status} />
                   </div>

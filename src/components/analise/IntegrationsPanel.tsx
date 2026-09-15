@@ -23,6 +23,8 @@ type IntegrationsPanelProps = {
   partialAccountsCount: number;
   generatedAt: string;
   dbConfigured: boolean;
+  /** Internal Legado viewer (admin or analyst) — sees setup/infra detail (System User, Postgres, docs paths). A client only needs a plain connection status. */
+  isInternal: boolean;
 };
 
 export default function IntegrationsPanel({
@@ -30,7 +32,26 @@ export default function IntegrationsPanel({
   partialAccountsCount,
   generatedAt,
   dbConfigured,
+  isInternal,
 }: IntegrationsPanelProps) {
+  if (!isInternal) {
+    return (
+      <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <h3 className="text-[13px] font-medium text-intel-text">Conexão com seus dados</h3>
+          <StatusBadge
+            tone={accountsCount > 0 && partialAccountsCount === 0 ? "ok" : accountsCount > 0 ? "warning" : "pending"}
+            label={accountsCount > 0 && partialAccountsCount === 0 ? "Conectado" : accountsCount > 0 ? "Parcial" : "Indisponível"}
+          />
+        </div>
+        <p className="text-[13px] text-intel-text-dim leading-relaxed">
+          Última atualização em {formatSyncTime(generatedAt)}.
+          {partialAccountsCount > 0 && " Parte dos dados não pôde ser atualizada agora — tente novamente em instantes."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">

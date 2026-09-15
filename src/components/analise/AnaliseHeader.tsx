@@ -25,7 +25,7 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
     <header className="border-b border-white/[0.06] bg-intel-surface-1/80 backdrop-blur-sm">
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Logo variant="onDark" size="sm" className="!h-8" />
+          <Logo variant="onDark" size="sm" className="!h-10" />
           <div>
             <p className="font-sans text-[15px] font-semibold text-intel-text leading-tight">
               Legado Intelligence

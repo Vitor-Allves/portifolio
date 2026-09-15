@@ -26,7 +26,7 @@ export default function ComparisonToggle({ checked, onChange, disabled }: Compar
       >
         <span
           className={`absolute top-0.5 h-2.5 w-2.5 rounded-full transition-transform duration-200 ${
-            checked ? "translate-x-3 bg-intel-cyan shadow-[0_0_6px_var(--color-intel-cyan)]" : "translate-x-0.5 bg-intel-text-dim"
+            checked ? "translate-x-3 bg-intel-cyan" : "translate-x-0.5 bg-intel-text-dim"
           }`}
         />
       </span>

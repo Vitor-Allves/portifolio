@@ -70,7 +70,7 @@ export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaign
   ];
 
   return (
-    <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-intel-violet/35 via-white/[0.06] to-transparent">
+    <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-intel-violet/20 via-white/[0.06] to-transparent">
       <div className="rounded-2xl bg-intel-surface-1 p-6 h-full">
         <div className="flex items-start justify-between gap-3 mb-1">
           <div className="flex items-center gap-2.5">
