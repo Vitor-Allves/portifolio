@@ -16,6 +16,7 @@ export default function ComparisonToggle({ checked, onChange, disabled }: Compar
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
+      title="O período anterior é ajustado para ter a mesma quantidade de dias úteis (seg–sex) do período atual, não apenas o mesmo número de dias corridos."
       className={`${INTEL_PILL_BASE} ${checked ? INTEL_PILL_ACTIVE : INTEL_PILL_INACTIVE}`}
     >
       <span

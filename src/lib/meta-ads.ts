@@ -138,16 +138,67 @@ function resolvePeriodRange(period: Period, now: Date = new Date()): DateRange {
   }
 }
 
-/** Same-length window immediately preceding `range`, for the "vs. previous period" comparison. */
-function previousEquivalentRange(range: DateRange): DateRange {
-  const spanDays =
+function calendarSpanDays(range: DateRange): number {
+  return (
     Math.round(
       (new Date(`${range.until}T00:00:00Z`).getTime() -
         new Date(`${range.since}T00:00:00Z`).getTime()) /
         86_400_000
-    ) + 1;
+    ) + 1
+  );
+}
+
+// Monday–Friday, no holiday calendar (a national/state/municipal holiday
+// table would need its own maintenance and still wouldn't cover every
+// account's own operating calendar) — good enough to correct for the one
+// systematic skew this comparison needs to avoid: two calendar-equal
+// windows landing on a different number of weekdays depending on where
+// weekends fall.
+function isBusinessDay(iso: string): boolean {
+  const day = new Date(`${iso}T00:00:00Z`).getUTCDay();
+  return day !== 0 && day !== 6;
+}
+
+function countBusinessDays(range: DateRange): number {
+  let count = 0;
+  for (let cursor = range.since; cursor <= range.until; cursor = shiftDate(cursor, 1)) {
+    if (isBusinessDay(cursor)) count++;
+  }
+  return count;
+}
+
+/**
+ * Immediately preceding window sized so it contains the SAME NUMBER OF
+ * BUSINESS DAYS as `range` — not simply the same calendar-day span. Two
+ * windows of equal calendar length can still contain a different count of
+ * weekdays depending on where weekends fall inside them (e.g. the first 15
+ * calendar days of September vs. the last 15 of August), which skews any
+ * day-driven metric (spend, delivery) between "current" and "previous"
+ * before the comparison even starts. This walks backward one calendar day
+ * at a time from the day before `range` starts, counting only business
+ * days, until it has accumulated as many as `range` itself has — the
+ * resulting window's calendar length can differ from `range`'s, which is
+ * the whole point.
+ *
+ * Falls back to the same calendar-day span when `range` itself has zero
+ * business days (an all-weekend custom range) — there's no business-day
+ * count to match in that case.
+ */
+function previousEquivalentRange(range: DateRange): DateRange {
+  const targetBusinessDays = countBusinessDays(range);
   const prevUntil = shiftDate(range.since, -1);
-  const prevSince = shiftDate(prevUntil, -(spanDays - 1));
+
+  if (targetBusinessDays === 0) {
+    const prevSince = shiftDate(prevUntil, -(calendarSpanDays(range) - 1));
+    return { since: prevSince, until: prevUntil };
+  }
+
+  let prevSince = prevUntil;
+  let counted = isBusinessDay(prevUntil) ? 1 : 0;
+  while (counted < targetBusinessDays) {
+    prevSince = shiftDate(prevSince, -1);
+    if (isBusinessDay(prevSince)) counted++;
+  }
   return { since: prevSince, until: prevUntil };
 }
 
