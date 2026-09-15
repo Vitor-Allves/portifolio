@@ -1346,6 +1346,12 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     methodology.push({ heading: "Definições das métricas", body: allowedDefinitionSentences.join(" ") });
   }
   methodology.push({ heading: "Fonte dos dados", body: "Meta Ads API, via os Business Managers configurados para esta conta Legado Enterprise, agregados por conta de anúncios, campanha e conjunto de anúncios." });
+  if (input.compare && input.comparisonRange) {
+    methodology.push({
+      heading: "Período de comparação",
+      body: "O período anterior não é simplesmente o mesmo número de dias corridos imediatamente antes do período atual — ele é ajustado para conter a mesma quantidade de dias úteis (segunda a sexta, sem calendário de feriados) que o período atual, já que dois intervalos de igual duração em dias corridos podem cair sobre uma quantidade diferente de dias úteis dependendo de onde os fins de semana caem, o que distorceria a comparação de indicadores que variam com a atividade da semana (ex.: investimento, entrega).",
+    });
+  }
   if (isAllowed(allowed, "reach")) {
     methodology.push({
       heading: "Limitações de alcance e deduplicação",
