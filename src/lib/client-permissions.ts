@@ -28,7 +28,13 @@ export type CampaignColumnId =
   | "ctr"
   | "cpc"
   | "cpm"
-  | "reach";
+  | "reach"
+  | "purchases"
+  | "purchaseValue"
+  | "roas"
+  | "leads"
+  | "addToCart"
+  | "completeRegistrations";
 
 export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] = [
   { id: "account", label: "Conta" },
@@ -44,6 +50,12 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "cpc", label: "CPC" },
   { id: "cpm", label: "CPM" },
   { id: "reach", label: "Alcance" },
+  { id: "purchases", label: "Compras (Pixel/CAPI)" },
+  { id: "purchaseValue", label: "Valor de compra (Pixel/CAPI)" },
+  { id: "roas", label: "ROAS (Pixel/CAPI)" },
+  { id: "leads", label: "Leads (Pixel/CAPI)" },
+  { id: "addToCart", label: "Adicionar ao carrinho (Pixel/CAPI)" },
+  { id: "completeRegistrations", label: "Cadastro completo (Pixel/CAPI)" },
 ];
 
 // "Visão geral" is deliberately excluded — it's the landing section and

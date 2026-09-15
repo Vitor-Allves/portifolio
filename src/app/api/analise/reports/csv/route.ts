@@ -6,7 +6,7 @@ import { sanitizeReportFilters } from "@/lib/report-templates-types";
 import { resolveRecipient, isRecipientError, buildAllowedColumns, applyHiddenFilters, fetchFilteredReportData } from "@/lib/report-data";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { ctr, cpc, cpm, costPerConversation, sumTotals, type Totals } from "@/lib/metrics";
+import { ctr, cpc, cpm, costPerConversation, roas, sumTotals, type Totals } from "@/lib/metrics";
 import { rowsToCsv } from "@/lib/csv";
 import type { CampaignInsight } from "@/lib/meta-ads-types";
 import type { AllowedColumns } from "@/lib/pdf-report-core";
@@ -64,6 +64,20 @@ function metricCell(id: CampaignColumnId, totals: Totals): string | null {
     }
     case "reach":
       return formatInteger(totals.reach);
+    case "purchases":
+      return totals.purchases === null ? "Não disponível" : formatInteger(totals.purchases);
+    case "purchaseValue":
+      return totals.purchaseValue === null ? "Não disponível" : formatCurrencyBRL(totals.purchaseValue);
+    case "roas": {
+      const v = roas(totals);
+      return v === null ? "—" : `${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`;
+    }
+    case "leads":
+      return totals.leads === null ? "Não disponível" : formatInteger(totals.leads);
+    case "addToCart":
+      return totals.addToCart === null ? "Não disponível" : formatInteger(totals.addToCart);
+    case "completeRegistrations":
+      return totals.completeRegistrations === null ? "Não disponível" : formatInteger(totals.completeRegistrations);
     default:
       return null;
   }
@@ -79,12 +93,19 @@ const METRIC_COLUMN_LABELS: Partial<Record<CampaignColumnId, string>> = {
   ctr: "CTR",
   cpc: "CPC",
   cpm: "CPM",
+  purchases: "Compras (Pixel/CAPI)",
+  purchaseValue: "Valor de compra (Pixel/CAPI)",
+  roas: "ROAS (Pixel/CAPI)",
+  leads: "Leads (Pixel/CAPI)",
+  addToCart: "Adicionar ao carrinho (Pixel/CAPI)",
+  completeRegistrations: "Cadastro completo (Pixel/CAPI)",
 };
 // Row-level campaign export includes reach per-row (each campaign's own,
 // individually-scoped number). The account-summary export deliberately
 // omits reach entirely — see buildAccountSummaryCsv for why.
-const CAMPAIGN_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", "reach"];
-const ACCOUNT_SUMMARY_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm"];
+const EXTRA_CONVERSION_IDS: CampaignColumnId[] = ["purchases", "purchaseValue", "roas", "leads", "addToCart", "completeRegistrations"];
+const CAMPAIGN_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", "reach", ...EXTRA_CONVERSION_IDS];
+const ACCOUNT_SUMMARY_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", ...EXTRA_CONVERSION_IDS];
 
 function buildCampaignsCsv(campaigns: CampaignInsight[], allowed: AllowedColumns): string {
   const header = ["Campanha"];

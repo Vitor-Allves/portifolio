@@ -28,6 +28,11 @@ import type {
   CampaignInsight,
   DateRange,
   RegionSegment,
+  PlatformSegment,
+  PlacementSegment,
+  DeviceSegment,
+  CountrySegment,
+  HourSegment,
 } from "./meta-ads-types";
 import type { CampaignColumnId } from "./client-permissions";
 import { objectiveLabel, statusLabel } from "./campaign-labels";
@@ -103,6 +108,11 @@ export type ReportPdfInput = {
   comparisonReach: number | null;
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  platforms: PlatformSegment[];
+  placements: PlacementSegment[];
+  devices: DeviceSegment[];
+  countries: CountrySegment[];
+  hours: HourSegment[];
   /** Accounts that failed to load for this request — surfaced so totals are never mistaken for "genuinely zero". */
   partialAccountNames: string[];
 };
@@ -1309,6 +1319,71 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
       caption: "Métrica: Alcance (estimativa Meta)",
       items: [...byRegion.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
       formatValue: formatInteger,
+    });
+    y += 62;
+  }
+
+  const platformLabel: Record<string, string> = {
+    facebook: "Facebook",
+    instagram: "Instagram",
+    audience_network: "Audience Network",
+    messenger: "Messenger",
+  };
+  const deviceLabel: Record<string, string> = { desktop: "Desktop", mobile_app: "App mobile", mobile_web: "Web mobile" };
+
+  if (isAllowed(allowed, "spend") && (input.platforms.length > 0 || input.placements.length > 0)) {
+    y = ensureSpace(doc, ctx, y, 60);
+    const chartW2c = (CONTENT_W - 8) / 2;
+    const byPlatform = new Map<string, number>();
+    for (const p of input.platforms) byPlatform.set(p.platform, (byPlatform.get(p.platform) ?? 0) + p.spend);
+    const byPlacement = new Map<string, number>();
+    for (const p of input.placements) byPlacement.set(p.placement, (byPlacement.get(p.placement) ?? 0) + p.spend);
+    drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2c, h: 52 }, {
+      title: "Distribuição por plataforma",
+      caption: "Métrica: Investimento (R$)",
+      items: [...byPlatform.entries()].map(([label, value]) => ({ label: platformLabel[label] ?? label, value })).sort((a, b) => b.value - a.value),
+      formatValue: formatCurrencyBRL,
+    });
+    drawBarList(doc, ctx, { x: MARGIN_X + chartW2c + 8, y, w: chartW2c, h: 52 }, {
+      title: "Distribuição por posicionamento",
+      caption: "Métrica: Investimento (R$)",
+      items: [...byPlacement.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 8),
+      formatValue: formatCurrencyBRL,
+    });
+    y += 58;
+  }
+
+  if (isAllowed(allowed, "spend") && (input.devices.length > 0 || input.countries.length > 0)) {
+    y = ensureSpace(doc, ctx, y, 60);
+    const chartW2d = (CONTENT_W - 8) / 2;
+    const byDevice = new Map<string, number>();
+    for (const d of input.devices) byDevice.set(d.device, (byDevice.get(d.device) ?? 0) + d.spend);
+    const byCountry = new Map<string, number>();
+    for (const c of input.countries) byCountry.set(c.country, (byCountry.get(c.country) ?? 0) + c.spend);
+    drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2d, h: 52 }, {
+      title: "Distribuição por dispositivo",
+      caption: "Métrica: Investimento (R$)",
+      items: [...byDevice.entries()].map(([label, value]) => ({ label: deviceLabel[label] ?? label, value })).sort((a, b) => b.value - a.value),
+      formatValue: formatCurrencyBRL,
+    });
+    drawBarList(doc, ctx, { x: MARGIN_X + chartW2d + 8, y, w: chartW2d, h: 52 }, {
+      title: "Distribuição por país",
+      caption: "Métrica: Investimento (R$)",
+      items: [...byCountry.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 8),
+      formatValue: formatCurrencyBRL,
+    });
+    y += 58;
+  }
+
+  if (isAllowed(allowed, "spend") && input.hours.length > 0) {
+    y = ensureSpace(doc, ctx, y, 60);
+    const byHour = new Map<string, number>();
+    for (const h of input.hours) byHour.set(h.hour, (byHour.get(h.hour) ?? 0) + h.spend);
+    drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 56 }, {
+      title: "Distribuição por horário do dia",
+      caption: "Métrica: Investimento (R$) · horário local da conta",
+      items: [...byHour.entries()].map(([label, value]) => ({ label: label.slice(0, 2) + "h", value })).sort((a, b) => a.label.localeCompare(b.label)),
+      formatValue: formatCurrencyBRL,
     });
     y += 62;
   }

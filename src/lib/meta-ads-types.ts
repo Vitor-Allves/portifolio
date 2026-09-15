@@ -77,6 +77,28 @@ export type CampaignInsight = {
   // does return an explicit zero) means the metric applies here.
   conversations: number | null;
   reach: number;
+  // Extra funnel/e-commerce results beyond "conversa iniciada" — same
+  // null-means-not-reported rule as `conversations` above, since Meta's API
+  // gives no way to distinguish "this objective can't produce this action"
+  // from "it happened zero times". These only populate for accounts with a
+  // Meta Pixel/Conversions API actually wired up on the destination; most
+  // client accounts will see "Não disponível" here, and that's expected,
+  // not a bug. `purchases`/`purchaseValue` use Meta's "omni_purchase"
+  // action_type/action_values (combined web+app+offline); `leads` uses
+  // "lead"; `addToCart` and `completeRegistrations` use their own
+  // "omni_add_to_cart"/"omni_complete_registration" action_types.
+  purchases: number | null;
+  purchaseValue: number | null; // R$, from Meta's `action_values`, same action_type as `purchases`
+  leads: number | null;
+  addToCart: number | null;
+  completeRegistrations: number | null;
+  // From the Campaign node itself (not Insights) — Meta sets at most one of
+  // daily/lifetime, and neither at all when this campaign delegates
+  // budgeting to its ad sets instead (CBO off). `budgetRemaining` mirrors
+  // whichever one is actually configured.
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  budgetRemaining: number | null;
 };
 
 // Tagged per account (not pre-summed) so the client can re-aggregate
@@ -119,6 +141,17 @@ export type AdSetInsight = {
   // See CampaignInsight.conversations.
   conversations: number | null;
   reach: number;
+  // See CampaignInsight.purchases/purchaseValue/leads/addToCart/completeRegistrations.
+  purchases: number | null;
+  purchaseValue: number | null;
+  leads: number | null;
+  addToCart: number | null;
+  completeRegistrations: number | null;
+  // See CampaignInsight.dailyBudget/lifetimeBudget/budgetRemaining — an ad
+  // set only carries its own budget when the campaign has CBO off.
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  budgetRemaining: number | null;
 };
 
 // One level below AdSetInsight — the individual ad creative. Same fetch
@@ -137,6 +170,27 @@ export type AdInsight = {
   // See CampaignInsight.conversations.
   conversations: number | null;
   reach: number;
+  // See CampaignInsight.purchases/purchaseValue/leads/addToCart/completeRegistrations.
+  purchases: number | null;
+  purchaseValue: number | null;
+  leads: number | null;
+  addToCart: number | null;
+  completeRegistrations: number | null;
+  // Meta's ad relevance diagnostics — how this ad ranks against other
+  // advertisers competing for the same audience, e.g. "ABOVE_AVERAGE",
+  // "AVERAGE", "BELOW_AVERAGE_35"/"_20"/"_10". null when Meta hasn't
+  // delivered this ad enough yet to rank it ("UNKNOWN") — never a rank.
+  // Ad-set/campaign level has no equivalent; this only exists per ad.
+  qualityRanking: string | null;
+  engagementRateRanking: string | null;
+  conversionRateRanking: string | null;
+  // From the Ad node's `creative` sub-field expansion — the actual asset
+  // shown to people, not an insights metric. All null when the ad's
+  // creative couldn't be resolved (deleted creative, unsupported format).
+  thumbnailUrl: string | null;
+  creativeTitle: string | null;
+  creativeBody: string | null;
+  callToAction: string | null; // Meta's raw call_to_action_type, e.g. "SHOP_NOW", "LEARN_MORE"
 };
 
 // One number per account for the whole period — NOT the sum of each
@@ -180,6 +234,80 @@ export type RegionSegment = {
   reach: number;
 };
 
+// The four breakdowns below share the exact same "safe to sum" reasoning as
+// RegionSegment: each is its own Meta breakdown dimension (one call per
+// account, `breakdowns` set to exactly one value each — deliberately NOT
+// combined into a single multi-breakdown call, since Meta only allows
+// specific breakdown combinations and guessing wrong caused a production
+// incident before; see meta-ads.ts), and each reached person/impression is
+// attributed to exactly one bucket per dimension.
+
+/** Meta's `publisher_platform` breakdown: "facebook" | "instagram" | "audience_network" | "messenger". */
+export type PlatformSegment = {
+  accountId: string;
+  platform: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+  reach: number;
+};
+
+/** Meta's `platform_position` breakdown: "feed" | "instagram_stories" | "instream_video" | etc. */
+export type PlacementSegment = {
+  accountId: string;
+  placement: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+  reach: number;
+};
+
+/** Meta's `device_platform` breakdown: "mobile" | "desktop". */
+export type DeviceSegment = {
+  accountId: string;
+  device: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+  reach: number;
+};
+
+/** Meta's `country` breakdown — ISO country code (e.g. "BR"). */
+export type CountrySegment = {
+  accountId: string;
+  country: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+  reach: number;
+};
+
+// Meta's `hourly_stats_aggregated_by_advertiser_time_zone` breakdown — one
+// row per hour-of-day bucket (e.g. "13:00:00 - 13:59:59"), in the ad
+// account's own timezone. Unlike the other breakdowns here, a person
+// reached in multiple hours on the same day IS counted in each hour they
+// appeared — so `reach` here is NOT safe to sum into a daily/period total
+// the way region/platform/placement/device/country are (same caveat as
+// DailyMetrics.reach). Spend/impressions/clicks remain safe to sum.
+export type HourSegment = {
+  accountId: string;
+  hour: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+  reach: number;
+};
+
 export type DashboardData = {
   period: Period;
   // The concrete since/until this period resolved to — presets are
@@ -193,6 +321,11 @@ export type DashboardData = {
   accountReach: AccountReach[];
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  platforms: PlatformSegment[];
+  placements: PlacementSegment[];
+  devices: DeviceSegment[];
+  countries: CountrySegment[];
+  hours: HourSegment[];
   // Same shape as the primary period, for the "compare to previous period"
   // filter — omitted entirely when comparison wasn't requested.
   comparison: {

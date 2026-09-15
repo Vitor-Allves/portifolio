@@ -79,6 +79,51 @@ export const GENDER_ORDER = ["female", "male", "unknown"];
 export const GENDER_LABEL: Record<string, string> = { male: "Masculino", female: "Feminino", unknown: "Não informado" };
 export const unknownAsNaoInformado = (key: string) => (key === "unknown" ? "Não informado" : key);
 
+export const PLATFORM_LABEL: Record<string, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  audience_network: "Audience Network",
+  messenger: "Messenger",
+};
+
+// Meta's platform_position values aren't fully enumerable (new placements
+// ship over time) — known ones get a readable label, anything else falls
+// back to the raw value rather than being hidden.
+export const PLACEMENT_LABEL: Record<string, string> = {
+  feed: "Feed",
+  facebook_reels: "Reels (Facebook)",
+  instagram_reels: "Reels (Instagram)",
+  instagram_stream: "Feed (Instagram)",
+  instagram_stories: "Stories (Instagram)",
+  facebook_stories: "Stories (Facebook)",
+  story: "Stories",
+  video_feeds: "Feed de vídeos",
+  instream_video: "Vídeo in-stream",
+  marketplace: "Marketplace",
+  right_hand_column: "Coluna lateral",
+  search: "Busca",
+  suggested_video: "Vídeos sugeridos",
+  explore: "Explorar (Instagram)",
+  explore_home: "Explorar - início (Instagram)",
+  profile_feed: "Feed do perfil",
+  msite_feed: "Feed (mobile site)",
+};
+
+export const DEVICE_LABEL: Record<string, string> = {
+  desktop: "Desktop",
+  mobile_app: "App mobile",
+  mobile_web: "Web mobile",
+};
+
+// Meta returns each hour bucket as "HH:00:00 - HH:59:59" in the account's
+// own timezone — this order keeps the bar list chronological (00h → 23h)
+// instead of sorted by the selected metric's value.
+export const HOUR_ORDER = Array.from({ length: 24 }, (_, h) => {
+  const hh = String(h).padStart(2, "0");
+  return `${hh}:00:00 - ${hh}:59:59`;
+});
+export const hourShortLabel = (key: string) => key.slice(0, 2) + "h";
+
 type BreakdownAnalysisProps<T extends BucketTotals> = {
   title: string;
   barColor: string;
@@ -89,6 +134,8 @@ type BreakdownAnalysisProps<T extends BucketTotals> = {
   order?: string[];
   defaultMetric?: BreakdownMetric;
   maxRows?: number;
+  /** Metrics to omit from the picker — e.g. "reach" for the hour-of-day breakdown, where a person seen in multiple hours the same day is counted in each bucket, so summing it across hours isn't a real total (same caveat as DailyMetrics.reach). */
+  hideMetrics?: BreakdownMetric[];
 };
 
 // Generic "one metric, broken down by one dimension" panel — used for
@@ -108,8 +155,10 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
   order,
   defaultMetric = "reach",
   maxRows,
+  hideMetrics,
 }: BreakdownAnalysisProps<T>) {
   const [metric, setMetric] = useState<BreakdownMetric>(defaultMetric);
+  const availableMetrics = hideMetrics ? METRICS.filter((m) => !hideMetrics.includes(m.id)) : METRICS;
 
   const rows = useMemo(() => {
     const byBucket = new Map<string, BucketTotals>();
@@ -163,7 +212,7 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-[13px] font-medium text-intel-text">{title}</h3>
         <div className="flex flex-wrap gap-1" role="group" aria-label={`Selecionar métrica para ${title}`}>
-          {METRICS.map((m) => (
+          {availableMetrics.map((m) => (
             <button
               key={m.id}
               type="button"

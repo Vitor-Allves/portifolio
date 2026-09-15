@@ -98,6 +98,11 @@ export async function POST(req: NextRequest) {
       comparisonReach,
       audience: freshData.audience.filter((a) => resolvedAccountIds.has(a.accountId)),
       regions: freshData.regions.filter((r) => resolvedAccountIds.has(r.accountId)),
+      platforms: freshData.platforms.filter((p) => resolvedAccountIds.has(p.accountId)),
+      placements: freshData.placements.filter((p) => resolvedAccountIds.has(p.accountId)),
+      devices: freshData.devices.filter((d) => resolvedAccountIds.has(d.accountId)),
+      countries: freshData.countries.filter((c) => resolvedAccountIds.has(c.accountId)),
+      hours: freshData.hours.filter((h) => resolvedAccountIds.has(h.accountId)),
       partialAccountNames: freshData.partialAccounts.map((a) => a.name),
     };
 

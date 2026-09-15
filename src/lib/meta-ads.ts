@@ -28,6 +28,11 @@ import type {
   AdInsight,
   AudienceSegment,
   RegionSegment,
+  PlatformSegment,
+  PlacementSegment,
+  DeviceSegment,
+  CountrySegment,
+  HourSegment,
 } from "./meta-ads-types";
 export {
   DATE_PRESETS,
@@ -50,6 +55,11 @@ export type {
   AdInsight,
   AudienceSegment,
   RegionSegment,
+  PlatformSegment,
+  PlacementSegment,
+  DeviceSegment,
+  CountrySegment,
+  HourSegment,
 };
 
 export type DashboardOptions = { compare?: boolean };
@@ -79,6 +89,45 @@ function parseConversations(actions: ActionNode[] | undefined): number | null {
   if (!actions) return null;
   const row = actions.find((a) => a.action_type === CONVERSATION_ACTION_TYPE);
   return row ? Number(row.value ?? 0) : null;
+}
+
+// Generic version of parseConversations for any other `actions`/
+// `action_values` entry — same "no row for this action_type" ==
+// "não disponível, never zero" rule.
+function parseAction(actions: ActionNode[] | undefined, actionType: string): number | null {
+  if (!actions) return null;
+  const row = actions.find((a) => a.action_type === actionType);
+  return row ? Number(row.value ?? 0) : null;
+}
+
+// Meta's standard "omni_*" action_types are the combined web+app+offline
+// totals Ads Manager itself surfaces as "Resultados" for sales/lead
+// objectives — used here instead of the pixel-only "purchase"/"lead" so
+// this matches what the advertiser already sees in Ads Manager. Only
+// populates for accounts with a Meta Pixel/Conversions API actually
+// configured on the destination; everything else reads null exactly like
+// CampaignInsight.conversations.
+const PURCHASE_ACTION_TYPE = "omni_purchase";
+const LEAD_ACTION_TYPE = "lead";
+const ADD_TO_CART_ACTION_TYPE = "omni_add_to_cart";
+const COMPLETE_REGISTRATION_ACTION_TYPE = "omni_complete_registration";
+
+type ExtraConversionFields = {
+  purchases: number | null;
+  purchaseValue: number | null;
+  leads: number | null;
+  addToCart: number | null;
+  completeRegistrations: number | null;
+};
+
+function parseExtraConversions(actions: ActionNode[] | undefined, actionValues: ActionNode[] | undefined): ExtraConversionFields {
+  return {
+    purchases: parseAction(actions, PURCHASE_ACTION_TYPE),
+    purchaseValue: parseAction(actionValues, PURCHASE_ACTION_TYPE),
+    leads: parseAction(actions, LEAD_ACTION_TYPE),
+    addToCart: parseAction(actions, ADD_TO_CART_ACTION_TYPE),
+    completeRegistrations: parseAction(actions, COMPLETE_REGISTRATION_ACTION_TYPE),
+  };
 }
 
 /** Graph API date params for either a named preset or a manually picked range. */
@@ -378,8 +427,25 @@ export async function listAdAccounts(): Promise<MetaAdAccount[]> {
   return accounts;
 }
 
-type CampaignMetaNode = { id?: string; objective?: string; effective_status?: string };
-type CampaignMeta = { objective: string | null; status: CampaignStatus };
+type CampaignMetaNode = {
+  id?: string;
+  objective?: string;
+  effective_status?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  budget_remaining?: string;
+};
+type CampaignMeta = {
+  objective: string | null;
+  status: CampaignStatus;
+  // Meta only ever sets one of daily/lifetime budget on a given campaign,
+  // never both — and returns neither at all when the campaign uses
+  // ad-set-level budgets instead (CBO off), so both are commonly null.
+  // `budgetRemaining` mirrors whichever one is actually set.
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  budgetRemaining: number | null;
+};
 
 function normalizeStatus(raw: string | undefined): CampaignStatus {
   switch (raw) {
@@ -404,14 +470,23 @@ function normalizeStatus(raw: string | undefined): CampaignStatus {
 async function getCampaignMeta(account: MetaAdAccount, accessToken: string): Promise<Map<string, CampaignMeta>> {
   const data = await graphGet<{ data: CampaignMetaNode[] }>(
     `/${account.id}/campaigns`,
-    { fields: "id,objective,effective_status", limit: "500" },
+    { fields: "id,objective,effective_status,daily_budget,lifetime_budget,budget_remaining", limit: "500" },
     accessToken
   );
 
   const map = new Map<string, CampaignMeta>();
   for (const row of data.data ?? []) {
     if (!row.id) continue;
-    map.set(row.id, { objective: row.objective ?? null, status: normalizeStatus(row.effective_status) });
+    map.set(row.id, {
+      objective: row.objective ?? null,
+      status: normalizeStatus(row.effective_status),
+      // Unlike Insights' `spend` (already whole currency units), the
+      // Campaign/AdSet node's own budget fields are in the account
+      // currency's smallest unit (cents for BRL) — divide by 100.
+      dailyBudget: row.daily_budget ? Number(row.daily_budget) / 100 : null,
+      lifetimeBudget: row.lifetime_budget ? Number(row.lifetime_budget) / 100 : null,
+      budgetRemaining: row.budget_remaining ? Number(row.budget_remaining) / 100 : null,
+    });
   }
   return map;
 }
@@ -424,6 +499,7 @@ type CampaignInsightNode = {
   clicks?: string;
   inline_link_clicks?: string;
   actions?: ActionNode[];
+  action_values?: ActionNode[];
   reach?: string;
 };
 
@@ -438,7 +514,7 @@ async function getAccountCampaignInsights(
     {
       level: "campaign",
       ...periodParams(period),
-      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,actions,reach",
+      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach",
       limit: "500",
     },
     accessToken
@@ -462,12 +538,29 @@ async function getAccountCampaignInsights(
       linkClicks: Number(row.inline_link_clicks ?? 0),
       conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
+      ...parseExtraConversions(row.actions, row.action_values),
+      dailyBudget: meta?.dailyBudget ?? null,
+      lifetimeBudget: meta?.lifetimeBudget ?? null,
+      budgetRemaining: meta?.budgetRemaining ?? null,
     };
   });
 }
 
-type AdSetMetaNode = { id?: string; name?: string; effective_status?: string };
-type AdSetMeta = { name: string; status: CampaignStatus };
+type AdSetMetaNode = {
+  id?: string;
+  name?: string;
+  effective_status?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  budget_remaining?: string;
+};
+type AdSetMeta = {
+  name: string;
+  status: CampaignStatus;
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  budgetRemaining: number | null;
+};
 
 // Same pattern as getCampaignMeta: an ad set's name/status live on the ad
 // set node itself, not on its insights row. Fetched once per account (every
@@ -477,14 +570,21 @@ type AdSetMeta = { name: string; status: CampaignStatus };
 async function getAdSetMeta(account: MetaAdAccount, accessToken: string): Promise<Map<string, AdSetMeta>> {
   const data = await graphGet<{ data: AdSetMetaNode[] }>(
     `/${account.id}/adsets`,
-    { fields: "id,name,effective_status", limit: "500" },
+    { fields: "id,name,effective_status,daily_budget,lifetime_budget,budget_remaining", limit: "500" },
     accessToken
   );
 
   const map = new Map<string, AdSetMeta>();
   for (const row of data.data ?? []) {
     if (!row.id) continue;
-    map.set(row.id, { name: row.name ?? "Conjunto sem nome", status: normalizeStatus(row.effective_status) });
+    map.set(row.id, {
+      name: row.name ?? "Conjunto sem nome",
+      status: normalizeStatus(row.effective_status),
+      // See getCampaignMeta's own comment: these are in cents, unlike Insights' `spend`.
+      dailyBudget: row.daily_budget ? Number(row.daily_budget) / 100 : null,
+      lifetimeBudget: row.lifetime_budget ? Number(row.lifetime_budget) / 100 : null,
+      budgetRemaining: row.budget_remaining ? Number(row.budget_remaining) / 100 : null,
+    });
   }
   return map;
 }
@@ -498,6 +598,7 @@ type AdSetInsightNode = {
   clicks?: string;
   inline_link_clicks?: string;
   actions?: ActionNode[];
+  action_values?: ActionNode[];
   reach?: string;
 };
 
@@ -517,7 +618,7 @@ async function getAccountAdSetInsights(
     {
       level: "adset",
       ...periodParams(period),
-      fields: "adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,reach",
+      fields: "adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach",
       limit: "500",
     },
     accessToken
@@ -537,27 +638,47 @@ async function getAccountAdSetInsights(
       linkClicks: Number(row.inline_link_clicks ?? 0),
       conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
+      ...parseExtraConversions(row.actions, row.action_values),
+      dailyBudget: meta?.dailyBudget ?? null,
+      lifetimeBudget: meta?.lifetimeBudget ?? null,
+      budgetRemaining: meta?.budgetRemaining ?? null,
     };
   });
 }
 
-type AdMetaNode = { id?: string; name?: string; effective_status?: string };
-type AdMeta = { name: string; status: CampaignStatus };
+type AdCreativeNode = { thumbnail_url?: string; title?: string; body?: string; call_to_action_type?: string };
+type AdMetaNode = { id?: string; name?: string; effective_status?: string; creative?: AdCreativeNode };
+type AdMeta = {
+  name: string;
+  status: CampaignStatus;
+  thumbnailUrl: string | null;
+  creativeTitle: string | null;
+  creativeBody: string | null;
+  callToAction: string | null;
+};
 
 // Same pattern again, one level down: an ad's name/status live on the ad
 // node itself, fetched once per account (every ad across every ad set),
-// not once per ad set.
+// not once per ad set. The `creative{...}` sub-field expansion pulls each
+// ad's actual thumbnail/copy/CTA in the same call — no extra request per ad.
 async function getAdMeta(account: MetaAdAccount, accessToken: string): Promise<Map<string, AdMeta>> {
   const data = await graphGet<{ data: AdMetaNode[] }>(
     `/${account.id}/ads`,
-    { fields: "id,name,effective_status", limit: "500" },
+    { fields: "id,name,effective_status,creative{thumbnail_url,title,body,call_to_action_type}", limit: "500" },
     accessToken
   );
 
   const map = new Map<string, AdMeta>();
   for (const row of data.data ?? []) {
     if (!row.id) continue;
-    map.set(row.id, { name: row.name ?? "Anúncio sem nome", status: normalizeStatus(row.effective_status) });
+    map.set(row.id, {
+      name: row.name ?? "Anúncio sem nome",
+      status: normalizeStatus(row.effective_status),
+      thumbnailUrl: row.creative?.thumbnail_url ?? null,
+      creativeTitle: row.creative?.title ?? null,
+      creativeBody: row.creative?.body ?? null,
+      callToAction: row.creative?.call_to_action_type ?? null,
+    });
   }
   return map;
 }
@@ -572,6 +693,7 @@ type AdInsightNode = {
   clicks?: string;
   inline_link_clicks?: string;
   actions?: ActionNode[];
+  action_values?: ActionNode[];
   reach?: string;
 };
 
@@ -583,6 +705,7 @@ async function getAccountAdInsights(
   account: MetaAdAccount,
   period: Period,
   metaByAdId: Map<string, AdMeta>,
+  qualityByAdId: Map<string, AdQuality>,
   accessToken: string
 ): Promise<AdInsight[]> {
   const data = await graphGet<{ data: AdInsightNode[] }>(
@@ -590,7 +713,7 @@ async function getAccountAdInsights(
     {
       level: "ad",
       ...periodParams(period),
-      fields: "ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,reach",
+      fields: "ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach",
       limit: "500",
     },
     accessToken
@@ -598,6 +721,7 @@ async function getAccountAdInsights(
 
   return (data.data ?? []).map((row) => {
     const meta = metaByAdId.get(row.ad_id ?? "");
+    const quality = qualityByAdId.get(row.ad_id ?? "");
     return {
       adId: row.ad_id ?? "",
       adName: row.ad_name ?? meta?.name ?? "Anúncio sem nome",
@@ -611,6 +735,14 @@ async function getAccountAdInsights(
       linkClicks: Number(row.inline_link_clicks ?? 0),
       conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
+      ...parseExtraConversions(row.actions, row.action_values),
+      qualityRanking: quality?.quality ?? null,
+      engagementRateRanking: quality?.engagement ?? null,
+      conversionRateRanking: quality?.conversion ?? null,
+      thumbnailUrl: meta?.thumbnailUrl ?? null,
+      creativeTitle: meta?.creativeTitle ?? null,
+      creativeBody: meta?.creativeBody ?? null,
+      callToAction: meta?.callToAction ?? null,
     };
   });
 }
@@ -843,6 +975,242 @@ async function getAccountRegions(account: MetaAdAccount, period: Period, accessT
   }));
 }
 
+// The five breakdowns below are each their own single-value `breakdowns`
+// call, deliberately NOT combined with each other into one multi-breakdown
+// request — Meta only allows specific breakdown combinations and getting
+// that wrong previously took down every account's data at once (see the
+// "city" breakdown incident). Each value below (publisher_platform,
+// platform_position, device_platform, country,
+// hourly_stats_aggregated_by_advertiser_time_zone) is confirmed valid: it
+// appears verbatim in the list of accepted breakdowns Meta's own API
+// returns in its 400 error body.
+
+type PlatformInsightNode = {
+  publisher_platform?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  actions?: ActionNode[];
+  reach?: string;
+};
+
+async function getAccountPlatforms(account: MetaAdAccount, period: Period, accessToken: string): Promise<PlatformSegment[]> {
+  const data = await graphGet<{ data: PlatformInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "publisher_platform",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    platform: row.publisher_platform ?? "Não informado",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
+type PlacementInsightNode = {
+  platform_position?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  actions?: ActionNode[];
+  reach?: string;
+};
+
+async function getAccountPlacements(account: MetaAdAccount, period: Period, accessToken: string): Promise<PlacementSegment[]> {
+  const data = await graphGet<{ data: PlacementInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "platform_position",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    placement: row.platform_position ?? "Não informado",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
+type DeviceInsightNode = {
+  device_platform?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  actions?: ActionNode[];
+  reach?: string;
+};
+
+async function getAccountDevices(account: MetaAdAccount, period: Period, accessToken: string): Promise<DeviceSegment[]> {
+  const data = await graphGet<{ data: DeviceInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "device_platform",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    device: row.device_platform ?? "Não informado",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
+type CountryInsightNode = {
+  country?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  actions?: ActionNode[];
+  reach?: string;
+};
+
+async function getAccountCountries(account: MetaAdAccount, period: Period, accessToken: string): Promise<CountrySegment[]> {
+  const data = await graphGet<{ data: CountryInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "country",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    country: row.country ?? "Não informado",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
+type HourInsightNode = {
+  hourly_stats_aggregated_by_advertiser_time_zone?: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  actions?: ActionNode[];
+  reach?: string;
+};
+
+async function getAccountHours(account: MetaAdAccount, period: Period, accessToken: string): Promise<HourSegment[]> {
+  const data = await graphGet<{ data: HourInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  return (data.data ?? []).map((row) => ({
+    accountId: account.id,
+    hour: row.hourly_stats_aggregated_by_advertiser_time_zone ?? "Não informado",
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
+    reach: Number(row.reach ?? 0),
+  }));
+}
+
+type AdQualityNode = {
+  ad_id?: string;
+  quality_ranking?: string;
+  engagement_rate_ranking?: string;
+  conversion_rate_ranking?: string;
+};
+
+type AdQuality = { quality: string | null; engagement: string | null; conversion: string | null };
+
+// Meta returns "UNKNOWN" when there isn't enough delivery volume yet to
+// rank an ad against others competing for the same audience — treated the
+// same as "não disponível" everywhere else in this file, never shown as a
+// literal ranking value.
+function normalizeRanking(value: string | undefined): string | null {
+  if (!value || value.toUpperCase() === "UNKNOWN") return null;
+  return value;
+}
+
+// Ad relevance diagnostics (quality/engagement/conversion ranking vs. other
+// advertisers competing for the same audience) — fetched as its own call
+// and deliberately isolated with a `.catch(() => new Map())` fallback where
+// it's called below, exactly like getCampaignMeta/getAdSetMeta/getAdMeta:
+// if `quality_ranking`/`engagement_rate_ranking`/`conversion_rate_ranking`
+// were ever rejected as unknown fields by a future Meta API version, only
+// this diagnostic data goes missing instead of failing every account's
+// entire dashboard load (see the "city" breakdown incident this file's
+// git history documents).
+async function getAdQualityRankings(account: MetaAdAccount, period: Period, accessToken: string): Promise<Map<string, AdQuality>> {
+  const data = await graphGet<{ data: AdQualityNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "ad",
+      ...periodParams(period),
+      fields: "ad_id,quality_ranking,engagement_rate_ranking,conversion_rate_ranking",
+      limit: "500",
+    },
+    accessToken
+  );
+
+  const map = new Map<string, AdQuality>();
+  for (const row of data.data ?? []) {
+    if (!row.ad_id) continue;
+    map.set(row.ad_id, {
+      quality: normalizeRanking(row.quality_ranking),
+      engagement: normalizeRanking(row.engagement_rate_ranking),
+      conversion: normalizeRanking(row.conversion_rate_ranking),
+    });
+  }
+  return map;
+}
+
 async function fetchAccountPeriodData(
   account: MetaAdAccount,
   period: Period,
@@ -855,22 +1223,39 @@ async function fetchAccountPeriodData(
   reach: number;
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  platforms: PlatformSegment[];
+  placements: PlacementSegment[];
+  devices: DeviceSegment[];
+  countries: CountrySegment[];
+  hours: HourSegment[];
 }> {
-  const [campaignMeta, adSetMeta, adMeta] = await Promise.all([
+  const [campaignMeta, adSetMeta, adMeta, adQuality] = await Promise.all([
     getCampaignMeta(account, accessToken).catch(() => new Map<string, CampaignMeta>()),
     getAdSetMeta(account, accessToken).catch(() => new Map<string, AdSetMeta>()),
     getAdMeta(account, accessToken).catch(() => new Map<string, AdMeta>()),
+    getAdQualityRankings(account, period, accessToken).catch(() => new Map<string, AdQuality>()),
   ]);
-  const [campaigns, adSets, ads, daily, reach, audience, regions] = await Promise.all([
+  const [campaigns, adSets, ads, daily, reach, audience, regions, platforms, placements, devices, countries, hours] = await Promise.all([
     getAccountCampaignInsights(account, period, campaignMeta, accessToken),
     getAccountAdSetInsights(account, period, adSetMeta, accessToken),
-    getAccountAdInsights(account, period, adMeta, accessToken),
+    getAccountAdInsights(account, period, adMeta, adQuality, accessToken),
     getAccountDailySeries(account, period, accessToken),
     getAccountReach(account, period, accessToken),
     getAccountDemographics(account, period, accessToken),
     getAccountRegions(account, period, accessToken),
+    // Deliberately isolated with their own fallback, unlike the calls
+    // above: these five are supplementary distribution breakdowns, not
+    // core numbers, and a previous incident (see git history: the "city"
+    // breakdown) taught the hard way that one bad breakdown value bundled
+    // into this same Promise.all silently fails EVERY account's entire
+    // dashboard load, not just its own panel.
+    getAccountPlatforms(account, period, accessToken).catch(() => []),
+    getAccountPlacements(account, period, accessToken).catch(() => []),
+    getAccountDevices(account, period, accessToken).catch(() => []),
+    getAccountCountries(account, period, accessToken).catch(() => []),
+    getAccountHours(account, period, accessToken).catch(() => []),
   ]);
-  return { campaigns, adSets, ads, daily, reach, audience, regions };
+  return { campaigns, adSets, ads, daily, reach, audience, regions, platforms, placements, devices, countries, hours };
 }
 
 async function fetchAllAccounts(
@@ -885,6 +1270,11 @@ async function fetchAllAccounts(
   accountReach: AccountReach[];
   audience: AudienceSegment[];
   regions: RegionSegment[];
+  platforms: PlatformSegment[];
+  placements: PlacementSegment[];
+  devices: DeviceSegment[];
+  countries: CountrySegment[];
+  hours: HourSegment[];
   partialAccounts: AccountRef[];
 }> {
   const settled = await Promise.allSettled(
@@ -898,6 +1288,11 @@ async function fetchAllAccounts(
   const accountReach: AccountReach[] = [];
   const audience: AudienceSegment[] = [];
   const regions: RegionSegment[] = [];
+  const platforms: PlatformSegment[] = [];
+  const placements: PlacementSegment[] = [];
+  const devices: DeviceSegment[] = [];
+  const countries: CountrySegment[] = [];
+  const hours: HourSegment[] = [];
   const partialAccounts: AccountRef[] = [];
 
   settled.forEach((result, i) => {
@@ -917,6 +1312,11 @@ async function fetchAllAccounts(
     accountReach.push({ accountId: accounts[i].id, reach: result.value.reach });
     audience.push(...result.value.audience);
     regions.push(...result.value.regions);
+    platforms.push(...result.value.platforms);
+    placements.push(...result.value.placements);
+    devices.push(...result.value.devices);
+    countries.push(...result.value.countries);
+    hours.push(...result.value.hours);
   });
 
   campaigns.sort((a, b) => b.spend - a.spend);
@@ -924,7 +1324,7 @@ async function fetchAllAccounts(
   ads.sort((a, b) => b.spend - a.spend);
   daily.sort((a, b) => a.date.localeCompare(b.date));
 
-  return { campaigns, adSets, ads, daily, accountReach, audience, regions, partialAccounts };
+  return { campaigns, adSets, ads, daily, accountReach, audience, regions, platforms, placements, devices, countries, hours, partialAccounts };
 }
 
 /**
@@ -960,6 +1360,11 @@ export async function getDashboardData(
       accountReach: [],
       audience: [],
       regions: [],
+      platforms: [],
+      placements: [],
+      devices: [],
+      countries: [],
+      hours: [],
       comparison: null,
       partialAccounts: [],
       generatedAt: new Date().toISOString(),
@@ -992,6 +1397,11 @@ export async function getDashboardData(
     accountReach: current.accountReach,
     audience: current.audience,
     regions: current.regions,
+    platforms: current.platforms,
+    placements: current.placements,
+    devices: current.devices,
+    countries: current.countries,
+    hours: current.hours,
     comparison,
     partialAccounts: current.partialAccounts,
     generatedAt: new Date().toISOString(),

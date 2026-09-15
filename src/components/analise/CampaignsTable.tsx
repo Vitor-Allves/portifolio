@@ -5,7 +5,7 @@ import type { AdInsight, AdSetInsight, CampaignInsight, CampaignStatus } from "@
 import type { CampaignColumnId } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } from "@/lib/format";
-import { ctr, cpc, cpm, costPerConversation, pctChange } from "@/lib/metrics";
+import { ctr, cpc, cpm, costPerConversation, roas, pctChange } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { INTEL_INPUT, INTEL_POPOVER } from "./intel-styles";
 
@@ -112,6 +112,57 @@ const COLUMNS: Column[] = [
     },
   },
   { id: "reach", label: "Alcance", numeric: true, defaultVisible: false, value: (c) => c.reach, render: (c) => formatInteger(c.reach) },
+  {
+    id: "purchases",
+    label: "Compras (Pixel/CAPI)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.purchases,
+    render: (c) => (c.purchases === null ? "Não disponível" : formatInteger(c.purchases)),
+  },
+  {
+    id: "purchaseValue",
+    label: "Valor de compra (Pixel/CAPI)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.purchaseValue,
+    render: (c) => (c.purchaseValue === null ? "Não disponível" : formatCurrencyBRL(c.purchaseValue)),
+  },
+  {
+    id: "roas",
+    label: "ROAS (Pixel/CAPI)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => roas(c),
+    render: (c) => {
+      const v = roas(c);
+      return v === null ? "—" : `${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`;
+    },
+  },
+  {
+    id: "leads",
+    label: "Leads (Pixel/CAPI)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.leads,
+    render: (c) => (c.leads === null ? "Não disponível" : formatInteger(c.leads)),
+  },
+  {
+    id: "addToCart",
+    label: "Adicionar ao carrinho (Pixel/CAPI)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.addToCart,
+    render: (c) => (c.addToCart === null ? "Não disponível" : formatInteger(c.addToCart)),
+  },
+  {
+    id: "completeRegistrations",
+    label: "Cadastro completo (Pixel/CAPI)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.completeRegistrations,
+    render: (c) => (c.completeRegistrations === null ? "Não disponível" : formatInteger(c.completeRegistrations)),
+  },
 ];
 
 const STATUS_TONE: Record<CampaignStatus, string> = {
@@ -126,6 +177,49 @@ function StatusBadge({ status }: { status: CampaignStatus }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${STATUS_TONE[status]}`}>
       {statusLabel(status)}
+    </span>
+  );
+}
+
+const CTA_LABEL: Record<string, string> = {
+  SHOP_NOW: "Comprar agora",
+  LEARN_MORE: "Saiba mais",
+  SIGN_UP: "Cadastre-se",
+  DOWNLOAD: "Baixar",
+  CONTACT_US: "Fale conosco",
+  SEND_MESSAGE: "Enviar mensagem",
+  WHATSAPP_MESSAGE: "Enviar WhatsApp",
+  SUBSCRIBE: "Assinar",
+  BOOK_TRAVEL: "Reservar",
+  GET_QUOTE: "Solicitar orçamento",
+  APPLY_NOW: "Inscreva-se",
+  GET_OFFER: "Ver oferta",
+  CALL_NOW: "Ligar agora",
+};
+
+const QUALITY_RANKING_LABEL: Record<string, string> = {
+  ABOVE_AVERAGE: "Qualidade acima da média",
+  AVERAGE: "Qualidade na média",
+  BELOW_AVERAGE_35: "Qualidade abaixo da média",
+  BELOW_AVERAGE_20: "Qualidade bem abaixo da média",
+  BELOW_AVERAGE_10: "Qualidade entre as piores 10%",
+  BELOW_AVERAGE: "Qualidade abaixo da média",
+};
+
+const QUALITY_RANKING_TONE: Record<string, string> = {
+  ABOVE_AVERAGE: "bg-intel-green/10 text-intel-green border-intel-green/20",
+  AVERAGE: "bg-white/[0.05] text-intel-text-dim border-white/10",
+};
+
+// Meta's ad relevance diagnostics — null (never delivered enough to rank,
+// or Meta's own "UNKNOWN") renders nothing at all, never a fabricated
+// "average" default.
+function QualityBadge({ ranking }: { ranking: string | null }) {
+  if (!ranking) return null;
+  const tone = QUALITY_RANKING_TONE[ranking] ?? "bg-amber-400/10 text-amber-300 border-amber-400/20";
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${tone}`} title="Classificação de qualidade do anúncio, atribuída pela Meta em relação a outros anunciantes disputando o mesmo público.">
+      {QUALITY_RANKING_LABEL[ranking] ?? ranking}
     </span>
   );
 }
@@ -567,9 +661,16 @@ function CampaignDetailPanel({
             </svg>
           </button>
         </div>
-        <p className="text-[12px] text-intel-text-dim mb-6">
+        <p className={`text-[12px] text-intel-text-dim ${campaign.dailyBudget !== null || campaign.lifetimeBudget !== null ? "mb-1" : "mb-6"}`}>
           {campaign.accountName} · {objectiveLabel(campaign.objective)} · <StatusBadge status={campaign.status} />
         </p>
+        {(campaign.dailyBudget !== null || campaign.lifetimeBudget !== null) && (
+          <p className="text-[12px] text-intel-text-dim mb-6">
+            {campaign.dailyBudget !== null && <>Orçamento diário: {formatCurrencyBRL(campaign.dailyBudget)}</>}
+            {campaign.lifetimeBudget !== null && <>Orçamento total: {formatCurrencyBRL(campaign.lifetimeBudget)}</>}
+            {campaign.budgetRemaining !== null && <> · Restante: {formatCurrencyBRL(campaign.budgetRemaining)}</>}
+          </p>
+        )}
 
         <dl className="space-y-3">
           {rows.map((row) => (
@@ -610,13 +711,22 @@ function CampaignDetailPanel({
                 <li key={ad.adId} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <span className="flex items-start gap-2 min-w-0">
+                      {ad.thumbnailUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element -- external Meta CDN thumbnail, not a local/optimizable asset
+                        <img src={ad.thumbnailUrl} alt="" className="shrink-0 w-8 h-8 rounded object-cover border border-white/10" />
+                      )}
                       <span className="shrink-0 text-[11px] tabular-nums text-intel-text-dim">{i + 1}</span>
                       <span className="min-w-0 text-[13px] text-intel-text truncate">{ad.adName}</span>
                     </span>
-                    <StatusBadge status={ad.status} />
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <QualityBadge ranking={ad.qualityRanking} />
+                      <StatusBadge status={ad.status} />
+                    </span>
                   </div>
                   <p className="mt-0.5 pl-[22px] text-[11px] text-intel-text-dim/70 truncate">
                     {adSetNameById.get(ad.adSetId) ?? "Conjunto sem nome"}
+                    {ad.creativeTitle && <> · {ad.creativeTitle}</>}
+                    {ad.callToAction && <> · {CTA_LABEL[ad.callToAction] ?? ad.callToAction}</>}
                   </p>
                   <div className="mt-2 pl-[22px] flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-intel-text-dim tabular-nums">
                     <span>Investimento: {formatCurrencyBRL(ad.spend)}</span>
