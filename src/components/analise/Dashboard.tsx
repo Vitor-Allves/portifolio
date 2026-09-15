@@ -198,14 +198,10 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     [data.audience, accountIds]
   );
 
-  // Region and city are also account-level only, same scoping as the audience segments above.
+  // Region is also account-level only, same scoping as the audience segments above.
   const filteredRegions = useMemo(
     () => data.regions.filter((r) => accountIds.has(r.accountId)),
     [data.regions, accountIds]
-  );
-  const filteredCities = useMemo(
-    () => data.cities.filter((c) => accountIds.has(c.accountId)),
-    [data.cities, accountIds]
   );
 
   // Flat, cross-campaign views for the Campanhas page's "Conjuntos" and
@@ -830,27 +826,15 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                       </m.div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <m.div custom={13} initial="hidden" animate="visible" variants={fadeUp}>
-                        <BreakdownAnalysis
-                          title="Público por região (estado)"
-                          barColor="var(--color-intel-cyan)"
-                          segments={filteredRegions}
-                          bucketKey={(s) => s.region}
-                          defaultMetric="reach"
-                        />
-                      </m.div>
-                      <m.div custom={14} initial="hidden" animate="visible" variants={fadeUp}>
-                        <BreakdownAnalysis
-                          title="Público por cidade"
-                          barColor="var(--color-intel-violet)"
-                          segments={filteredCities}
-                          bucketKey={(s) => s.city}
-                          defaultMetric="reach"
-                          maxRows={15}
-                        />
-                      </m.div>
-                    </div>
+                    <m.div custom={13} initial="hidden" animate="visible" variants={fadeUp}>
+                      <BreakdownAnalysis
+                        title="Público por região"
+                        barColor="var(--color-intel-cyan)"
+                        segments={filteredRegions}
+                        bucketKey={(s) => s.region}
+                        defaultMetric="reach"
+                      />
+                    </m.div>
                   </div>
                 )}
 
