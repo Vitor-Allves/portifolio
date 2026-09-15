@@ -1,21 +1,22 @@
-# Acessos por cliente e por pessoa (painel /analise/admin)
+# Usuários e acessos (painel /analise/admin)
 
-Além da senha compartilhada da equipe (`ANALYTICS_DASHBOARD_PASSWORD`, que
-continua funcionando como login de administrador de reserva — útil pra
-nunca ficar trancado fora), dá pra criar logins individuais de dois tipos:
+Login por **usuário e senha** — sem e-mail, sem convites, sem link de
+recuperação. Toda a criação e administração de contas (equipe Legado e
+clientes) fica em uma única aba, **Usuários e acessos**, dividida em duas
+seções:
 
-- **Por cliente**: um ou mais logins nomeados por cliente, cada um restrito
-  só às campanhas daquele cliente. Várias pessoas do mesmo cliente não
-  precisam mais compartilhar uma única senha — cada uma tem a sua, e dá pra
-  revogar uma pessoa sem afetar as outras do mesmo cliente.
-- **Da equipe Legado**: um login nomeado por pessoa do time, com nível de
-  acesso próprio — **Administrador** (gerencia clientes e a equipe) ou
-  **Analista** (só visualiza os painéis, sem acesso à área de admin).
+- **Equipe Legado**: administradores, gestores, analistas e demais
+  funcionários, cada um com um login próprio, um perfil fixo
+  (`administrador_geral`, `administrador`, `gestor`, `analista`) e uma
+  lista de empresas/contas autorizadas (o `administrador_geral` sempre vê
+  todas).
+- **Clientes**: empresas atendidas (a *empresa* em si — nome, contas de
+  anúncio, permissões padrão) e as *pessoas* que acessam os dados de cada
+  uma, com login individual e, se necessário, permissões próprias que
+  substituem as da empresa.
 
-Isso tudo fica guardado num banco Postgres — sem banco configurado, o painel
-de admin mostra uma mensagem de "ainda não configurado" em vez de quebrar, e
-a senha da equipe (`ANALYTICS_DASHBOARD_PASSWORD`) continua funcionando
-normalmente.
+Tudo isso fica guardado num banco Postgres — sem banco configurado, o
+painel mostra uma mensagem de "ainda não configurado" em vez de quebrar.
 
 ## 1. Conectar um banco Postgres ao projeto
 
@@ -24,96 +25,118 @@ normalmente.
    **Neon**, tem plano gratuito).
 3. Confirme a criação e conecte aos ambientes **Production** e **Preview**.
 4. Isso configura automaticamente a variável `DATABASE_URL` (ou
-   `POSTGRES_URL`) no projeto — não precisa copiar nada manualmente.
-5. Gere um novo deploy depois de conectar (mesma lógica de sempre: variável
-   nova só vale a partir do próximo deploy).
+   `POSTGRES_URL`) no projeto.
+5. Gere um novo deploy depois de conectar.
 
-As tabelas usadas (`client_access`, `client_access_users`, `internal_users`)
-são criadas sozinhas na primeira vez que o painel de admin é acessado — não
-precisa rodar nenhuma migração manual.
+As tabelas (`internal_users`, `client_access`, `client_access_users`,
+`usernames`, `audit_log`, ...) são criadas e migradas sozinhas na primeira
+vez que a aplicação roda no ambiente novo — não precisa rodar nenhuma
+migração manual.
 
-## 2. Criar um acesso para um cliente
+## 2. Criar o primeiro administrador geral (`bootstrap`)
 
-1. Entre em `/analise` com a senha da equipe (acesso de administrador).
-2. Clique em **Clientes** no cabeçalho (só aparece pra quem loga como
-   administrador — nem cliente, nem analista veem esse link).
-3. Em **Novo acesso**: dê um nome pro cliente e marque a(s) conta(s) de
-   anúncio que ele deve enxergar. Isso cria o cliente com um primeiro login
-   (nomeado com o próprio nome do cliente).
-4. Opcional — **Restringir filtros, colunas e seções**: por padrão o cliente
-   vê tudo que a conta dele tem direito (exceto a área de admin). Abrindo
-   essa seção dá pra desmarcar filtros específicos (ex: Objetivo), colunas
-   da tabela de Campanhas (ex: CPM) ou seções inteiras do menu (ex: Análises
-   com IA, Relatórios) — o que for desmarcado simplesmente some da tela
-   desse cliente. "Visão geral" nunca pode ser escondida, pra sempre ter
-   algum lugar pro cliente cair ao entrar. Essas restrições valem pra
-   qualquer pessoa logada nesse cliente, não por pessoa individualmente.
-5. Clique em **Criar acesso** — a senha gerada aparece **uma única vez** na
-   tela. Copie e envie pro cliente (WhatsApp, e-mail, etc.) — ela não fica
-   salva em nenhum lugar visível depois disso, nem pra você.
-6. Pra dar acesso a mais gente do mesmo cliente, clique em "N pessoa(s)" na
-   linha do cliente pra expandir, dê um nome e clique em **+ Adicionar**.
-   Cada pessoa recebe sua própria senha (mesma regra: aparece uma vez só) e
-   pode ser revogada individualmente sem afetar as outras.
+Antes de existir qualquer conta, alguém precisa criar a primeira. Isso é
+feito uma única vez pela rota `/api/analise/bootstrap-admin`, autorizada
+pela variável `ANALYTICS_DASHBOARD_PASSWORD` — que a partir daqui **não é
+mais um login de reserva** (a instrução do cliente foi remover
+completamente esse tipo de fallback): ela só serve para autorizar esta
+única chamada, uma vez.
 
-As restrições de filtros/colunas/seções só podem ser definidas na criação do
-cliente — não dá pra editar as de um cliente já criado depois (mesma
-limitação que já existia para as contas de anúncio). Pra mudar, revogue o
-acesso antigo e crie um novo.
+```
+POST /api/analise/bootstrap-admin
+{
+  "bootstrapPassword": "<ANALYTICS_DASHBOARD_PASSWORD>",
+  "name": "Seu nome",
+  "username": "seu.usuario",
+  "password": "uma senha forte, só sua"
+}
+```
 
-## 3. Criar um login para a equipe Legado
+A rota se autodesativa: assim que existir um `administrador_geral` ativo,
+toda chamada seguinte é rejeitada, não importa a senha enviada — nunca vira
+uma porta permanente. No primeiro login, esse administrador é levado
+direto para a configuração obrigatória de **autenticação em duas etapas**
+(2FA), exigida para todo `administrador_geral`.
 
-Na mesma página, abaixo de **Clientes com acesso**, tem a seção **Equipe
-Legado**:
+Depois desse passo, `ANALYTICS_DASHBOARD_PASSWORD` pode continuar
+configurada (não atrapalha) ou ser removida do projeto — ela não é mais
+lida por nenhuma outra rota.
 
-1. Preencha nome, e-mail e escolha o nível — **Administrador** (gerencia
-   clientes e a equipe, igual à senha compartilhada) ou **Analista** (só
-   visualiza os painéis, com acesso a todas as contas, mas sem chegar na
-   área de admin).
-2. Clique em **Criar login** — a senha gerada aparece uma única vez, copie e
-   envie pra pessoa.
-3. Pra entrar com esse login, a pessoa preenche o **e-mail** além da senha
-   na tela de `/analise/login` (o campo de e-mail fica em branco pra
-   clientes e pra quem usa a senha compartilhada).
+## 3. Criar uma empresa e as pessoas que a acessam
 
-## 4. Como cada tipo de login acessa
+Na aba **Usuários e acessos**, seção **Clientes**:
 
-Todo mundo usa a mesma URL (`/analise`) e a mesma tela de login — o que
-diferencia é o que foi preenchido:
+1. Em **Nova empresa**: nome da empresa + contas de anúncio que ela deve
+   enxergar. Opcionalmente, defina permissões padrão (filtros/colunas/
+   seções ocultas, ações bloqueadas) que valem para toda pessoa dessa
+   empresa.
+2. Depois de criada, expanda a empresa na lista e adicione as pessoas:
+   nome, nome de usuário, senha inicial + confirmação e, se precisar,
+   permissões individuais que substituem as da empresa.
+3. A senha inicial só aparece **uma única vez**, com botão de copiar —
+   entregue por um canal privado (WhatsApp, presencialmente, etc.), nunca
+   por e-mail automático. Depois de fechar a tela, ninguém — nem o
+   administrador — consegue vê-la de novo.
+4. A conta já está pronta para o primeiro acesso, mas exige trocar a senha
+   temporária antes de ver qualquer dado.
 
-- Login da equipe (e-mail + senha) → **Administrador** vê tudo e tem acesso
-  à área de admin; **Analista** vê tudo mas não tem acesso à área de admin.
-- Senha da equipe (`ANALYTICS_DASHBOARD_PASSWORD`, sem e-mail) → equivale a
-  um Administrador, sempre disponível mesmo que o banco não esteja
-  configurado ou todo mundo tenha sido revogado por engano.
-- Senha de um cliente (sem e-mail) → vê só a(s) própria(s) conta(s), sem o
-  filtro de clientes (não faz sentido pra quem só tem uma conta) e sem o
-  link **Clientes** no cabeçalho.
+## 4. Criar um login para a equipe Legado
 
-Essa restrição é aplicada no servidor (não é só uma tela diferente) — os
-dados de outras contas nunca chegam a ser enviados pro navegador do cliente.
+Na mesma aba, seção **Equipe Legado**: nome completo, nome de usuário,
+senha inicial + confirmação, perfil de acesso (`administrador_geral`,
+`administrador`, `gestor` ou `analista`), empresas autorizadas (exceto para
+`administrador_geral`, que sempre vê todas) e permissões de módulos/ações.
+Uma prévia do acesso efetivo aparece antes de salvar.
 
-## Revogar um acesso
+## 5. Nomes de usuário
 
-- **Cliente inteiro**: na tela de **Clientes**, clique em **Revogar** na
-  linha do cliente (pede confirmação) — derruba o cliente e todas as
-  pessoas dele de uma vez.
-- **Uma pessoa de um cliente**: expanda o cliente ("N pessoa(s)") e clique
-  em **Revogar** ao lado do nome dela — as outras pessoas do mesmo cliente
-  continuam com acesso normal.
-- **Pessoa da equipe**: na seção **Equipe Legado**, clique em **Revogar** na
-  linha da pessoa.
+Únicos em toda a plataforma (equipe e clientes compartilham o mesmo
+espaço de nomes), sem diferenciar maiúsculas/minúsculas — `Cliente01` e
+`cliente01` são o mesmo usuário. Regra: 3 a 32 caracteres, letras
+minúsculas, números, ponto, hífen ou underscore, começando com letra.
 
-Em todos os casos a senha para de funcionar imediatamente — sessões já
-abertas continuam válidas até expirar (12h) ou até a pessoa sair e tentar
-entrar de novo.
+## 6. Resetar senha (só `administrador_geral`)
+
+Em **Resetar senha**, na linha da pessoa: confirme sua própria senha,
+escolha gerar uma senha forte automaticamente ou definir uma manualmente,
+e confirme. Isso:
+
+- invalida imediatamente toda sessão aberta da conta (a pessoa precisa
+  entrar de novo);
+- força a troca da senha temporária no próximo acesso;
+- nunca é logado nem fica visível de novo depois de fechar a tela.
+
+Gestores e analistas não têm essa opção, mesmo enxergando a listagem.
+
+## 7. Revogar um acesso
+
+- **Empresa inteira**: botão **Revogar** na linha da empresa — derruba a
+  empresa e todas as pessoas dela de uma vez.
+- **Uma pessoa** (equipe ou cliente): botão **Revogar** na linha da
+  pessoa — as outras contas continuam com acesso normal.
+
+Isso invalida a sessão imediatamente (não espera a expiração de 12h) e
+impede novos logins, preservando o histórico da conta e da auditoria — não
+existe campo de "status" para reativar por engano.
+
+## 8. Autenticação em duas etapas (2FA)
+
+Obrigatória para `administrador_geral`, via aplicativo autenticador padrão
+(TOTP — Google Authenticator, Authy, 1Password, etc.), sem depender de
+e-mail. No primeiro login sem 2FA configurado, a pessoa é guiada por um QR
+code e recebe 10 códigos de recuperação de uso único (mostrados uma única
+vez). Se perder o dispositivo, outro `administrador_geral` pode resetar o
+2FA da conta (reautenticando com a própria senha), o que força uma nova
+configuração no próximo login.
 
 ## Segurança
 
-- Nenhuma senha fica salva em texto puro — só um hash (scrypt). Nem você
-  consegue ver a senha de novo depois de fechar a tela de criação; só dá
-  pra revogar e gerar uma nova.
-- Cada sessão carrega, de forma assinada, quais contas e qual nível de
-  acesso ela tem — o que aparece no navegador é só conveniência de
-  interface; a real restrição acontece nas rotas do servidor antes de
-  qualquer dado sair da Vercel.
+- Senhas nunca são armazenadas em texto puro nem com criptografia
+  reversível — apenas hash Argon2id.
+- O backend nunca envia hash ou senha ao navegador, em nenhuma resposta.
+- Nada de senha aparece em logs, auditoria ou mensagens de erro.
+- Toda requisição a uma rota protegida é reverificada no servidor contra o
+  banco de dados (papel, empresas, permissões, sessão revogada) — uma
+  mudança de permissão ou uma revogação vale imediatamente, mesmo para
+  sessões já abertas.
+- Login, reset de senha e troca de senha têm limite de tentativas.

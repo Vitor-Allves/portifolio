@@ -57,16 +57,28 @@ export const HIDEABLE_SECTION_OPTIONS: { id: HideableSectionId; label: string }[
   { id: "integrations", label: "Integrações" },
 ];
 
+// The only two real actionable verbs this app has outside plain viewing —
+// deliberately not a generic fictitious CRUD matrix. "Visualizar" is
+// already covered by hiddenSections/hiddenColumns/hiddenFilters above.
+export type ActionId = "manage_report_templates" | "export_reports";
+
+export const ACTION_OPTIONS: { id: ActionId; label: string }[] = [
+  { id: "manage_report_templates", label: "Criar/excluir modelos de relatório" },
+  { id: "export_reports", label: "Gerar/exportar relatórios (PDF/CSV)" },
+];
+
 export type ClientPermissions = {
   hiddenFilters: FilterKey[];
   hiddenColumns: CampaignColumnId[];
   hiddenSections: HideableSectionId[];
+  disabledActions: ActionId[];
 };
 
 export const EMPTY_PERMISSIONS: ClientPermissions = {
   hiddenFilters: [],
   hiddenColumns: [],
   hiddenSections: [],
+  disabledActions: [],
 };
 
 function pickValid<T extends string>(value: unknown, valid: ReadonlySet<T>): T[] {
@@ -81,6 +93,7 @@ function pickValid<T extends string>(value: unknown, valid: ReadonlySet<T>): T[]
 const VALID_FILTER_KEYS = new Set(FILTER_OPTIONS.map((o) => o.id));
 const VALID_COLUMN_IDS = new Set(CAMPAIGN_COLUMN_OPTIONS.map((o) => o.id));
 const VALID_SECTION_IDS = new Set(HIDEABLE_SECTION_OPTIONS.map((o) => o.id));
+const VALID_ACTION_IDS = new Set(ACTION_OPTIONS.map((o) => o.id));
 
 /** Normalizes arbitrary input (a JSONB column read, or a request body) into a well-formed ClientPermissions — unknown/invalid entries are dropped rather than rejected, so a future option removed from the lists above doesn't break existing rows. */
 export function sanitizePermissions(input: unknown): ClientPermissions {
@@ -89,5 +102,10 @@ export function sanitizePermissions(input: unknown): ClientPermissions {
     hiddenFilters: pickValid(obj.hiddenFilters, VALID_FILTER_KEYS),
     hiddenColumns: pickValid(obj.hiddenColumns, VALID_COLUMN_IDS),
     hiddenSections: pickValid(obj.hiddenSections, VALID_SECTION_IDS),
+    disabledActions: pickValid(obj.disabledActions, VALID_ACTION_IDS),
   };
+}
+
+export function isActionAllowed(permissions: ClientPermissions | null | undefined, action: ActionId): boolean {
+  return !permissions?.disabledActions.includes(action);
 }

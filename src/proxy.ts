@@ -1,38 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session";
-import { isFullAdmin } from "@/lib/session-scope";
 
-function isAdminOnlyPath(pathname: string): boolean {
-  return pathname === "/analise/admin" || pathname.startsWith("/api/analise/admin");
-}
+// Public routes: the login page itself, and every step of the
+// username/password + 2FA login flow (all Node-runtime routes that must
+// stay reachable without an existing session).
+const PUBLIC_PATHS = new Set([
+  "/analise/login",
+  "/api/analise/login",
+  "/api/analise/login/totp",
+  "/api/analise/2fa/enroll/start",
+  "/api/analise/2fa/enroll/confirm",
+  "/api/analise/bootstrap-admin",
+]);
 
+/**
+ * Fast, unauthoritative first pass only: is there a syntactically valid,
+ * unexpired session cookie at all. It deliberately does NOT decide role,
+ * company scope, permissions, revocation or forced-password-change state —
+ * the Edge runtime can't reach Postgres, and every one of those can change
+ * between token issuance and this request. Every Node-runtime page/route
+ * re-verifies all of that itself, fresh, on every request via
+ * src/lib/auth-context.ts — that is the actual authorization boundary.
+ */
 export async function proxy(req: NextRequest) {
   // Normalize away trailing slashes (this project runs with trailingSlash: true)
-  // so the login-page exemption below matches regardless of how it was requested.
+  // so the public-path exemptions above match regardless of how it was requested.
   const pathname = req.nextUrl.pathname.replace(/\/$/, "") || "/";
 
-  // The login page and its API route must stay reachable without a session.
-  if (pathname === "/analise/login" || pathname === "/api/analise/login") {
+  if (PUBLIC_PATHS.has(pathname)) {
     return NextResponse.next();
   }
 
   const token = req.cookies.get(ANALISE_SESSION_COOKIE)?.value;
-  const scope = await verifySessionToken(token);
+  const payload = await verifySessionToken(token);
 
-  if (!scope) {
+  if (!payload) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
     const loginUrl = new URL("/analise/login/", req.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
-  }
-
-  if (!isFullAdmin(scope) && isAdminOnlyPath(pathname)) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
-    }
-    return NextResponse.redirect(new URL("/analise/", req.url));
   }
 
   return NextResponse.next();

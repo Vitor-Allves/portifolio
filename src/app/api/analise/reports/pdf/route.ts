@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MetaApiError } from "@/lib/meta-ads";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
+import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
+import { isFullAdmin } from "@/lib/session-scope";
+import { isActionAllowed } from "@/lib/client-permissions";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
 import { buildReportPdf, reportFileName, type ReportPdfInput } from "@/lib/pdf-report-core";
 import { loadReportAssetsServer } from "@/lib/pdf-report-server-assets";
@@ -13,6 +15,7 @@ import {
   fetchFilteredReportData,
   computeReach,
 } from "@/lib/report-data";
+import { writeAudit } from "@/lib/audit-log";
 
 export const runtime = "nodejs";
 
@@ -37,9 +40,12 @@ type RequestBody = {
 };
 
 export async function POST(req: NextRequest) {
-  const scope = verifySessionToken(req.cookies.get(ANALISE_SESSION_COOKIE)?.value);
-  if (!scope) {
+  const scope = await sessionScopeFromRequest(req);
+  if (!hasDataAccess(scope)) {
     return NextResponse.json({ error: "Sessão inválida ou expirada. Faça login novamente." }, { status: 401 });
+  }
+  if (!isFullAdmin(scope) && !isActionAllowed(scope.permissions, "export_reports")) {
+    return NextResponse.json({ error: "Sem permissão para gerar relatórios." }, { status: 403 });
   }
 
   let body: RequestBody;
@@ -99,6 +105,16 @@ export async function POST(req: NextRequest) {
     const doc = buildReportPdf(input, assets);
     const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
     const fileName = reportFileName(input);
+
+    await writeAudit({
+      actorUserId: scope.userId,
+      actorLabel: scope.userName,
+      actorKind: scope.kind === "staff" ? "admin" : "client",
+      action: "report.generate",
+      targetType: "report",
+      targetLabel: recipient.label ?? "Interno",
+      metadata: { format: "pdf", recipientClientId },
+    });
 
     return new NextResponse(pdfBuffer, {
       status: 200,

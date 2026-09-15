@@ -1,17 +1,18 @@
-// Signed, stateless session token for the /analise dashboard's login gate.
-// Built on Web Crypto (not Node's `crypto` module) so the exact same code
-// runs in both the middleware (edge runtime) and the login route (nodejs
-// runtime) without a runtime-specific branch. The token carries the
-// session's scope (admin = everything, or a client restricted to specific
-// ad accounts) so the middleware can enforce admin-only routes without a
-// database round trip on every request.
+// Edge-runtime counterpart to analise-session-node.ts, used only by
+// src/proxy.ts for a fast, unauthoritative first-pass check ("is there a
+// plausible session cookie at all"). Built on Web Crypto (not Node's
+// `crypto` module) so it can run in the Edge runtime, which can't reach
+// Postgres — the actual authoritative check (role, accountIds,
+// permissions, revoked/session_version, must-change-password) always
+// happens Node-side, per request, via auth-context.ts. See
+// analise-session-node.ts for the full rationale; both files sign/verify
+// the exact same thin token format.
 
-import type { SessionScope } from "./session-scope";
+import type { SessionTokenPayload } from "./analise-session-node";
 
 export const ANALISE_SESSION_COOKIE = "legado_analise_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
-
-type TokenPayload = { exp: number; scope: SessionScope };
+export const SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;
 
 function requireSecret(): string {
   const secret = process.env.ANALYTICS_SESSION_SECRET;
@@ -33,32 +34,16 @@ async function getHmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-function bytesToBase64Url(bytes: Uint8Array): string {
-  const binary = String.fromCharCode(...bytes);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function base64UrlToBytes(value: string): Uint8Array {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
 
-/** Creates a signed `payload.signature` token. Throws if the secret env var is missing. */
-export async function createSessionToken(scope: SessionScope): Promise<string> {
-  const secret = requireSecret();
-  const payload: TokenPayload = { exp: Date.now() + SESSION_TTL_MS, scope };
-  const payloadB64 = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
-
-  const key = await getHmacKey(secret);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
-  return `${payloadB64}.${bytesToBase64Url(new Uint8Array(signature))}`;
-}
-
-/** Verifies signature + expiry and returns the session's scope, or null if invalid/expired/missing. */
+/** Verifies signature + expiry and returns the thin payload, or null if invalid/expired/missing. Never authoritative on its own — see module doc comment. */
 export async function verifySessionToken(
   token: string | undefined | null
-): Promise<SessionScope | null> {
+): Promise<SessionTokenPayload | null> {
   if (!token) return null;
   const [payloadB64, signatureB64] = token.split(".");
   if (!payloadB64 || !signatureB64) return null;
@@ -81,12 +66,10 @@ export async function verifySessionToken(
 
     const payload = JSON.parse(
       new TextDecoder().decode(base64UrlToBytes(payloadB64))
-    ) as TokenPayload;
+    ) as SessionTokenPayload;
     if (!Number.isFinite(payload.exp) || Date.now() > payload.exp) return null;
-    return payload.scope;
+    return payload;
   } catch {
     return null;
   }
 }
-
-export const SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;

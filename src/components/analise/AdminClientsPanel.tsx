@@ -1,18 +1,14 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { MetaAdAccount } from "@/lib/meta-ads-types";
-import type { ClientAccessSummary } from "@/lib/client-access-types";
-import {
-  FILTER_OPTIONS,
-  CAMPAIGN_COLUMN_OPTIONS,
-  HIDEABLE_SECTION_OPTIONS,
-  type ClientPermissions,
-  type FilterKey,
-  type CampaignColumnId,
-  type HideableSectionId,
-} from "@/lib/client-permissions";
+import type { ClientAccessSummary, ClientAccessUserSummary } from "@/lib/client-access-types";
+import { EMPTY_PERMISSIONS, type ClientPermissions } from "@/lib/client-permissions";
+import { USERNAME_RULES_HELP } from "@/lib/username";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
+import PermissionsEditor, { permissionsSummary } from "./PermissionsEditor";
+import PasswordRevealBox from "./PasswordRevealBox";
+import ResetPasswordModal from "./ResetPasswordModal";
 
 type AdminClientsPanelProps = {
   accounts: MetaAdAccount[];
@@ -25,35 +21,38 @@ function accountNames(accountIds: string[], accounts: MetaAdAccount[]): string {
   return accountIds.map((id) => byId.get(id) ?? id).join(", ");
 }
 
-function permissionsSummary(p: ClientPermissions): string {
-  const hidden = p.hiddenFilters.length + p.hiddenColumns.length + p.hiddenSections.length;
-  return hidden === 0 ? "Acesso completo" : `${hidden} restriç${hidden === 1 ? "ão" : "ões"}`;
-}
+type NewClientUser = { id: string; name: string; username: string; password: string };
 
-type NewClientUser = { id: string; name: string; password: string };
-
-// Per-client login management: each client can have several named people
-// logging in, all sharing that client's account/permission scope but
-// individually revocable. Kept as its own component (rather than inline in
-// the table) so its create-form/reveal-password state doesn't leak between
-// clients when more than one row is expanded across renders.
+// Per-company login management: each company (a registered business, kept
+// deliberately distinct from the people who log in under it) can have
+// several named people, sharing the company's account/permission scope by
+// default but individually revocable and, when needed, individually
+// overridden. Kept as its own component so its create-form/reveal-password
+// state doesn't leak between companies when more than one row is expanded.
 function ClientUsersSection({
   clientId,
   users,
+  companyPermissions,
   onAddUser,
   onRevokeUser,
 }: {
   clientId: string;
-  users: { id: string; name: string }[];
-  onAddUser: (clientId: string, name: string) => Promise<NewClientUser | null>;
+  users: ClientAccessUserSummary[];
+  companyPermissions: ClientPermissions;
+  onAddUser: (clientId: string, input: { name: string; username: string; password: string; confirmPassword: string; permissionsOverride: ClientPermissions | null }) => Promise<NewClientUser | null>;
   onRevokeUser: (clientId: string, userId: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [useOverride, setUseOverride] = useState(false);
+  const [override, setOverride] = useState<ClientPermissions>(companyPermissions);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<NewClientUser | null>(null);
-  const [copied, setCopied] = useState(false);
   const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<ClientAccessUserSummary | null>(null);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -62,8 +61,22 @@ function ClientUsersSection({
       setError("Informe o nome da pessoa.");
       return;
     }
+    if (password.length < 8) {
+      setError("A senha deve ter ao menos 8 caracteres.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("As senhas não coincidem.");
+      return;
+    }
     setSubmitting(true);
-    const result = await onAddUser(clientId, name.trim());
+    const result = await onAddUser(clientId, {
+      name: name.trim(),
+      username: username.trim(),
+      password,
+      confirmPassword,
+      permissionsOverride: useOverride ? override : null,
+    });
     setSubmitting(false);
     if (!result) {
       setError("Não foi possível criar o login.");
@@ -71,6 +84,10 @@ function ClientUsersSection({
     }
     setCreated(result);
     setName("");
+    setUsername("");
+    setPassword("");
+    setConfirmPassword("");
+    setUseOverride(false);
   }
 
   function handleRevoke(userId: string) {
@@ -82,166 +99,143 @@ function ClientUsersSection({
     onRevokeUser(clientId, userId);
   }
 
-  async function copyPassword() {
-    if (!created) return;
-    try {
-      await navigator.clipboard.writeText(created.password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard permission denied — the password stays visible for manual copy
-    }
-  }
-
   return (
     <div className="px-1 py-3">
+      <p className="text-[11px] font-medium tracking-[0.08em] uppercase text-intel-text-dim mb-2">Pessoas com acesso</p>
       {users.length === 0 ? (
-        <p className="text-[12px] text-intel-text-dim/70 mb-3">Nenhum login individual ainda.</p>
+        <p className="text-[12px] text-intel-text-dim/70 mb-3">Nenhuma pessoa com acesso ainda.</p>
       ) : (
         <ul className="mb-3 divide-y divide-white/[0.05] rounded-lg border border-white/[0.06]">
           {users.map((u) => (
-            <li key={u.id} className="flex items-center justify-between px-3 py-2 text-[12.5px]">
-              <span className="text-intel-text-dim">{u.name}</span>
-              <button
-                type="button"
-                onClick={() => handleRevoke(u.id)}
-                onBlur={() => setConfirmingRevoke(null)}
-                className={`text-[11px] tracking-[0.06em] uppercase transition-colors duration-200 ${
-                  confirmingRevoke === u.id ? "text-intel-red font-medium" : "text-intel-text-dim hover:text-intel-red"
-                }`}
-              >
-                {confirmingRevoke === u.id ? "Confirmar?" : "Revogar"}
-              </button>
+            <li key={u.id} className="flex items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
+              <span className="text-intel-text-dim min-w-0">
+                <span className="text-intel-text">{u.name}</span>{" "}
+                <span className="font-mono text-intel-text-dim/70">{u.username}</span>
+                {u.hasPermissionsOverride && <span className="ml-2 text-[10.5px] uppercase tracking-[0.06em] text-intel-violet">override</span>}
+                {u.mustChangePassword && <span className="ml-2 text-[10.5px] uppercase tracking-[0.06em] text-amber-300/80">1º acesso pendente</span>}
+              </span>
+              <span className="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setResetTarget(u)}
+                  className="text-[11px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-cyan transition-colors duration-200"
+                >
+                  Resetar senha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRevoke(u.id)}
+                  onBlur={() => setConfirmingRevoke(null)}
+                  className={`text-[11px] tracking-[0.06em] uppercase transition-colors duration-200 ${
+                    confirmingRevoke === u.id ? "text-intel-red font-medium" : "text-intel-text-dim hover:text-intel-red"
+                  }`}
+                >
+                  {confirmingRevoke === u.id ? "Confirmar?" : "Revogar"}
+                </button>
+              </span>
             </li>
           ))}
         </ul>
       )}
 
-      <form onSubmit={handleAdd} className="flex items-center gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Nome da pessoa"
-          className={`${INTEL_INPUT} !py-2 flex-1`}
-        />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="shrink-0 text-[11px] tracking-[0.08em] uppercase bg-intel-cyan/[0.14] text-intel-cyan font-medium px-3 py-2 rounded-lg hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-60"
-        >
-          {submitting ? "..." : "+ Adicionar"}
-        </button>
+      <form onSubmit={handleAdd} className="space-y-2">
+        <div className="flex items-center gap-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome da pessoa" className={`${INTEL_INPUT} !py-2 flex-1`} />
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="usuário"
+            autoCapitalize="off"
+            autoCorrect="off"
+            className={`${INTEL_INPUT} !py-2 flex-1 font-mono`}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Senha inicial"
+            minLength={8}
+            className={`${INTEL_INPUT} !py-2 flex-1`}
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirmar senha"
+            minLength={8}
+            className={`${INTEL_INPUT} !py-2 flex-1`}
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="shrink-0 text-[11px] tracking-[0.08em] uppercase bg-intel-cyan/[0.14] text-intel-cyan font-medium px-3 py-2 rounded-lg hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-60"
+          >
+            {submitting ? "..." : "+ Adicionar"}
+          </button>
+        </div>
+        <p className="text-[10.5px] text-intel-text-dim/60">{USERNAME_RULES_HELP}</p>
+
+        <details className="group">
+          <summary className="cursor-pointer text-[11px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
+            Permissão individual (opcional — por padrão herda da empresa)
+          </summary>
+          <label className="mt-2 flex items-center gap-2 text-[12px] text-intel-text-dim">
+            <input type="checkbox" checked={useOverride} onChange={(e) => setUseOverride(e.target.checked)} />
+            Definir permissões específicas para esta pessoa
+          </label>
+          {useOverride && <PermissionsEditor permissions={override} onChange={setOverride} />}
+        </details>
       </form>
       {error && <p className="mt-2 text-[12px] text-intel-red">{error}</p>}
 
       {created && (
-        <div className="mt-3 rounded-lg border border-white/10 bg-intel-surface-2 p-3">
-          <p className="text-[12.5px] font-medium text-intel-text">Login criado para {created.name}</p>
-          <p className="text-[11px] text-intel-text-dim mt-1 mb-2">
-            Copie e envie agora — não pode ser recuperada depois.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-[12.5px] bg-intel-surface-1 border border-white/10 rounded-lg px-2.5 py-1.5 break-all text-intel-text">
-              {created.password}
-            </code>
-            <button
-              type="button"
-              onClick={copyPassword}
-              className="shrink-0 text-[11px] tracking-[0.08em] uppercase bg-intel-cyan text-[#04121a] font-medium px-2.5 py-1.5 rounded-lg hover:brightness-110 transition-[filter] duration-200"
-            >
-              {copied ? "Copiado" : "Copiar"}
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCreated(null)}
-            className="mt-2 text-[11px] text-intel-text-dim hover:text-intel-text transition-colors duration-200"
-          >
-            Fechar
-          </button>
-        </div>
+        <PasswordRevealBox
+          title={`Login criado para ${created.name}`}
+          hint="Copie e entregue por um canal privado — não pode ser recuperada depois."
+          password={created.password}
+          onClose={() => setCreated(null)}
+        />
+      )}
+
+      {resetTarget && (
+        <ResetPasswordModal
+          targetName={resetTarget.name}
+          targetUsername={resetTarget.username}
+          endpoint={`/api/analise/admin/clients/${clientId}/users/${resetTarget.id}/reset-password/`}
+          onClose={() => setResetTarget(null)}
+        />
       )}
     </div>
   );
 }
 
-function toggleInSet<T>(prev: Set<T>, id: T): Set<T> {
-  const next = new Set(prev);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  return next;
-}
-
-function CheckboxGroup<T extends string>({
-  title,
-  hint,
-  options,
-  hiddenIds,
-  onToggle,
-}: {
-  title: string;
-  hint: string;
-  options: { id: T; label: string }[];
-  hiddenIds: Set<T>;
-  onToggle: (id: T) => void;
-}) {
-  return (
-    <div className="mt-5">
-      <p className={INTEL_LABEL}>{title}</p>
-      <p className="text-[11px] text-intel-text-dim/70 mt-0.5 mb-2">{hint}</p>
-      <ul className="rounded-lg border border-white/10 divide-y divide-white/[0.06]">
-        {options.map((option) => {
-          const hidden = hiddenIds.has(option.id);
-          return (
-            <li key={option.id}>
-              <button
-                type="button"
-                onClick={() => onToggle(option.id)}
-                className="w-full flex items-center gap-3 text-left px-3 py-2 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-150"
-              >
-                <span
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors duration-150 ${
-                    hidden ? "border-white/20" : "bg-intel-cyan border-intel-cyan"
-                  }`}
-                  aria-hidden="true"
-                >
-                  {!hidden && (
-                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                      <path d="M1 4L3.5 6.5L9 1" stroke="#070d1a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </span>
-                <span className="min-w-0 truncate">{option.label}</span>
-                {hidden && <span className="ml-auto shrink-0 text-[11px] text-intel-text-dim/60">oculto</span>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-export default function AdminClientsPanel({
-  accounts,
-  accountsError,
-  initialClients,
-}: AdminClientsPanelProps) {
+export default function AdminClientsPanel({ accounts, accountsError, initialClients }: AdminClientsPanelProps) {
   const [clients, setClients] = useState(initialClients);
   const [label, setLabel] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
-  const [hiddenFilters, setHiddenFilters] = useState<Set<FilterKey>>(new Set());
-  const [hiddenColumns, setHiddenColumns] = useState<Set<CampaignColumnId>>(new Set());
-  const [hiddenSections, setHiddenSections] = useState<Set<HideableSectionId>>(new Set());
+  const [permissions, setPermissions] = useState<ClientPermissions>(EMPTY_PERMISSIONS);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ label: string; userName: string; password: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [created, setCreated] = useState<{ label: string } | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) => c.label.toLowerCase().includes(q) || c.users.some((u) => u.name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)));
+  }, [clients, search]);
 
   function toggleAccount(id: string) {
-    setSelectedAccountIds((prev) => toggleInSet(prev, id));
+    setSelectedAccountIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -249,19 +243,13 @@ export default function AdminClientsPanel({
     setError(null);
 
     if (!label.trim()) {
-      setError("Informe o nome do cliente.");
+      setError("Informe o nome da empresa.");
       return;
     }
     if (selectedAccountIds.size === 0) {
       setError("Selecione ao menos uma conta de anúncios.");
       return;
     }
-
-    const permissions: ClientPermissions = {
-      hiddenFilters: [...hiddenFilters],
-      hiddenColumns: [...hiddenColumns],
-      hiddenSections: [...hiddenSections],
-    };
 
     setSubmitting(true);
     try {
@@ -272,11 +260,11 @@ export default function AdminClientsPanel({
       });
       const body = await res.json();
       if (!res.ok) {
-        setError(body?.error ?? "Não foi possível criar o acesso.");
+        setError(body?.error ?? "Não foi possível criar a empresa.");
         return;
       }
 
-      setCreated({ label: body.label, userName: body.userName, password: body.password });
+      setCreated({ label: body.label });
       setClients((prev) => [
         {
           id: body.id,
@@ -285,15 +273,14 @@ export default function AdminClientsPanel({
           accountIds: [...selectedAccountIds],
           permissions,
           createdAt: new Date().toISOString(),
-          users: [{ id: body.userId, name: body.userName, createdAt: new Date().toISOString() }],
+          users: [],
         },
         ...prev,
       ]);
+      setExpandedClientId(body.id);
       setLabel("");
       setSelectedAccountIds(new Set());
-      setHiddenFilters(new Set());
-      setHiddenColumns(new Set());
-      setHiddenSections(new Set());
+      setPermissions(EMPTY_PERMISSIONS);
     } catch {
       setError("Falha de conexão. Tente novamente.");
     } finally {
@@ -311,59 +298,51 @@ export default function AdminClientsPanel({
     await fetch(`/api/analise/admin/clients/${id}/`, { method: "DELETE" }).catch(() => {});
   }
 
-  async function handleAddUser(clientId: string, name: string) {
+  async function handleAddUser(
+    clientId: string,
+    input: { name: string; username: string; password: string; confirmPassword: string; permissionsOverride: ClientPermissions | null }
+  ) {
     try {
       const res = await fetch(`/api/analise/admin/clients/${clientId}/users/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(input),
       });
       const body = await res.json();
       if (!res.ok) return null;
 
-      setClients((prev) =>
-        prev.map((c) =>
-          c.id === clientId
-            ? { ...c, users: [...c.users, { id: body.id, name: body.name, createdAt: new Date().toISOString() }] }
-            : c
-        )
-      );
-      return { id: body.id, name: body.name, password: body.password };
+      const companyPermissions = clients.find((c) => c.id === clientId)?.permissions ?? EMPTY_PERMISSIONS;
+      const newUser: ClientAccessUserSummary = {
+        id: body.id,
+        name: body.name,
+        username: input.username.trim().toLowerCase(),
+        hasPermissionsOverride: Boolean(input.permissionsOverride),
+        permissions: input.permissionsOverride ?? companyPermissions,
+        mustChangePassword: true,
+        createdAt: new Date().toISOString(),
+      };
+      setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, users: [...c.users, newUser] } : c)));
+      return { id: body.id, name: body.name, username: newUser.username, password: input.password };
     } catch {
       return null;
     }
   }
 
   function handleRevokeUser(clientId: string, userId: string) {
-    setClients((prev) =>
-      prev.map((c) => (c.id === clientId ? { ...c, users: c.users.filter((u) => u.id !== userId) } : c))
-    );
+    setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, users: c.users.filter((u) => u.id !== userId) } : c)));
     fetch(`/api/analise/admin/clients/${clientId}/users/${userId}/`, { method: "DELETE" }).catch(() => {});
-  }
-
-  async function copyPassword() {
-    if (!created) return;
-    try {
-      await navigator.clipboard.writeText(created.password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard permission denied — the password stays visible for manual copy
-    }
   }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
-        <h2 className="text-[13px] font-medium text-intel-text mb-4">Novo acesso</h2>
+        <h3 className="text-[13px] font-medium text-intel-text mb-4">Nova empresa</h3>
 
-        {accountsError && (
-          <p className="mb-4 text-sm text-intel-red">{accountsError}</p>
-        )}
+        {accountsError && <p className="mb-4 text-sm text-intel-red">{accountsError}</p>}
 
         <form onSubmit={handleSubmit} noValidate>
           <label htmlFor="client-label" className={INTEL_LABEL}>
-            Nome do cliente
+            Nome da empresa
           </label>
           <input
             id="client-label"
@@ -395,13 +374,7 @@ export default function AdminClientsPanel({
                       >
                         {checked && (
                           <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                            <path
-                              d="M1 4L3.5 6.5L9 1"
-                              stroke="#070d1a"
-                              strokeWidth="1.6"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
+                            <path d="M1 4L3.5 6.5L9 1" stroke="#070d1a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         )}
                       </span>
@@ -415,35 +388,12 @@ export default function AdminClientsPanel({
 
           <details className="mt-5 group">
             <summary className="cursor-pointer text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
-              Restringir filtros, colunas e seções (opcional)
+              Permissões padrão da empresa (opcional)
             </summary>
             <p className="text-[11px] text-intel-text-dim/70 mt-2">
-              Por padrão o cliente vê tudo (exceto o admin). Marque abaixo só o que esse cliente deve ver — o resto fica oculto.
+              Aplicadas a toda pessoa dessa empresa, exceto quem tiver uma permissão individual definida.
             </p>
-
-            <CheckboxGroup
-              title="Filtros disponíveis"
-              hint="Filtros desmarcados somem da barra de filtros para esse cliente."
-              options={FILTER_OPTIONS}
-              hiddenIds={hiddenFilters}
-              onToggle={(id: FilterKey) => setHiddenFilters((prev) => toggleInSet(prev, id))}
-            />
-
-            <CheckboxGroup
-              title="Colunas da tabela de campanhas"
-              hint="Colunas desmarcadas não aparecem na tabela nem no seletor de colunas."
-              options={CAMPAIGN_COLUMN_OPTIONS}
-              hiddenIds={hiddenColumns}
-              onToggle={(id: CampaignColumnId) => setHiddenColumns((prev) => toggleInSet(prev, id))}
-            />
-
-            <CheckboxGroup
-              title="Seções do menu"
-              hint="Seções desmarcadas somem do menu lateral. 'Visão geral' fica sempre disponível."
-              options={HIDEABLE_SECTION_OPTIONS}
-              hiddenIds={hiddenSections}
-              onToggle={(id: HideableSectionId) => setHiddenSections((prev) => toggleInSet(prev, id))}
-            />
+            <PermissionsEditor permissions={permissions} onChange={setPermissions} />
           </details>
 
           {error && (
@@ -457,30 +407,16 @@ export default function AdminClientsPanel({
             disabled={submitting}
             className="mt-5 w-full inline-flex items-center justify-center bg-intel-cyan text-[#04121a] text-sm tracking-[0.1em] uppercase font-semibold px-6 py-3 rounded-full hover:brightness-110 transition-[filter] duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {submitting ? "Criando..." : "Criar acesso"}
+            {submitting ? "Criando..." : "Criar empresa"}
           </button>
         </form>
 
         {created && (
           <div className="mt-5 rounded-xl border border-white/10 bg-intel-surface-2 p-4">
-            <p className="text-[13px] font-medium text-intel-text">
-              Acesso criado para {created.userName} ({created.label})
+            <p className="text-[13px] font-medium text-intel-text">Empresa {created.label} criada</p>
+            <p className="text-xs text-intel-text-dim mt-1">
+              Agora adicione as pessoas que terão acesso a ela na lista ao lado.
             </p>
-            <p className="text-xs text-intel-text-dim mt-1 mb-3">
-              Essa senha só aparece agora — copie e envie ao cliente. Ela não pode ser recuperada depois.
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-sm bg-intel-surface-1 border border-white/10 rounded-lg px-3 py-2 break-all text-intel-text">
-                {created.password}
-              </code>
-              <button
-                type="button"
-                onClick={copyPassword}
-                className="shrink-0 text-[12px] tracking-[0.08em] uppercase bg-intel-cyan text-[#04121a] font-medium px-3 py-2 rounded-lg hover:brightness-110 transition-[filter] duration-200"
-              >
-                {copied ? "Copiado" : "Copiar"}
-              </button>
-            </div>
             <button
               type="button"
               onClick={() => setCreated(null)}
@@ -493,35 +429,38 @@ export default function AdminClientsPanel({
       </div>
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6 overflow-x-auto">
-        <h2 className="text-[13px] font-medium text-intel-text mb-4">Clientes com acesso</h2>
-        {clients.length === 0 ? (
-          <p className="text-sm text-intel-text-dim">Nenhum cliente com acesso ainda.</p>
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h3 className="text-[13px] font-medium text-intel-text">Empresas e pessoas com acesso</h3>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar empresa ou pessoa..."
+            className={`${INTEL_INPUT} !py-2 max-w-[220px]`}
+          />
+        </div>
+        {filteredClients.length === 0 ? (
+          <p className="text-sm text-intel-text-dim">Nenhuma empresa encontrada.</p>
         ) : (
-          <table className="w-full min-w-[560px] border-collapse">
+          <table className="w-full min-w-[620px] border-collapse">
             <thead>
               <tr>
-                <th className="text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3">
-                  Cliente
-                </th>
-                <th className="text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3">
-                  Contas
-                </th>
-                <th className="text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3">
-                  Permissões
-                </th>
-                <th className="text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3">
-                  Logins
-                </th>
-                <th className="text-right text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3" />
+                {["Empresa", "Contas", "Permissões padrão", "Pessoas", ""].map((h) => (
+                  <th
+                    key={h}
+                    className={`text-left text-[10.5px] tracking-[0.1em] uppercase text-intel-text-dim font-medium py-2.5 px-3 ${h === "" ? "text-right" : ""}`}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {clients.map((client) => {
+              {filteredClients.map((client) => {
                 const expanded = expandedClientId === client.id;
                 return (
                   <Fragment key={client.id}>
                     <tr className="hover:bg-white/[0.03] transition-colors duration-150">
-                      <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
+                      <td className="py-2.5 px-3 text-[13px] text-intel-text border-t border-white/[0.05] font-medium">
                         {client.label}
                       </td>
                       <td className="py-2.5 px-3 text-[13px] text-intel-text-dim border-t border-white/[0.05]">
@@ -546,9 +485,7 @@ export default function AdminClientsPanel({
                           onClick={() => handleRevoke(client.id)}
                           onBlur={() => setConfirmingRevoke(null)}
                           className={`text-[12px] tracking-[0.06em] uppercase transition-colors duration-200 ${
-                            confirmingRevoke === client.id
-                              ? "text-intel-red font-medium"
-                              : "text-intel-text-dim hover:text-intel-red"
+                            confirmingRevoke === client.id ? "text-intel-red font-medium" : "text-intel-text-dim hover:text-intel-red"
                           }`}
                         >
                           {confirmingRevoke === client.id ? "Confirmar?" : "Revogar"}
@@ -561,6 +498,7 @@ export default function AdminClientsPanel({
                           <ClientUsersSection
                             clientId={client.id}
                             users={client.users}
+                            companyPermissions={client.permissions}
                             onAddUser={handleAddUser}
                             onRevokeUser={handleRevokeUser}
                           />

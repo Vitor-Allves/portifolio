@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
-import { isFullAdmin } from "@/lib/session-scope";
+import { sessionScopeFromCookieStore } from "@/lib/auth-context";
+import { isFullAdmin, resolveAllowedAccountIds, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
@@ -16,28 +15,24 @@ const DEFAULT_PERIOD: Period = { kind: "preset", preset: "last_30d" };
 
 export default async function AnalisePage() {
   // Defense in depth: middleware already gates this route, but a page-level
-  // check keeps it safe even if the middleware matcher is ever changed.
-  const token = (await cookies()).get(ANALISE_SESSION_COOKIE)?.value;
-  const scope = verifySessionToken(token);
+  // check — the authoritative, DB-backed one — keeps it safe even if the
+  // middleware matcher is ever changed, and is what actually enforces
+  // role/company/permission changes on every load.
+  const scope = await sessionScopeFromCookieStore();
   if (!scope) {
-    redirect("/analise/login");
+    redirect("/analise/login/");
+  }
+  if (scope.mustChangePassword) {
+    redirect("/analise/trocar-senha/");
   }
 
-  const allowedAccountIds = scope.kind === "client" ? scope.accountIds : undefined;
-  const clientPermissions = scope.kind === "client" ? scope.permissions : null;
-  // Internal Legado viewer (admin or analyst) — distinct from isFullAdmin,
-  // which gates the admin *panel* specifically. Used only to decide how
-  // much technical/infra detail a viewer is shown, never data access.
-  const isInternal = scope.kind === "admin";
-  // Header subtitle: a client's business name, or — for a named internal
-  // login — who's signed in. The legacy shared admin password has no
-  // identity to show, so it falls back to the header's own default text.
-  const viewerLabel =
-    scope.kind === "client"
-      ? scope.label
-      : scope.userName
-        ? `${scope.userName} · ${scope.role === "admin" ? "Administrador" : "Analista"}`
-        : null;
+  const allowedAccountIds = resolveAllowedAccountIds(scope) ?? undefined;
+  const clientPermissions = scope.permissions;
+  // Internal Legado viewer — distinct from isFullAdmin, which gates the
+  // admin panel specifically. Used only to decide how much technical/infra
+  // detail a viewer is shown, never data access.
+  const isInternal = scope.kind === "staff";
+  const viewerLabel = scope.kind === "client" ? scope.label : `${scope.userName} · ${STAFF_ROLE_LABELS[scope.role]}`;
   const dbConfigured = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;

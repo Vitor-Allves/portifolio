@@ -7,7 +7,8 @@ import {
   MetaApiError,
   type Period,
 } from "@/lib/meta-ads";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
+import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
+import { resolveAllowedAccountIds } from "@/lib/session-scope";
 
 export const runtime = "nodejs";
 
@@ -38,11 +39,14 @@ export async function GET(req: NextRequest) {
   }
   const compare = req.nextUrl.searchParams.get("compare") === "1";
 
-  // Middleware already requires a valid session to reach this route — this
-  // re-check only decides the scope (which accounts this session may see),
-  // never bare pass/fail.
-  const scope = verifySessionToken(req.cookies.get(ANALISE_SESSION_COOKIE)?.value);
-  const allowedAccountIds = scope?.kind === "client" ? scope.accountIds : undefined;
+  // The Edge middleware only checked that a plausible session cookie
+  // exists — this is the authoritative, DB-backed check that decides both
+  // whether this request may proceed at all and which accounts it may see.
+  const scope = await sessionScopeFromRequest(req);
+  if (!hasDataAccess(scope)) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+  const allowedAccountIds = resolveAllowedAccountIds(scope) ?? undefined;
 
   try {
     const data = await getDashboardData(period, allowedAccountIds, { compare });

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-session-node";
-import { isFullAdmin } from "@/lib/session-scope";
+import { sessionScopeFromCookieStore } from "@/lib/auth-context";
+import { isFullAdmin, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { listAdAccounts, MetaApiError } from "@/lib/meta-ads";
 import { listClientAccess } from "@/lib/client-access";
 import { listInternalUsers } from "@/lib/internal-users";
@@ -13,15 +12,15 @@ import AdminClientsPanel from "@/components/analise/AdminClientsPanel";
 import AdminUsersPanel from "@/components/analise/AdminUsersPanel";
 
 export const metadata: Metadata = {
-  title: "Clientes — Análise de Campanhas",
+  title: "Usuários e acessos — Legado Intelligence",
   robots: { index: false, follow: false },
 };
 
 export default async function AnaliseAdminPage() {
-  const token = (await cookies()).get(ANALISE_SESSION_COOKIE)?.value;
-  const scope = verifySessionToken(token);
-  if (!scope) redirect("/analise/login");
-  if (!isFullAdmin(scope)) redirect("/analise");
+  const scope = await sessionScopeFromCookieStore();
+  if (!scope) redirect("/analise/login/");
+  if (scope.mustChangePassword) redirect("/analise/trocar-senha/");
+  if (!isFullAdmin(scope)) redirect("/analise/");
 
   let accounts: Awaited<ReturnType<typeof listAdAccounts>> = [];
   let accountsError: string | null = null;
@@ -51,7 +50,7 @@ export default async function AnaliseAdminPage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-intel-ambient bg-intel-grid">
-      <AnaliseHeader isAdmin clientLabel={null} />
+      <AnaliseHeader isAdmin clientLabel={`${scope.userName} · ${STAFF_ROLE_LABELS[scope.role]}`} />
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
         <Link
           href="/analise/"
@@ -59,9 +58,9 @@ export default async function AnaliseAdminPage() {
         >
           <span aria-hidden="true">←</span> Voltar ao painel
         </Link>
-        <h1 className="font-sans text-2xl font-semibold text-intel-text mb-1">Acessos de clientes</h1>
+        <h1 className="font-sans text-2xl font-semibold text-intel-text mb-1">Usuários e acessos</h1>
         <p className="text-sm text-intel-text-dim mb-8">
-          Crie um login separado para cada cliente ver apenas as próprias campanhas.
+          Crie e administre os acessos da equipe Legado e dos clientes — cada seção tem sua própria listagem, busca e criação.
         </p>
 
         {dbNotConfigured ? (
@@ -70,8 +69,8 @@ export default async function AnaliseAdminPage() {
               Banco de dados ainda não configurado
             </p>
             <p className="text-sm text-intel-text-dim leading-relaxed">
-              Os acessos de clientes ficam guardados num banco Postgres, que
-              ainda não está conectado a este projeto. Siga o passo a passo em{" "}
+              Os acessos ficam guardados num banco Postgres, que ainda não
+              está conectado a este projeto. Siga o passo a passo em{" "}
               <code className="text-sm bg-white/[0.06] px-1.5 py-0.5 rounded">
                 docs/client-access-setup.md
               </code>{" "}
@@ -81,19 +80,17 @@ export default async function AnaliseAdminPage() {
           </div>
         ) : (
           <>
-            <AdminClientsPanel
-              accounts={accounts}
-              accountsError={accountsError}
-              initialClients={clients}
-            />
-
-            <h2 className="font-sans text-2xl font-semibold text-intel-text mb-1 mt-14">
-              Equipe Legado
-            </h2>
-            <p className="text-sm text-intel-text-dim mb-8">
-              Crie um login para cada pessoa do time, com nível de acesso próprio.
+            <h2 className="font-sans text-xl font-semibold text-intel-text mb-1">Equipe Legado</h2>
+            <p className="text-sm text-intel-text-dim mb-6">
+              Administradores, gestores, analistas e demais funcionários com acesso à plataforma.
             </p>
-            <AdminUsersPanel initialUsers={internalUsers} />
+            <AdminUsersPanel accounts={accounts} accountsError={accountsError} initialUsers={internalUsers} />
+
+            <h2 className="font-sans text-xl font-semibold text-intel-text mb-1 mt-14">Clientes</h2>
+            <p className="text-sm text-intel-text-dim mb-6">
+              Empresas atendidas e as pessoas que acessam os dados de cada uma.
+            </p>
+            <AdminClientsPanel accounts={accounts} accountsError={accountsError} initialClients={clients} />
           </>
         )}
       </div>
