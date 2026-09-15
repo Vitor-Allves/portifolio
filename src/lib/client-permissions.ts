@@ -52,7 +52,7 @@ export type HideableSectionId = "campaigns" | "insights" | "reports" | "integrat
 
 export const HIDEABLE_SECTION_OPTIONS: { id: HideableSectionId; label: string }[] = [
   { id: "campaigns", label: "Campanhas" },
-  { id: "insights", label: "Análises com IA" },
+  { id: "insights", label: "Análises estratégicas" },
   { id: "reports", label: "Relatórios" },
   { id: "integrations", label: "Integrações" },
 ];

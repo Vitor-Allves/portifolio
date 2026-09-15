@@ -69,3 +69,61 @@ export function primaryKpiIds(campaigns: CampaignInsight[]): KpiId[] {
   const [objective] = objectives;
   return OBJECTIVE_PRIMARY[objective] ?? GENERAL_PRIMARY;
 }
+
+// ---------------------------------------------------------------------------
+// Objective groups — same idea as OBJECTIVE_PRIMARY above, but as a label
+// used to decide which campaigns are "comparable" to each other (never
+// compare a reach campaign's CPC against a messages campaign's, even within
+// the same account) and which single indicator best represents "resultado"
+// for that group in strategic-insights.ts's rule engine.
+// ---------------------------------------------------------------------------
+
+export type ObjectiveGroup = "awareness" | "traffic" | "engagement" | "messages" | "conversion-other" | "unknown";
+
+const OBJECTIVE_GROUP_BY_RAW: Record<string, ObjectiveGroup> = {
+  OUTCOME_AWARENESS: "awareness",
+  BRAND_AWARENESS: "awareness",
+  REACH: "awareness",
+
+  OUTCOME_TRAFFIC: "traffic",
+  LINK_CLICKS: "traffic",
+
+  OUTCOME_ENGAGEMENT: "engagement",
+  POST_ENGAGEMENT: "engagement",
+  VIDEO_VIEWS: "engagement",
+
+  MESSAGES: "messages",
+
+  OUTCOME_LEADS: "conversion-other",
+  LEAD_GENERATION: "conversion-other",
+  OUTCOME_SALES: "conversion-other",
+  CONVERSIONS: "conversion-other",
+  OUTCOME_APP_PROMOTION: "conversion-other",
+  APP_INSTALLS: "conversion-other",
+  PRODUCT_CATALOG_SALES: "conversion-other",
+  STORE_VISITS: "conversion-other",
+};
+
+export const OBJECTIVE_GROUP_LABEL: Record<ObjectiveGroup, string> = {
+  awareness: "reconhecimento/alcance",
+  traffic: "tráfego",
+  engagement: "engajamento",
+  messages: "mensagens",
+  "conversion-other": "conversão (leads/vendas/outros)",
+  unknown: "objetivo não informado",
+};
+
+/** The one metric that best represents "resultado" for a group — never cost-per-conversation for an awareness campaign, never a fabricated conversion rate for an objective this dashboard can't measure. */
+export const OBJECTIVE_GROUP_RESULT_METRIC: Record<ObjectiveGroup, KpiId> = {
+  awareness: "reach",
+  traffic: "clicks",
+  engagement: "clicks",
+  messages: "costPerConversation",
+  "conversion-other": "clicks",
+  unknown: "spend",
+};
+
+export function objectiveGroup(objective: string | null): ObjectiveGroup {
+  if (objective === null) return "unknown";
+  return OBJECTIVE_GROUP_BY_RAW[objective] ?? "unknown";
+}

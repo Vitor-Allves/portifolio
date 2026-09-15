@@ -773,27 +773,40 @@ function drawInsightBlock(doc: jsPDF, ctx: Ctx, y: number, heading: string, dotC
 
   for (const item of items) {
     const lines = wrapText(doc, item.text, CONTENT_W - 12);
-    y = ensureSpace(doc, ctx, y, lines.length * 4.6 + 3);
+    // Each recommendation also carries its own limitation/hypothesis and,
+    // when actionable, a suggested next step plus the indicator to watch —
+    // never just the headline claim on its own.
+    const limitationLines = item.limitation ? wrapText(doc, item.limitation, CONTENT_W - 12) : [];
+    const actionText = [item.action, item.watchIndicator ? `Indicador a acompanhar: ${item.watchIndicator}` : null].filter(Boolean).join(" · ");
+    const actionLines = actionText ? wrapText(doc, actionText, CONTENT_W - 12) : [];
+
+    y = ensureSpace(doc, ctx, y, lines.length * 4.6 + limitationLines.length * 3.6 + actionLines.length * 3.6 + 4);
     setColor(doc, "setFillColor", dotColor);
     doc.circle(MARGIN_X + 5, y - 1.3, 0.9, "F");
     doc.setFont(ctx.fonts.body, "normal");
     doc.setFontSize(8.3);
     setColor(doc, "setTextColor", TEXT);
     doc.text(lines, MARGIN_X + 9, y);
-    y += lines.length * 4.6 + 2.5;
+    y += lines.length * 4.6;
+
+    if (limitationLines.length > 0) {
+      doc.setFontSize(7.3);
+      setColor(doc, "setTextColor", TEXT_MUTED);
+      doc.text(limitationLines, MARGIN_X + 9, y + 2.6);
+      y += limitationLines.length * 3.6 + 2.6;
+    }
+    if (actionLines.length > 0) {
+      doc.setFontSize(7.3);
+      setColor(doc, "setTextColor", NAVY);
+      doc.text(actionLines, MARGIN_X + 9, y + (limitationLines.length > 0 ? 1 : 2.6));
+      y += actionLines.length * 3.6 + (limitationLines.length > 0 ? 1 : 2.6);
+    }
+    y += 2.5;
   }
   return y + 3;
 }
 
-function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, label: string | null, insights: StrategicInsights): number {
-  if (label) {
-    y = ensureSpace(doc, ctx, y, 24);
-    doc.setFont(ctx.fonts.body, "bold");
-    doc.setFontSize(10.5);
-    setColor(doc, "setTextColor", NAVY);
-    doc.text(label, MARGIN_X, y);
-    y += 6;
-  }
+function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, insights: StrategicInsights): number {
   if (!insights.hasData) {
     doc.setFont(ctx.fonts.body, "normal");
     doc.setFontSize(8.6);
@@ -801,7 +814,17 @@ function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, label: string | n
     doc.text(wrapText(doc, insights.summary[0]?.text ?? "Sem dados suficientes para interpretação neste escopo.", CONTENT_W - 8), MARGIN_X + 4, y);
     return y + 10;
   }
+
+  y = ensureSpace(doc, ctx, y, 14);
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.6);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  const scopeLines = wrapText(doc, insights.scopeNote, CONTENT_W - 8);
+  doc.text(scopeLines, MARGIN_X + 4, y);
+  y += scopeLines.length * 3.8 + 4;
+
   y = drawInsightBlock(doc, ctx, y, "Principais resultados", NAVY, insights.summary);
+  y = drawInsightBlock(doc, ctx, y, "Principais mudanças", NAVY, insights.changes);
   y = drawInsightBlock(doc, ctx, y, "Pontos de atenção", BAD, insights.attention);
   y = drawInsightBlock(doc, ctx, y, "Oportunidades", GOOD, insights.opportunities);
   y = drawInsightBlock(doc, ctx, y, "Próximas ações priorizadas", NAVY, insights.nextActions);
@@ -1070,24 +1093,11 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   doc.text(limitLines, MARGIN_X, y);
   y += limitLines.length * 3.8 + 6;
 
-  if (input.accounts.length > 1) {
-    for (const account of input.accounts) {
-      const accCampaigns = input.campaigns.filter((c) => c.accountId === account.id);
-      if (accCampaigns.length === 0) continue;
-      const accComparison = input.comparisonCampaigns ? input.comparisonCampaigns.filter((c) => c.accountId === account.id) : null;
-      const accDaily = aggregateDailyByDate(input.daily, new Set([account.id]));
-      const accInsights = computeStrategicInsights({
-        campaigns: accCampaigns,
-        comparisonCampaigns: accComparison,
-        daily: accDaily,
-        resolvedRange: input.resolvedRange,
-        partialAccountNames: [],
-      });
-      y = drawAnalysisForScope(doc, ctx, y, account.name, accInsights);
-    }
-  } else {
-    y = drawAnalysisForScope(doc, ctx, y, null, insights);
-  }
+  // The engine itself groups findings by client and objective before ever
+  // comparing two campaigns (see strategic-insights.ts) — a single call over
+  // the full filtered set is already scoped correctly, so there's no need
+  // to loop per account here and re-run the engine once per client.
+  y = drawAnalysisForScope(doc, ctx, y, insights);
 
   // ---- Methodology notes ----
   y = ensureSpace(doc, ctx, y, 60);

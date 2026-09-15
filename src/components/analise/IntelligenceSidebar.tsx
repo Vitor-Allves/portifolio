@@ -8,7 +8,7 @@ export type SectionId = "overview" | "campaigns" | "insights" | "reports" | "int
 export const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview", label: "Visão geral" },
   { id: "campaigns", label: "Campanhas" },
-  { id: "insights", label: "Análises com IA" },
+  { id: "insights", label: "Análises estratégicas" },
   { id: "reports", label: "Relatórios" },
   { id: "integrations", label: "Integrações" },
 ];
