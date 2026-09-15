@@ -78,6 +78,18 @@ function metricCell(id: CampaignColumnId, totals: Totals): string | null {
       return totals.addToCart === null ? "Não disponível" : formatInteger(totals.addToCart);
     case "completeRegistrations":
       return totals.completeRegistrations === null ? "Não disponível" : formatInteger(totals.completeRegistrations);
+    case "postEngagement":
+      return totals.postEngagement === null ? "Não disponível" : formatInteger(totals.postEngagement);
+    case "videoViews":
+      return totals.videoViews === null ? "Não disponível" : formatInteger(totals.videoViews);
+    case "videoCompletions":
+      return totals.videoCompletions === null ? "Não disponível" : formatInteger(totals.videoCompletions);
+    case "outboundClicks":
+      return totals.outboundClicks === null ? "Não disponível" : formatInteger(totals.outboundClicks);
+    case "uniqueClicks":
+      return totals.uniqueClicks === null ? "Não disponível" : formatInteger(totals.uniqueClicks);
+    case "estimatedAdRecallers":
+      return totals.estimatedAdRecallers === null ? "Não disponível" : formatInteger(totals.estimatedAdRecallers);
     default:
       return null;
   }
@@ -99,13 +111,24 @@ const METRIC_COLUMN_LABELS: Partial<Record<CampaignColumnId, string>> = {
   leads: "Leads (Pixel/CAPI)",
   addToCart: "Adicionar ao carrinho (Pixel/CAPI)",
   completeRegistrations: "Cadastro completo (Pixel/CAPI)",
+  postEngagement: "Engajamento com a publicação",
+  videoViews: "Visualizações de vídeo",
+  videoCompletions: "Vídeo assistido até o fim",
+  outboundClicks: "Cliques para fora da plataforma",
+  uniqueClicks: "Cliques únicos",
+  estimatedAdRecallers: "Pessoas que lembrarão do anúncio",
 };
 // Row-level campaign export includes reach per-row (each campaign's own,
 // individually-scoped number). The account-summary export deliberately
 // omits reach entirely — see buildAccountSummaryCsv for why.
 const EXTRA_CONVERSION_IDS: CampaignColumnId[] = ["purchases", "purchaseValue", "roas", "leads", "addToCart", "completeRegistrations"];
-const CAMPAIGN_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", "reach", ...EXTRA_CONVERSION_IDS];
-const ACCOUNT_SUMMARY_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", ...EXTRA_CONVERSION_IDS];
+// videoAvgWatchTimeSeconds and estimatedAdRecallRate are deliberately
+// excluded here — see Totals in metrics.ts: both are an average/percentage,
+// never safe to sum into a "resumo por conta" total, and this CSV
+// architecture has no per-row-only column path that bypasses Totals.
+const EXTRA_ENGAGEMENT_IDS: CampaignColumnId[] = ["postEngagement", "videoViews", "videoCompletions", "outboundClicks", "uniqueClicks", "estimatedAdRecallers"];
+const CAMPAIGN_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", "reach", ...EXTRA_CONVERSION_IDS, ...EXTRA_ENGAGEMENT_IDS];
+const ACCOUNT_SUMMARY_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", ...EXTRA_CONVERSION_IDS, ...EXTRA_ENGAGEMENT_IDS];
 
 function buildCampaignsCsv(campaigns: CampaignInsight[], allowed: AllowedColumns): string {
   const header = ["Campanha"];

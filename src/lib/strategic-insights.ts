@@ -122,6 +122,12 @@ function campaignTotals(c: CampaignInsight): Totals {
     leads: c.leads,
     addToCart: c.addToCart,
     completeRegistrations: c.completeRegistrations,
+    postEngagement: c.postEngagement,
+    videoViews: c.videoViews,
+    videoCompletions: c.videoCompletions,
+    outboundClicks: c.outboundClicks,
+    uniqueClicks: c.uniqueClicks,
+    estimatedAdRecallers: c.estimatedAdRecallers,
   };
 }
 
