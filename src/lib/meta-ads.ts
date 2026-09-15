@@ -54,6 +54,33 @@ export type {
 
 export type DashboardOptions = { compare?: boolean };
 
+// The Marketing API's "conversation started" concept lives inside the
+// `actions` array, not in inline_link_clicks (a plain click count that's
+// always <= clicks except for known Meta counting quirks on on-platform
+// destinations — never a substitute for an actual conversation). This is
+// the action_type Meta documents for a messaging conversation started
+// within a 7-day click attribution window; it only ever appears on rows
+// tied to a messaging-capable objective/destination (MESSAGES, or
+// engagement/traffic campaigns configured to open Messenger/Instagram
+// DM/WhatsApp) — every other row simply won't have it in its actions array.
+// See: https://developers.facebook.com/docs/marketing-api/insights/ (Actions).
+const CONVERSATION_ACTION_TYPE = "onsite_conversion.messaging_conversation_started_7d";
+
+type ActionNode = { action_type?: string; value?: string };
+
+/**
+ * null means this row's `actions` array never contained the conversation
+ * action type — which Meta returns identically whether the objective can't
+ * produce it at all, or it genuinely happened zero times this period.
+ * There's no way to tell those apart from the API response alone, so null
+ * always reads as "não disponível" downstream, never as a zero.
+ */
+function parseConversations(actions: ActionNode[] | undefined): number | null {
+  if (!actions) return null;
+  const row = actions.find((a) => a.action_type === CONVERSATION_ACTION_TYPE);
+  return row ? Number(row.value ?? 0) : null;
+}
+
 /** Graph API date params for either a named preset or a manually picked range. */
 function periodParams(period: Period): Record<string, string> {
   return period.kind === "preset"
@@ -345,6 +372,7 @@ type CampaignInsightNode = {
   impressions?: string;
   clicks?: string;
   inline_link_clicks?: string;
+  actions?: ActionNode[];
   reach?: string;
 };
 
@@ -359,7 +387,7 @@ async function getAccountCampaignInsights(
     {
       level: "campaign",
       ...periodParams(period),
-      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach",
+      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,actions,reach",
       limit: "500",
     },
     accessToken
@@ -379,8 +407,9 @@ async function getAccountCampaignInsights(
       // Meta's "clicks" field: every click type (link, photo, profile, ...).
       clicks: Number(row.clicks ?? 0),
       // "inline_link_clicks": clicks that went to the campaign's destination
-      // link only — the more standard basis for evaluating traffic intent.
+      // link only — a click count, never a conversation.
       linkClicks: Number(row.inline_link_clicks ?? 0),
+      conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
     };
   });
@@ -417,6 +446,7 @@ type AdSetInsightNode = {
   impressions?: string;
   clicks?: string;
   inline_link_clicks?: string;
+  actions?: ActionNode[];
   reach?: string;
 };
 
@@ -436,7 +466,7 @@ async function getAccountAdSetInsights(
     {
       level: "adset",
       ...periodParams(period),
-      fields: "adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,reach",
+      fields: "adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,reach",
       limit: "500",
     },
     accessToken
@@ -454,6 +484,7 @@ async function getAccountAdSetInsights(
       impressions: Number(row.impressions ?? 0),
       clicks: Number(row.clicks ?? 0),
       linkClicks: Number(row.inline_link_clicks ?? 0),
+      conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
     };
   });
@@ -489,6 +520,7 @@ type AdInsightNode = {
   impressions?: string;
   clicks?: string;
   inline_link_clicks?: string;
+  actions?: ActionNode[];
   reach?: string;
 };
 
@@ -507,7 +539,7 @@ async function getAccountAdInsights(
     {
       level: "ad",
       ...periodParams(period),
-      fields: "ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,reach",
+      fields: "ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,reach",
       limit: "500",
     },
     accessToken
@@ -526,6 +558,7 @@ async function getAccountAdInsights(
       impressions: Number(row.impressions ?? 0),
       clicks: Number(row.clicks ?? 0),
       linkClicks: Number(row.inline_link_clicks ?? 0),
+      conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
     };
   });
@@ -537,6 +570,7 @@ type DailyInsightNode = {
   impressions?: string;
   clicks?: string;
   inline_link_clicks?: string;
+  actions?: ActionNode[];
   reach?: string;
 };
 
@@ -551,7 +585,7 @@ async function getAccountDailySeries(
       level: "account",
       ...periodParams(period),
       time_increment: "1",
-      fields: "spend,impressions,clicks,inline_link_clicks,reach",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
       limit: "500",
     },
     accessToken
@@ -566,6 +600,7 @@ async function getAccountDailySeries(
       impressions: Number(row.impressions ?? 0),
       clicks: Number(row.clicks ?? 0),
       linkClicks: Number(row.inline_link_clicks ?? 0),
+      conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
     }));
 }
@@ -585,6 +620,94 @@ async function getAccountReach(account: MetaAdAccount, period: Period, accessTok
   return Number(data.data?.[0]?.reach ?? 0);
 }
 
+/**
+ * Same call as getAccountReach, but scoped to an exact set of campaign ids
+ * via the Insights API's own `filtering` param — Meta computes the
+ * deduplicated reach over precisely that filtered set server-side, the same
+ * way it does for the unfiltered whole-account call above. This is the only
+ * correct way to answer "what's the reach of this one campaign (or this
+ * narrowed selection)": summing each campaign's own `reach` field would
+ * double-count anyone those campaigns both reached.
+ */
+async function getScopedAccountReach(
+  account: MetaAdAccount,
+  period: Period,
+  campaignIds: string[],
+  accessToken: string
+): Promise<number> {
+  const data = await graphGet<{ data: AccountInsightNode[] }>(
+    `/${account.id}/insights`,
+    {
+      level: "account",
+      ...periodParams(period),
+      filtering: JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }]),
+      fields: "reach",
+      limit: "1",
+    },
+    accessToken
+  );
+  return Number(data.data?.[0]?.reach ?? 0);
+}
+
+/**
+ * Reach for an exact campaign-id subset per account — used whenever the
+ * campaign/ad set/objective/status filters have narrowed the dashboard away
+ * from "every campaign in this account", so the KPI never silently keeps
+ * showing the whole account's number for a filtered view. An account with
+ * an empty campaign-id list (the filter matched nothing in it) contributes
+ * 0 without a wasted API call — an empty `filtering` value list isn't a
+ * meaningful request to send Meta.
+ */
+export async function getScopedReach(
+  period: Period,
+  campaignIdsByAccount: Record<string, string[]>,
+  allowedAccountIds?: string[]
+): Promise<AccountReach[]> {
+  const { accounts, tokenByAccountId } = await fetchAllBusinessAccounts();
+  const allowed = allowedAccountIds ? new Set(allowedAccountIds) : null;
+  const requested = accounts.filter(
+    (a) => Object.prototype.hasOwnProperty.call(campaignIdsByAccount, a.id) && (!allowed || allowed.has(a.id))
+  );
+
+  const settled = await Promise.allSettled(
+    requested.map(async (account) => {
+      const campaignIds = campaignIdsByAccount[account.id] ?? [];
+      if (campaignIds.length === 0) return { accountId: account.id, reach: 0 };
+      const token = tokenByAccountId.get(account.id)!;
+      const reach = await getScopedAccountReach(account, period, campaignIds, token);
+      return { accountId: account.id, reach };
+    })
+  );
+
+  const results: AccountReach[] = [];
+  for (const r of settled) {
+    if (r.status === "fulfilled") results.push(r.value);
+    else console.error("[meta-ads] failed to fetch scoped reach for an account", r.reason);
+  }
+  return results;
+}
+
+/**
+ * Same idea as getScopedReach, but also resolves the equivalent previous
+ * period when `compare` is on — the campaign-id subset is the same set of
+ * ids for both periods (a campaign's identity doesn't change between
+ * periods), which is what makes a like-for-like reach comparison possible
+ * once a campaign filter is active.
+ */
+export async function getScopedReachWithComparison(
+  period: Period,
+  compare: boolean,
+  campaignIdsByAccount: Record<string, string[]>,
+  allowedAccountIds?: string[]
+): Promise<{ resolvedRange: DateRange; currentReach: AccountReach[]; comparisonRange: DateRange | null; previousReach: AccountReach[] | null }> {
+  const resolvedRange = resolvePeriodRange(period);
+  const currentReach = await getScopedReach(period, campaignIdsByAccount, allowedAccountIds);
+  if (!compare) return { resolvedRange, currentReach, comparisonRange: null, previousReach: null };
+  const comparisonRange = previousEquivalentRange(resolvedRange);
+  const previousReach = await getScopedReach({ kind: "custom", range: comparisonRange }, campaignIdsByAccount, allowedAccountIds);
+  return { resolvedRange, currentReach, comparisonRange, previousReach };
+}
+
 type AudienceInsightNode = {
   age?: string;
   gender?: string;
@@ -592,6 +715,7 @@ type AudienceInsightNode = {
   impressions?: string;
   clicks?: string;
   inline_link_clicks?: string;
+  actions?: ActionNode[];
   reach?: string;
 };
 
@@ -611,7 +735,7 @@ async function getAccountDemographics(
       level: "account",
       ...periodParams(period),
       breakdowns: "age,gender",
-      fields: "spend,impressions,clicks,inline_link_clicks,reach",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
       limit: "500",
     },
     accessToken
@@ -625,6 +749,7 @@ async function getAccountDemographics(
     impressions: Number(row.impressions ?? 0),
     clicks: Number(row.clicks ?? 0),
     linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
     reach: Number(row.reach ?? 0),
   }));
 }
@@ -635,6 +760,7 @@ type RegionInsightNode = {
   impressions?: string;
   clicks?: string;
   inline_link_clicks?: string;
+  actions?: ActionNode[];
   reach?: string;
 };
 
@@ -648,7 +774,7 @@ async function getAccountRegions(account: MetaAdAccount, period: Period, accessT
       level: "account",
       ...periodParams(period),
       breakdowns: "region",
-      fields: "spend,impressions,clicks,inline_link_clicks,reach",
+      fields: "spend,impressions,clicks,inline_link_clicks,actions,reach",
       limit: "500",
     },
     accessToken
@@ -661,6 +787,7 @@ async function getAccountRegions(account: MetaAdAccount, period: Period, accessT
     impressions: Number(row.impressions ?? 0),
     clicks: Number(row.clicks ?? 0),
     linkClicks: Number(row.inline_link_clicks ?? 0),
+    conversations: parseConversations(row.actions),
     reach: Number(row.reach ?? 0),
   }));
 }

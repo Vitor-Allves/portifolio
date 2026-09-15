@@ -14,20 +14,33 @@ export type Totals = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  // null only when nothing in this scope ever reports it (no messaging-
+  // capable campaign in the set) — never confused with a real zero. See
+  // CampaignInsight.conversations for why the API itself can't tell those
+  // two cases apart at the row level; sumConversations below is what turns
+  // that per-row ambiguity into a scope-level answer.
+  conversations: number | null;
   reach: number;
 };
 
+/** null only when every row in scope is itself null (the metric never applies to anything selected) — otherwise sums whatever rows do report it, treating a null row as "contributes nothing" rather than "poisons the whole total". */
+function sumConversations(rows: { conversations: number | null }[]): number | null {
+  let total: number | null = null;
+  for (const row of rows) {
+    if (row.conversations !== null) total = (total ?? 0) + row.conversations;
+  }
+  return total;
+}
+
 export function sumTotals(campaigns: CampaignInsight[]): Totals {
-  return campaigns.reduce(
-    (acc, c) => ({
-      spend: acc.spend + c.spend,
-      impressions: acc.impressions + c.impressions,
-      clicks: acc.clicks + c.clicks,
-      linkClicks: acc.linkClicks + c.linkClicks,
-      reach: acc.reach + c.reach,
-    }),
-    { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 }
-  );
+  return {
+    spend: campaigns.reduce((sum, c) => sum + c.spend, 0),
+    impressions: campaigns.reduce((sum, c) => sum + c.impressions, 0),
+    clicks: campaigns.reduce((sum, c) => sum + c.clicks, 0),
+    linkClicks: campaigns.reduce((sum, c) => sum + c.linkClicks, 0),
+    conversations: sumConversations(campaigns),
+    reach: campaigns.reduce((sum, c) => sum + c.reach, 0),
+  };
 }
 
 /** CTR = cliques ÷ impressões × 100. null only when impressions is 0 (the ratio has no denominator, not "0%"). */
@@ -48,10 +61,18 @@ export function cpm(totals: Pick<Totals, "spend" | "impressions">): number | nul
   return (totals.spend / totals.impressions) * 1000;
 }
 
-/** Custo por conversa iniciada = investimento ÷ conversas iniciadas (linkClicks). null only when there are none. */
-export function costPerConversation(totals: Pick<Totals, "spend" | "linkClicks">): number | null {
-  if (totals.linkClicks <= 0) return null;
-  return totals.spend / totals.linkClicks;
+/**
+ * Custo por conversa = investimento ÷ conversas efetivamente iniciadas
+ * (Meta's onsite_conversion.messaging_conversation_started_7d — never
+ * inline_link_clicks, which is a link-click count, not a conversation).
+ * null both when the metric doesn't apply to anything in scope
+ * (conversations === null) and when it applies but the count is 0 — the
+ * two need different on-screen wording, so callers needing to tell them
+ * apart should check `conversations` directly rather than only this result.
+ */
+export function costPerConversation(totals: Pick<Totals, "spend" | "conversations">): number | null {
+  if (totals.conversations === null || totals.conversations <= 0) return null;
+  return totals.spend / totals.conversations;
 }
 
 /** % change of current vs. previous. null when there's no previous value to compare against. */
@@ -60,7 +81,15 @@ export function pctChange(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
-export type DailyPoint = { date: string; spend: number; impressions: number; clicks: number; linkClicks: number; reach: number };
+export type DailyPoint = {
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+  reach: number;
+};
 
 /**
  * Collapses per-account daily rows into one point per date, scoped to the
@@ -73,11 +102,20 @@ export function aggregateDailyByDate(daily: DailyMetrics[], accountIds: Set<stri
   const byDate = new Map<string, DailyPoint>();
   for (const row of daily) {
     if (!accountIds.has(row.accountId)) continue;
-    const entry = byDate.get(row.date) ?? { date: row.date, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 };
+    const entry = byDate.get(row.date) ?? {
+      date: row.date,
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+      linkClicks: 0,
+      conversations: null,
+      reach: 0,
+    };
     entry.spend += row.spend;
     entry.impressions += row.impressions;
     entry.clicks += row.clicks;
     entry.linkClicks += row.linkClicks;
+    if (row.conversations !== null) entry.conversations = (entry.conversations ?? 0) + row.conversations;
     entry.reach += row.reach;
     byDate.set(row.date, entry);
   }

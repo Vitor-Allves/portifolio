@@ -37,7 +37,14 @@ function periodLabel(range: { since: string; until: string }): string {
 }
 
 function campaignTotals(c: CampaignInsight): Totals {
-  return { spend: c.spend, impressions: c.impressions, clicks: c.clicks, linkClicks: c.linkClicks, reach: c.reach };
+  return {
+    spend: c.spend,
+    impressions: c.impressions,
+    clicks: c.clicks,
+    linkClicks: c.linkClicks,
+    conversations: c.conversations,
+    reach: c.reach,
+  };
 }
 
 export function computeStrategicInsights(input: {

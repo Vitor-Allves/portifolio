@@ -8,12 +8,31 @@
 
 import type { CampaignInsight } from "./meta-ads-types";
 
-export type KpiId = "spend" | "impressions" | "clicks" | "linkClicks" | "costPerConversation" | "ctr" | "cpc" | "cpm" | "reach";
+export type KpiId =
+  | "spend"
+  | "impressions"
+  | "clicks"
+  | "linkClicks"
+  | "conversations"
+  | "costPerConversation"
+  | "ctr"
+  | "cpc"
+  | "cpm"
+  | "reach";
 
 const GENERAL_PRIMARY: KpiId[] = ["spend", "impressions", "clicks", "reach"];
 
 // Meta's raw objective strings (see campaign-labels.ts's OBJECTIVE_LABELS
 // for the same set) grouped by what they're actually optimizing for.
+//
+// "conversations" (onsite_conversion.messaging_conversation_started_7d) is
+// only meaningful for the MESSAGES objective — it counts conversations
+// started on Messenger/Instagram/WhatsApp, not leads, purchases or app
+// installs. Those other conversion-style objectives each have their own
+// distinct Meta action_type (lead, purchase, mobile_app_install, ...) which
+// this dashboard does not parse yet, so they fall back to the honest,
+// objective-agnostic click metrics below rather than being mislabeled with
+// a conversation count that doesn't apply to them.
 const OBJECTIVE_PRIMARY: Record<string, KpiId[]> = {
   OUTCOME_AWARENESS: ["reach", "impressions", "cpm", "spend"],
   BRAND_AWARENESS: ["reach", "impressions", "cpm", "spend"],
@@ -26,15 +45,16 @@ const OBJECTIVE_PRIMARY: Record<string, KpiId[]> = {
   POST_ENGAGEMENT: ["clicks", "ctr", "impressions", "spend"],
   VIDEO_VIEWS: ["clicks", "ctr", "impressions", "spend"],
 
-  OUTCOME_LEADS: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  LEAD_GENERATION: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  MESSAGES: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  OUTCOME_SALES: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  CONVERSIONS: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  OUTCOME_APP_PROMOTION: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  APP_INSTALLS: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  PRODUCT_CATALOG_SALES: ["linkClicks", "costPerConversation", "ctr", "spend"],
-  STORE_VISITS: ["linkClicks", "costPerConversation", "ctr", "spend"],
+  MESSAGES: ["conversations", "costPerConversation", "ctr", "spend"],
+
+  OUTCOME_LEADS: ["clicks", "ctr", "cpc", "spend"],
+  LEAD_GENERATION: ["clicks", "ctr", "cpc", "spend"],
+  OUTCOME_SALES: ["clicks", "ctr", "cpc", "spend"],
+  CONVERSIONS: ["clicks", "ctr", "cpc", "spend"],
+  OUTCOME_APP_PROMOTION: ["clicks", "ctr", "cpc", "spend"],
+  APP_INSTALLS: ["clicks", "ctr", "cpc", "spend"],
+  PRODUCT_CATALOG_SALES: ["clicks", "ctr", "cpc", "spend"],
+  STORE_VISITS: ["clicks", "ctr", "cpc", "spend"],
 };
 
 /**

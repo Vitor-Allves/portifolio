@@ -4,13 +4,24 @@ import { useMemo, useState } from "react";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation } from "@/lib/metrics";
 
-export type BreakdownMetric = "spend" | "impressions" | "clicks" | "linkClicks" | "costPerConversation" | "ctr" | "cpc" | "cpm" | "reach";
+export type BreakdownMetric =
+  | "spend"
+  | "impressions"
+  | "clicks"
+  | "linkClicks"
+  | "conversations"
+  | "costPerConversation"
+  | "ctr"
+  | "cpc"
+  | "cpm"
+  | "reach";
 
 const METRICS: { id: BreakdownMetric; label: string }[] = [
   { id: "spend", label: "Investimento" },
   { id: "impressions", label: "Impressões" },
-  { id: "clicks", label: "Cliques" },
-  { id: "linkClicks", label: "Conversa iniciada" },
+  { id: "clicks", label: "Cliques totais" },
+  { id: "linkClicks", label: "Cliques no link" },
+  { id: "conversations", label: "Conversa iniciada" },
   { id: "costPerConversation", label: "Custo/Conversa" },
   { id: "ctr", label: "CTR" },
   { id: "cpc", label: "CPC" },
@@ -18,7 +29,7 @@ const METRICS: { id: BreakdownMetric; label: string }[] = [
   { id: "reach", label: "Alcance" },
 ];
 
-type BucketTotals = { spend: number; impressions: number; clicks: number; linkClicks: number; reach: number };
+type BucketTotals = { spend: number; impressions: number; clicks: number; linkClicks: number; conversations: number | null; reach: number };
 
 function metricValue(totals: BucketTotals, metric: BreakdownMetric): number | null {
   switch (metric) {
@@ -30,6 +41,8 @@ function metricValue(totals: BucketTotals, metric: BreakdownMetric): number | nu
       return totals.clicks;
     case "linkClicks":
       return totals.linkClicks;
+    case "conversations":
+      return totals.conversations;
     case "costPerConversation":
       return costPerConversation(totals);
     case "ctr":
@@ -53,6 +66,7 @@ function formatValue(value: number, metric: BreakdownMetric): string {
     case "impressions":
     case "clicks":
     case "linkClicks":
+    case "conversations":
     case "reach":
       return formatInteger(value);
     case "ctr":
@@ -101,11 +115,12 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
     const byBucket = new Map<string, BucketTotals>();
     for (const seg of segments) {
       const key = bucketKey(seg);
-      const entry = byBucket.get(key) ?? { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 };
+      const entry = byBucket.get(key) ?? { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, conversations: null, reach: 0 };
       entry.spend += seg.spend;
       entry.impressions += seg.impressions;
       entry.clicks += seg.clicks;
       entry.linkClicks += seg.linkClicks;
+      if (seg.conversations !== null) entry.conversations = (entry.conversations ?? 0) + seg.conversations;
       entry.reach += seg.reach;
       byBucket.set(key, entry);
     }
