@@ -4,7 +4,7 @@ import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { isFullAdmin } from "@/lib/session-scope";
 import { isActionAllowed } from "@/lib/client-permissions";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
-import { buildReportPdf, reportFileName, type ReportPdfInput } from "@/lib/pdf-report-core";
+import { buildReportPdf, reportFileName, type ReportPdfInput, type PdfReportType } from "@/lib/pdf-report-core";
 import { loadReportAssetsServer } from "@/lib/pdf-report-server-assets";
 import {
   resolveRecipient,
@@ -37,7 +37,14 @@ type RequestBody = {
   title?: unknown;
   filters?: unknown;
   recipientClientId?: unknown;
+  reportType?: unknown;
 };
+
+const PDF_REPORT_TYPES: PdfReportType[] = ["executive", "detailed", "audience"];
+
+function sanitizeReportType(input: unknown): PdfReportType {
+  return typeof input === "string" && (PDF_REPORT_TYPES as string[]).includes(input) ? (input as PdfReportType) : "detailed";
+}
 
 export async function POST(req: NextRequest) {
   const scope = await sessionScopeFromRequest(req);
@@ -56,6 +63,7 @@ export async function POST(req: NextRequest) {
   }
 
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Relatório de campanhas";
+  const reportType = sanitizeReportType(body.reportType);
   const filters = sanitizeReportFilters(body.filters);
   if (!filters) {
     return NextResponse.json({ error: "Filtros de relatório inválidos." }, { status: 400 });
@@ -77,6 +85,7 @@ export async function POST(req: NextRequest) {
 
     const input: ReportPdfInput = {
       title,
+      reportType,
       clientLabel: recipient.label,
       isClientScoped: recipient.isClientScoped,
       allowedColumns,
@@ -118,7 +127,7 @@ export async function POST(req: NextRequest) {
       action: "report.generate",
       targetType: "report",
       targetLabel: recipient.label ?? "Interno",
-      metadata: { format: "pdf", recipientClientId },
+      metadata: { format: "pdf", recipientClientId, reportType },
     });
 
     return new NextResponse(pdfBuffer, {

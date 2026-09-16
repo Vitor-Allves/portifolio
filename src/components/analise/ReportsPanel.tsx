@@ -6,6 +6,7 @@ import { DATE_PRESETS } from "@/lib/meta-ads-types";
 import { formatShortDate } from "@/lib/format";
 import { toSavedIdFilter } from "@/lib/campaign-filters";
 import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-templates-types";
+import type { PdfReportType } from "@/lib/pdf-report-core";
 import type { ClientAccessSummary } from "@/lib/client-access-types";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
@@ -61,16 +62,63 @@ async function downloadFromServer(url: string, body: unknown, fallbackFileName: 
   }
 }
 
-async function downloadPdfFromServer(body: { title: string; filters: ReportFilters; recipientClientId?: string | null }, fallbackFileName: string): Promise<void> {
+async function downloadPdfFromServer(
+  body: { title: string; filters: ReportFilters; reportType?: PdfReportType; recipientClientId?: string | null },
+  fallbackFileName: string
+): Promise<void> {
   return downloadFromServer("/api/analise/reports/pdf/", body, fallbackFileName, "Não foi possível gerar o PDF. Tente novamente.");
 }
 
 async function downloadCsvFromServer(
-  body: { kind: "campaigns" | "account-summary"; filters: ReportFilters; recipientClientId?: string | null },
+  body: { kind: "campaigns" | "account-summary" | "ads"; filters: ReportFilters; recipientClientId?: string | null },
   fallbackFileName: string
 ): Promise<void> {
   return downloadFromServer("/api/analise/reports/csv/", body, fallbackFileName, "Não foi possível gerar a exportação. Tente novamente.");
 }
+
+// The five fixed, always-available report shapes — distinct from the
+// "Modelos de relatório" below (saved FILTER presets that still render the
+// one full PDF). These vary what's actually drawn/exported, always against
+// whatever filters are active on screen right now, so there's no separate
+// scope to configure.
+type PredefinedPdfReport = { id: PdfReportType; format: "pdf"; label: string; description: string };
+type PredefinedCsvReport = { id: "creative" | "raw"; format: "csv"; csvKind: "ads" | "campaigns"; label: string; description: string };
+type PredefinedReport = PredefinedPdfReport | PredefinedCsvReport;
+
+const PREDEFINED_REPORTS: PredefinedReport[] = [
+  {
+    id: "executive",
+    format: "pdf",
+    label: "Executivo",
+    description: "Uma página com os KPIs principais, resumo executivo e evolução — para decisão rápida, sem detalhe campanha a campanha.",
+  },
+  {
+    id: "detailed",
+    format: "pdf",
+    label: "Performance por campanha",
+    description: "O relatório completo: KPIs, evolução, distribuição, hierarquia campanha → conjunto → anúncio e análise estratégica.",
+  },
+  {
+    id: "audience",
+    format: "pdf",
+    label: "Público e distribuição",
+    description: "Só os breakdowns de público e entrega: idade/gênero, região, plataforma, posicionamento, dispositivo, país e horário.",
+  },
+  {
+    id: "creative",
+    format: "csv",
+    csvKind: "ads",
+    label: "Criativos e qualidade",
+    description: "Uma linha por anúncio: ranking de qualidade/engajamento/conversão, miniatura, título, corpo e CTA do criativo.",
+  },
+  {
+    id: "raw",
+    format: "csv",
+    csvKind: "campaigns",
+    label: "Exportação bruta completa",
+    description: "Todos os dados por campanha em CSV, prontos para sua própria planilha ou BI.",
+  },
+];
 
 type ReportsPanelProps = {
   campaigns: CampaignInsight[];
@@ -180,6 +228,9 @@ export default function ReportsPanel({
   const [exportingCsv, setExportingCsv] = useState<"campaigns" | "account-summary" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  const [predefinedLoading, setPredefinedLoading] = useState<PredefinedReport["id"] | null>(null);
+  const [predefinedError, setPredefinedError] = useState<{ id: PredefinedReport["id"]; message: string } | null>(null);
+
   useEffect(() => {
     if (!dbConfigured) return;
     let cancelled = false;
@@ -235,6 +286,37 @@ export default function ReportsPanel({
       objectiveIds: toSavedIdFilter(objectiveIds, objectiveOptions),
       statusIds: toSavedIdFilter(statusIds, statusOptions),
     };
+  }
+
+  async function downloadPredefined(report: PredefinedReport) {
+    if (predefinedLoading) return;
+    if (report.format === "pdf" && reachPending) {
+      setPredefinedError({ id: report.id, message: "Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF." });
+      return;
+    }
+    setPredefinedLoading(report.id);
+    setPredefinedError(null);
+    try {
+      const filters = currentFiltersForExport();
+      if (report.format === "pdf") {
+        await downloadPdfFromServer(
+          { title: `Relatório ${report.label.toLowerCase()}`, filters, reportType: report.id, recipientClientId: recipientClientId || null },
+          previewFileNameFor(clientLabel, resolvedRange)
+        );
+      } else {
+        await downloadCsvFromServer(
+          { kind: report.csvKind, filters, recipientClientId: recipientClientId || null },
+          `${report.id === "creative" ? "criativos-e-qualidade" : "exportacao-completa"}-${today}.csv`
+        );
+      }
+    } catch (err) {
+      setPredefinedError({
+        id: report.id,
+        message: err instanceof ExportError ? err.message : `Não foi possível gerar. Tente novamente.`,
+      });
+    } finally {
+      setPredefinedLoading(null);
+    }
   }
 
   async function exportCampaigns() {
@@ -446,6 +528,39 @@ export default function ReportsPanel({
             </button>
           </div>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
+        <h3 className="text-[13px] font-medium text-intel-text mb-1">Relatórios predefinidos</h3>
+        <p className="text-[12px] text-intel-text-dim mb-5">
+          Formatos prontos para os filtros ativos agora — {periodLabel}. Cada indicador não autorizado ou sem dado real no período fica de fora, nunca aparece vazio.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {PREDEFINED_REPORTS.map((report) => (
+            <div key={report.id} className="rounded-xl border border-white/[0.07] bg-intel-surface-2 p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13px] text-intel-text font-medium">{report.label}</p>
+                <span className="text-[10px] tracking-[0.08em] uppercase text-intel-text-dim/70 shrink-0">{report.format}</span>
+              </div>
+              <p className="text-[11.5px] text-intel-text-dim leading-relaxed flex-1">{report.description}</p>
+              <button
+                type="button"
+                onClick={() => downloadPredefined(report)}
+                disabled={campaigns.length === 0 || predefinedLoading !== null || (report.format === "pdf" && reachPending)}
+                aria-busy={predefinedLoading === report.id}
+                className="self-start mt-1 text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50 disabled:cursor-wait"
+              >
+                {predefinedLoading === report.id ? "Gerando..." : `Baixar ${report.format.toUpperCase()}`}
+              </button>
+              {predefinedError?.id === report.id && (
+                <p className="text-[11.5px] text-intel-red" role="alert">
+                  {predefinedError.message}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+        {campaigns.length === 0 && <p className="mt-3 text-[12px] text-intel-text-dim">Sem campanhas no período para gerar relatórios.</p>}
       </div>
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">

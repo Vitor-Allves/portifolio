@@ -4,11 +4,11 @@ import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { isFullAdmin } from "@/lib/session-scope";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
 import { resolveRecipient, isRecipientError, buildAllowedColumns, applyHiddenFilters, fetchFilteredReportData } from "@/lib/report-data";
-import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
+import { objectiveLabel, statusLabel, ctaLabel, qualityRankingLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation, roas, sumTotals, type Totals } from "@/lib/metrics";
 import { rowsToCsv } from "@/lib/csv";
-import type { CampaignInsight } from "@/lib/meta-ads-types";
+import type { AdInsight, AdSetInsight, CampaignInsight } from "@/lib/meta-ads-types";
 import type { AllowedColumns } from "@/lib/pdf-report-core";
 import { isActionAllowed, type CampaignColumnId } from "@/lib/client-permissions";
 import { writeAudit } from "@/lib/audit-log";
@@ -130,12 +130,71 @@ const EXTRA_ENGAGEMENT_IDS: CampaignColumnId[] = ["postEngagement", "videoViews"
 const CAMPAIGN_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", "reach", ...EXTRA_CONVERSION_IDS, ...EXTRA_ENGAGEMENT_IDS];
 const ACCOUNT_SUMMARY_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "conversations", "costPerConversation", "ctr", "cpc", "cpm", ...EXTRA_CONVERSION_IDS, ...EXTRA_ENGAGEMENT_IDS];
 
+// Ids whose Totals field is null purely when the account/objective never
+// reports that feature at all (Pixel/CAPI not configured, non-messaging
+// objective, ...) — as opposed to costPerConversation/ctr/cpc/cpm/roas,
+// which can just as legitimately be null from a real zero denominator for
+// this specific filter/period. Only these are eligible to have their whole
+// column dropped when every row is empty; a derived ratio always keeps its
+// column, showing "—" per row like everywhere else in the app.
+const STRUCTURAL_NULLABLE_IDS: CampaignColumnId[] = [
+  "conversations",
+  "purchases",
+  "purchaseValue",
+  "leads",
+  "addToCart",
+  "completeRegistrations",
+  "postEngagement",
+  "videoViews",
+  "videoCompletions",
+  "outboundClicks",
+  "uniqueClicks",
+  "estimatedAdRecallers",
+];
+
+function structuralRawValue(id: CampaignColumnId, totals: Totals): number | null | undefined {
+  switch (id) {
+    case "conversations":
+      return totals.conversations;
+    case "purchases":
+      return totals.purchases;
+    case "purchaseValue":
+      return totals.purchaseValue;
+    case "leads":
+      return totals.leads;
+    case "addToCart":
+      return totals.addToCart;
+    case "completeRegistrations":
+      return totals.completeRegistrations;
+    case "postEngagement":
+      return totals.postEngagement;
+    case "videoViews":
+      return totals.videoViews;
+    case "videoCompletions":
+      return totals.videoCompletions;
+    case "outboundClicks":
+      return totals.outboundClicks;
+    case "uniqueClicks":
+      return totals.uniqueClicks;
+    case "estimatedAdRecallers":
+      return totals.estimatedAdRecallers;
+    default:
+      return undefined;
+  }
+}
+
+/** A structurally-nullable column is dropped from the export entirely when every row has nothing to report for it — never left in as a column of "Não disponível" cells. Every other column (core metrics, derived ratios) is always kept. */
+function isColumnPopulated(id: CampaignColumnId, rows: Totals[]): boolean {
+  if (!STRUCTURAL_NULLABLE_IDS.includes(id)) return true;
+  return rows.some((r) => structuralRawValue(id, r) !== null);
+}
+
 function buildCampaignsCsv(campaigns: CampaignInsight[], allowed: AllowedColumns): string {
   const header = ["Campanha"];
   if (isAllowed(allowed, "account")) header.push("Conta");
   if (isAllowed(allowed, "objective")) header.push("Objetivo");
   if (isAllowed(allowed, "status")) header.push("Status");
-  const metricIds = CAMPAIGN_METRIC_IDS.filter((id) => isAllowed(allowed, id));
+  const metricIds = CAMPAIGN_METRIC_IDS.filter((id) => isAllowed(allowed, id) && isColumnPopulated(id, campaigns));
   for (const id of metricIds) header.push(id === "reach" ? "Alcance (campanha, não some entre linhas)" : (METRIC_COLUMN_LABELS[id] ?? id));
 
   const rows = campaigns.map((c) => {
@@ -159,13 +218,58 @@ function buildAccountSummaryCsv(campaigns: CampaignInsight[], allowed: AllowedCo
   }
 
   const header = ["Conta", "Campanhas"];
-  const metricIds = ACCOUNT_SUMMARY_METRIC_IDS.filter((id) => isAllowed(allowed, id));
+  const metricIds = ACCOUNT_SUMMARY_METRIC_IDS.filter((id) => isAllowed(allowed, id) && isColumnPopulated(id, campaigns));
   for (const id of metricIds) header.push(METRIC_COLUMN_LABELS[id] ?? id);
 
   const rows = [...byAccount.values()].map((entry) => {
     const totals = sumTotals(entry.campaigns);
     const row = [entry.name, String(entry.campaigns.length)];
     for (const id of metricIds) row.push(metricCell(id, totals) ?? "—");
+    return row;
+  });
+
+  return rowsToCsv([header, ...rows]);
+}
+
+// Ad-level quality/engagement/conversion rankings and creative fields
+// (thumbnail, title, body, CTA) aren't part of CampaignColumnId at all —
+// same as the live dashboard's own ad cards, they're visible to anyone who
+// can reach the campaigns data, with no separate granular toggle. Only the
+// underlying performance metrics (spend/impressions/clicks/reach/
+// conversations) go through the usual allowedColumns gate.
+const AD_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "reach", "conversations"];
+
+function buildAdsCsv(ads: AdInsight[], campaigns: CampaignInsight[], adSets: AdSetInsight[], allowed: AllowedColumns): string {
+  const campaignNameById = new Map(campaigns.map((c) => [c.campaignId, c.campaignName]));
+  const adSetNameById = new Map(adSets.map((a) => [a.adSetId, a.adSetName]));
+
+  const header = ["Campanha", "Conjunto", "Anúncio"];
+  if (isAllowed(allowed, "status")) header.push("Status");
+  const metricIds = AD_METRIC_IDS.filter((id) => isAllowed(allowed, id));
+  for (const id of metricIds) header.push(METRIC_COLUMN_LABELS[id] ?? id);
+  header.push(
+    "Ranking de qualidade",
+    "Ranking de engajamento",
+    "Ranking de conversão",
+    "Título do criativo",
+    "Corpo do criativo",
+    "Chamada para ação (CTA)",
+    "URL da miniatura"
+  );
+
+  const rows = ads.map((ad) => {
+    const row = [campaignNameById.get(ad.campaignId) ?? "—", adSetNameById.get(ad.adSetId) ?? "—", ad.adName];
+    if (isAllowed(allowed, "status")) row.push(statusLabel(ad.status));
+    for (const id of metricIds) row.push(metricCell(id, ad) ?? "—");
+    row.push(
+      ad.qualityRanking ? qualityRankingLabel(ad.qualityRanking) : "—",
+      ad.engagementRateRanking ? qualityRankingLabel(ad.engagementRateRanking) : "—",
+      ad.conversionRateRanking ? qualityRankingLabel(ad.conversionRateRanking) : "—",
+      ad.creativeTitle ?? "—",
+      ad.creativeBody ?? "—",
+      ad.callToAction ? ctaLabel(ad.callToAction) : "—",
+      ad.thumbnailUrl ?? "—"
+    );
     return row;
   });
 
@@ -199,7 +303,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   }
 
-  const kind = body.kind === "account-summary" ? "account-summary" : body.kind === "campaigns" ? "campaigns" : null;
+  const kind =
+    body.kind === "account-summary" ? "account-summary" : body.kind === "campaigns" ? "campaigns" : body.kind === "ads" ? "ads" : null;
   if (!kind) {
     return NextResponse.json({ error: "Tipo de exportação inválido." }, { status: 400 });
   }
@@ -218,11 +323,26 @@ export async function POST(req: NextRequest) {
   const allowedColumns = buildAllowedColumns(recipient.permissions);
 
   try {
-    const { filteredCampaigns } = await fetchFilteredReportData(effectiveFilters, recipient);
-    const csv = kind === "campaigns" ? buildCampaignsCsv(filteredCampaigns, allowedColumns) : buildAccountSummaryCsv(filteredCampaigns, allowedColumns);
+    const { freshData, filteredCampaigns, scopedAdSets, selectedAdSetIds } = await fetchFilteredReportData(effectiveFilters, recipient);
+    let csv: string;
+    let kindSlug: string;
+    if (kind === "campaigns") {
+      csv = buildCampaignsCsv(filteredCampaigns, allowedColumns);
+      kindSlug = "campanhas";
+    } else if (kind === "account-summary") {
+      csv = buildAccountSummaryCsv(filteredCampaigns, allowedColumns);
+      kindSlug = "resumo-por-conta";
+    } else {
+      const filteredCampaignIds = new Set(filteredCampaigns.map((c) => c.campaignId));
+      const scopedAds = freshData.ads.filter(
+        (a) => filteredCampaignIds.has(a.campaignId) && (selectedAdSetIds === null || selectedAdSetIds.has(a.adSetId))
+      );
+      csv = buildAdsCsv(scopedAds, filteredCampaigns, scopedAdSets, allowedColumns);
+      kindSlug = "criativos-e-qualidade";
+    }
 
     const recipientSlug = slugify(recipient.label ?? "consolidado");
-    const fileName = `${kind === "campaigns" ? "campanhas" : "resumo-por-conta"}_${recipientSlug}_${effectiveFilters.period.kind === "custom" ? `${effectiveFilters.period.range.since}_a_${effectiveFilters.period.range.until}` : effectiveFilters.period.preset}.csv`;
+    const fileName = `${kindSlug}_${recipientSlug}_${effectiveFilters.period.kind === "custom" ? `${effectiveFilters.period.range.since}_a_${effectiveFilters.period.range.until}` : effectiveFilters.period.preset}.csv`;
 
     await writeAudit({
       actorUserId: scope.userId,
