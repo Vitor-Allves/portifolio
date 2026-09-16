@@ -110,7 +110,6 @@ export async function POST(req: NextRequest) {
       platforms: freshData.platforms.filter((p) => resolvedAccountIds.has(p.accountId)),
       placements: freshData.placements.filter((p) => resolvedAccountIds.has(p.accountId)),
       devices: freshData.devices.filter((d) => resolvedAccountIds.has(d.accountId)),
-      countries: freshData.countries.filter((c) => resolvedAccountIds.has(c.accountId)),
       hours: freshData.hours.filter((h) => resolvedAccountIds.has(h.accountId)),
       partialAccountNames: freshData.partialAccounts.map((a) => a.name),
     };

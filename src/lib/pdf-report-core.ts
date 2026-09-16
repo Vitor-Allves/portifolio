@@ -31,7 +31,6 @@ import type {
   PlatformSegment,
   PlacementSegment,
   DeviceSegment,
-  CountrySegment,
   HourSegment,
 } from "./meta-ads-types";
 import type { CampaignColumnId } from "./client-permissions";
@@ -113,7 +112,6 @@ export type ReportPdfInput = {
   platforms: PlatformSegment[];
   placements: PlacementSegment[];
   devices: DeviceSegment[];
-  countries: CountrySegment[];
   hours: HourSegment[];
   /** Accounts that failed to load for this request — surfaced so totals are never mistaken for "genuinely zero". */
   partialAccountNames: string[];
@@ -813,12 +811,13 @@ function drawAdSetTableChunk(doc: jsPDF, ctx: Ctx, y: number, campaignName: stri
  * answers poorly. Mirrors the dashboard's own "Melhores horários" table.
  */
 function drawTopHoursTable(doc: jsPDF, ctx: Ctx, y: number, hours: HourSegment[], allowed: AllowedColumns): number {
-  const byHour = new Map<string, { spend: number; clicks: number; impressions: number }>();
+  const byHour = new Map<string, { spend: number; clicks: number; impressions: number; conversations: number | null }>();
   for (const h of hours) {
-    const entry = byHour.get(h.hour) ?? { spend: 0, clicks: 0, impressions: 0 };
+    const entry = byHour.get(h.hour) ?? { spend: 0, clicks: 0, impressions: 0, conversations: null };
     entry.spend += h.spend;
     entry.clicks += h.clicks;
     entry.impressions += h.impressions;
+    if (h.conversations !== null) entry.conversations = (entry.conversations ?? 0) + h.conversations;
     byHour.set(h.hour, entry);
   }
   const ranked = [...byHour.entries()]
@@ -826,6 +825,7 @@ function drawTopHoursTable(doc: jsPDF, ctx: Ctx, y: number, hours: HourSegment[]
     .sort((a, b) => b.spend - a.spend)
     .slice(0, 6);
   if (ranked.length === 0) return y;
+  const hasConversations = ranked.some((r) => r.conversations !== null);
 
   y = sectionTitle(doc, ctx, y, "Melhores horários do período");
   doc.setFont(ctx.fonts.body, "normal");
@@ -838,10 +838,14 @@ function drawTopHoursTable(doc: jsPDF, ctx: Ctx, y: number, hours: HourSegment[]
   );
   y += 8;
 
-  const extraCols: { label: string; render: (r: { spend: number; clicks: number; impressions: number }) => string }[] = [];
+  type HourRow = { hour: string; spend: number; clicks: number; impressions: number; conversations: number | null };
+  const extraCols: { label: string; render: (r: HourRow) => string }[] = [];
   if (isAllowed(allowed, "clicks")) extraCols.push({ label: "Cliques", render: (r) => formatInteger(r.clicks) });
   if (isAllowed(allowed, "ctr")) {
     extraCols.push({ label: "CTR", render: (r) => (r.impressions > 0 ? formatPercent((r.clicks / r.impressions) * 100) : "—") });
+  }
+  if (isAllowed(allowed, "conversations") && hasConversations) {
+    extraCols.push({ label: "Conversa iniciada", render: (r) => (r.conversations === null ? "Não disponível" : formatInteger(r.conversations)) });
   }
 
   autoTable(doc, {
@@ -1443,10 +1447,12 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     const byGender = new Map<string, number>();
     for (const a of input.audience) {
       if (a.conversations === null) continue;
-      byAge.set(a.age, (byAge.get(a.age) ?? 0) + a.conversations);
-      byGender.set(a.gender, (byGender.get(a.gender) ?? 0) + a.conversations);
+      // "unknown" (Meta couldn't determine age/gender for this row) is
+      // excluded outright — not an actionable segment to read here.
+      if (a.age !== "unknown") byAge.set(a.age, (byAge.get(a.age) ?? 0) + a.conversations);
+      if (a.gender !== "unknown") byGender.set(a.gender, (byGender.get(a.gender) ?? 0) + a.conversations);
     }
-    const genderLabel: Record<string, string> = { male: "Masculino", female: "Feminino", unknown: "Não informado" };
+    const genderLabel: Record<string, string> = { male: "Masculino", female: "Feminino" };
     drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2, h: 52 }, {
       title: "Público por idade",
       caption: "Métrica: Conversa iniciada",
@@ -1505,23 +1511,14 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 58;
   }
 
-  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && (input.devices.length > 0 || input.countries.length > 0)) {
+  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && input.devices.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    const chartW2d = (CONTENT_W - 8) / 2;
     const byDevice = new Map<string, number>();
     for (const d of input.devices) byDevice.set(d.device, (byDevice.get(d.device) ?? 0) + d.spend);
-    const byCountry = new Map<string, number>();
-    for (const c of input.countries) byCountry.set(c.country, (byCountry.get(c.country) ?? 0) + c.spend);
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2d, h: 52 }, {
+    drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 52 }, {
       title: "Distribuição por dispositivo",
       caption: "Métrica: Investimento (R$)",
       items: [...byDevice.entries()].map(([label, value]) => ({ label: deviceLabel[label] ?? label, value })).sort((a, b) => b.value - a.value),
-      formatValue: formatCurrencyBRL,
-    });
-    drawBarList(doc, ctx, { x: MARGIN_X + chartW2d + 8, y, w: chartW2d, h: 52 }, {
-      title: "Distribuição por país",
-      caption: "Métrica: Investimento (R$)",
-      items: [...byCountry.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 8),
       formatValue: formatCurrencyBRL,
     });
     y += 58;
