@@ -46,7 +46,7 @@ import {
   formatDateTimeTz,
   REFERENCE_TIME_ZONE,
 } from "./format";
-import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate, type Totals } from "./metrics";
+import { sumTotals, ctr, cpc, cpm, costPerConversation, roas, pctChange, aggregateDailyByDate, type Totals } from "./metrics";
 import { computeStrategicInsights, type StrategicInsights, type InsightItem } from "./strategic-insights";
 import { primaryKpiIds, type KpiId } from "./kpi-hierarchy";
 
@@ -338,8 +338,8 @@ const METRIC_DEFS: Record<KpiId, MetricColDef> = {
 const METRIC_GROUP_A: KpiId[] = ["spend", "impressions", "reach", "cpm"];
 const METRIC_GROUP_B: KpiId[] = ["clicks", "linkClicks", "ctr", "cpc", "conversations", "costPerConversation"];
 
-function isAllowed(allowed: AllowedColumns, id: KpiId): boolean {
-  return allowed.has(id as unknown as CampaignColumnId);
+function isAllowed(allowed: AllowedColumns, id: CampaignColumnId): boolean {
+  return allowed.has(id);
 }
 
 function allowedMetricDefs(allowed: AllowedColumns, ids: KpiId[]): MetricColDef[] {
@@ -360,7 +360,7 @@ function formatMetricCell(def: MetricColDef, row: MetricRow): string {
 type DeltaPolarity = "higher-better" | "lower-better" | "neutral";
 
 type KpiDef = {
-  id: KpiId;
+  id: CampaignColumnId;
   label: string;
   polarity: DeltaPolarity;
   isPercent: boolean; // percentage-point delta instead of relative % delta
@@ -379,6 +379,29 @@ const KPI_DEFS: KpiDef[] = [
   { id: "cpc", label: "CPC", polarity: "lower-better", isPercent: false, value: (t) => cpc(t), format: formatCurrencyBRL },
   { id: "cpm", label: "CPM", polarity: "lower-better", isPercent: false, value: (t) => cpm(t), format: formatCurrencyBRL },
   { id: "reach", label: "Alcance", polarity: "neutral", isPercent: false, value: (_t, reach) => reach, format: formatInteger },
+];
+
+// Same KpiDef/drawKpiGrid machinery as KPI_DEFS above, reused for the two
+// supplementary grids below (Pixel/CAPI conversions + engagement/video) —
+// deliberately NOT folded into KPI_DEFS/KpiId/primaryKpiIds: those exist to
+// pick which 4 indicators lead the report based on campaign objective, and
+// none of these metrics should ever compete for that "primary" billing.
+const EXTRA_CONVERSION_KPI_DEFS: KpiDef[] = [
+  { id: "purchases", label: "Compras", polarity: "higher-better", isPercent: false, value: (t) => t.purchases, format: formatInteger },
+  { id: "purchaseValue", label: "Valor de compra", polarity: "higher-better", isPercent: false, value: (t) => t.purchaseValue, format: formatCurrencyBRL },
+  { id: "roas", label: "ROAS", polarity: "higher-better", isPercent: false, value: (t) => roas(t), format: (n) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x` },
+  { id: "leads", label: "Leads", polarity: "higher-better", isPercent: false, value: (t) => t.leads, format: formatInteger },
+  { id: "addToCart", label: "Adicionar ao carrinho", polarity: "higher-better", isPercent: false, value: (t) => t.addToCart, format: formatInteger },
+  { id: "completeRegistrations", label: "Cadastro completo", polarity: "higher-better", isPercent: false, value: (t) => t.completeRegistrations, format: formatInteger },
+];
+
+const EXTRA_ENGAGEMENT_KPI_DEFS: KpiDef[] = [
+  { id: "postEngagement", label: "Engajamento", polarity: "higher-better", isPercent: false, value: (t) => t.postEngagement, format: formatInteger },
+  { id: "videoViews", label: "Visualizações de vídeo", polarity: "higher-better", isPercent: false, value: (t) => t.videoViews, format: formatInteger },
+  { id: "videoCompletions", label: "Vídeo assistido até o fim", polarity: "higher-better", isPercent: false, value: (t) => t.videoCompletions, format: formatInteger },
+  { id: "outboundClicks", label: "Cliques para fora da plataforma", polarity: "higher-better", isPercent: false, value: (t) => t.outboundClicks, format: formatInteger },
+  { id: "uniqueClicks", label: "Cliques únicos", polarity: "higher-better", isPercent: false, value: (t) => t.uniqueClicks, format: formatInteger },
+  { id: "estimatedAdRecallers", label: "Pessoas que lembrarão do anúncio", polarity: "higher-better", isPercent: false, value: (t) => t.estimatedAdRecallers, format: formatInteger },
 ];
 
 function deltaColor(delta: number, polarity: DeltaPolarity): [number, number, number] {
@@ -734,18 +757,20 @@ function drawAdSetTableChunk(doc: jsPDF, ctx: Ctx, y: number, campaignName: stri
   return (doc as any).lastAutoTable.finalY + 6;
 }
 
-function campaignInfoCardHeight(metricCount: number): number {
-  if (metricCount === 0) return 17;
+function campaignInfoCardHeight(metricCount: number, hasBudget: boolean): number {
+  const budgetExtra = hasBudget ? 5 : 0;
+  if (metricCount === 0) return 17 + budgetExtra;
   const cols = Math.min(4, metricCount);
   const rows = Math.ceil(metricCount / cols);
-  return 15 + rows * 9.5 + 4;
+  return 15 + budgetExtra + rows * 9.5 + 4;
 }
 
 /** Name, objective, status and every allowed consolidated metric for one campaign — always the campaign's OWN full totals (never derived from whatever ad-set subset is listed below it), so a reader can never mistake a partial ad-set detail for the campaign's real total. */
 function drawCampaignInfoCard(doc: jsPDF, ctx: Ctx, y: number, campaign: CampaignInsight, allowed: AllowedColumns): number {
   const top = y;
+  const hasBudget = campaign.dailyBudget !== null || campaign.lifetimeBudget !== null;
   setColor(doc, "setFillColor", NAVY);
-  doc.rect(MARGIN_X, top, 1.3, campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length) - 3, "F");
+  doc.rect(MARGIN_X, top, 1.3, campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length, hasBudget) - 3, "F");
 
   doc.setFont(ctx.fonts.body, "bold");
   doc.setFontSize(11.5);
@@ -766,6 +791,17 @@ function drawCampaignInfoCard(doc: jsPDF, ctx: Ctx, y: number, campaign: Campaig
   if (metaLine) doc.text(metaLine, MARGIN_X + 5, y + 11);
 
   y += 15;
+  if (hasBudget) {
+    doc.setFont(ctx.fonts.body, "normal");
+    doc.setFontSize(7.4);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    const parts: string[] = [];
+    if (campaign.dailyBudget !== null) parts.push(`Orçamento diário: ${formatCurrencyBRL(campaign.dailyBudget)}`);
+    if (campaign.lifetimeBudget !== null) parts.push(`Orçamento total: ${formatCurrencyBRL(campaign.lifetimeBudget)}`);
+    if (campaign.budgetRemaining !== null) parts.push(`Restante: ${formatCurrencyBRL(campaign.budgetRemaining)}`);
+    doc.text(parts.join(" · "), MARGIN_X + 5, y);
+    y += 5;
+  }
   const metricDefs = allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]);
   if (metricDefs.length > 0) {
     const cols = Math.min(4, metricDefs.length);
@@ -861,7 +897,7 @@ function drawCampaignHierarchy(
     y += 6;
 
     for (const campaign of [...accCampaigns].sort((a, b) => b.spend - a.spend)) {
-      const cardH = campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length);
+      const cardH = campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length, campaign.dailyBudget !== null || campaign.lifetimeBudget !== null);
       y = ensureSpace(doc, ctx, y, cardH + 24);
       y = drawCampaignInfoCard(doc, ctx, y, campaign, allowed);
 
@@ -1386,6 +1422,35 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
       formatValue: formatCurrencyBRL,
     });
     y += 62;
+  }
+
+  const visibleConversionDefs = EXTRA_CONVERSION_KPI_DEFS.filter((d) => isAllowed(allowed, d.id));
+  if (visibleConversionDefs.length > 0) {
+    y = ensureSpace(doc, ctx, y, 12);
+    doc.setFont(fonts.body, "bold");
+    doc.setFontSize(9.5);
+    setColor(doc, "setTextColor", NAVY_DEEP);
+    doc.text("Outras conversões (Pixel/Conversions API)", MARGIN_X, y);
+    y += 3;
+    doc.setFont(fonts.body, "normal");
+    doc.setFontSize(7.4);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    doc.text("Só aparece dado real quando a conta já tem Pixel ou Conversions API configurado — do contrário, os cartões abaixo mostram \"não disponível\".", MARGIN_X, y + 3);
+    y += 9;
+    y = ensureSpace(doc, ctx, y, kpiGridHeight(visibleConversionDefs, false));
+    y = drawKpiGrid(doc, ctx, y, visibleConversionDefs, totals, null, null, null);
+  }
+
+  const visibleEngagementDefs = EXTRA_ENGAGEMENT_KPI_DEFS.filter((d) => isAllowed(allowed, d.id));
+  if (visibleEngagementDefs.length > 0) {
+    y = ensureSpace(doc, ctx, y, 12);
+    doc.setFont(fonts.body, "bold");
+    doc.setFontSize(9.5);
+    setColor(doc, "setTextColor", NAVY_DEEP);
+    doc.text("Engajamento, vídeo e reconhecimento de marca", MARGIN_X, y);
+    y += 6;
+    y = ensureSpace(doc, ctx, y, kpiGridHeight(visibleEngagementDefs, false));
+    y = drawKpiGrid(doc, ctx, y, visibleEngagementDefs, totals, null, null, null);
   }
 
   // ---- Campaign → ad set hierarchy ----

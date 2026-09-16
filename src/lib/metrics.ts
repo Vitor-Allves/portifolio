@@ -28,6 +28,18 @@ export type Totals = {
   leads: number | null;
   addToCart: number | null;
   completeRegistrations: number | null;
+  // See CampaignInsight.postEngagement/videoViews/videoCompletions/outboundClicks/uniqueClicks/estimatedAdRecallers
+  // — same null-safe sum rule. videoAvgWatchTimeSeconds and
+  // estimatedAdRecallRate are deliberately NOT here: they're an average and
+  // a percentage respectively, and summing either across campaigns would
+  // misrepresent the real per-viewer number — they stay per-row-only
+  // values (CampaignInsight), never a scope-level total.
+  postEngagement: number | null;
+  videoViews: number | null;
+  videoCompletions: number | null;
+  outboundClicks: number | null;
+  uniqueClicks: number | null;
+  estimatedAdRecallers: number | null;
 };
 
 /** null only when every row in scope is itself null (the metric never applies to anything selected) — otherwise sums whatever rows do report it, treating a null row as "contributes nothing" rather than "poisons the whole total". */
@@ -52,6 +64,12 @@ export function sumTotals(campaigns: CampaignInsight[]): Totals {
     leads: sumNullable(campaigns, "leads"),
     addToCart: sumNullable(campaigns, "addToCart"),
     completeRegistrations: sumNullable(campaigns, "completeRegistrations"),
+    postEngagement: sumNullable(campaigns, "postEngagement"),
+    videoViews: sumNullable(campaigns, "videoViews"),
+    videoCompletions: sumNullable(campaigns, "videoCompletions"),
+    outboundClicks: sumNullable(campaigns, "outboundClicks"),
+    uniqueClicks: sumNullable(campaigns, "uniqueClicks"),
+    estimatedAdRecallers: sumNullable(campaigns, "estimatedAdRecallers"),
   };
 }
 

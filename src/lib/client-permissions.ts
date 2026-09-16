@@ -34,7 +34,15 @@ export type CampaignColumnId =
   | "roas"
   | "leads"
   | "addToCart"
-  | "completeRegistrations";
+  | "completeRegistrations"
+  | "postEngagement"
+  | "videoViews"
+  | "videoCompletions"
+  | "videoAvgWatchTimeSeconds"
+  | "outboundClicks"
+  | "uniqueClicks"
+  | "estimatedAdRecallRate"
+  | "estimatedAdRecallers";
 
 export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] = [
   { id: "account", label: "Conta" },
@@ -56,6 +64,14 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "leads", label: "Leads (Pixel/CAPI)" },
   { id: "addToCart", label: "Adicionar ao carrinho (Pixel/CAPI)" },
   { id: "completeRegistrations", label: "Cadastro completo (Pixel/CAPI)" },
+  { id: "postEngagement", label: "Engajamento com a publicação" },
+  { id: "videoViews", label: "Visualizações de vídeo" },
+  { id: "videoCompletions", label: "Vídeo assistido até o fim" },
+  { id: "videoAvgWatchTimeSeconds", label: "Tempo médio assistido (vídeo)" },
+  { id: "outboundClicks", label: "Cliques para fora da plataforma" },
+  { id: "uniqueClicks", label: "Cliques únicos" },
+  { id: "estimatedAdRecallRate", label: "Taxa de lembrança do anúncio" },
+  { id: "estimatedAdRecallers", label: "Pessoas que lembrarão do anúncio" },
 ];
 
 // "Visão geral" is deliberately excluded — it's the landing section and

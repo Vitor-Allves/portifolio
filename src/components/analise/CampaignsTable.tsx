@@ -163,7 +163,75 @@ const COLUMNS: Column[] = [
     value: (c) => c.completeRegistrations,
     render: (c) => (c.completeRegistrations === null ? "Não disponível" : formatInteger(c.completeRegistrations)),
   },
+  {
+    id: "postEngagement",
+    label: "Engajamento com a publicação",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.postEngagement,
+    render: (c) => (c.postEngagement === null ? "Não disponível" : formatInteger(c.postEngagement)),
+  },
+  {
+    id: "videoViews",
+    label: "Visualizações de vídeo",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.videoViews,
+    render: (c) => (c.videoViews === null ? "Não disponível" : formatInteger(c.videoViews)),
+  },
+  {
+    id: "videoCompletions",
+    label: "Vídeo assistido até o fim",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.videoCompletions,
+    render: (c) => (c.videoCompletions === null ? "Não disponível" : formatInteger(c.videoCompletions)),
+  },
+  {
+    id: "videoAvgWatchTimeSeconds",
+    label: "Tempo médio assistido (vídeo)",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.videoAvgWatchTimeSeconds,
+    render: (c) => (c.videoAvgWatchTimeSeconds === null ? "Não disponível" : formatSeconds(c.videoAvgWatchTimeSeconds)),
+  },
+  {
+    id: "outboundClicks",
+    label: "Cliques para fora da plataforma",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.outboundClicks,
+    render: (c) => (c.outboundClicks === null ? "Não disponível" : formatInteger(c.outboundClicks)),
+  },
+  {
+    id: "uniqueClicks",
+    label: "Cliques únicos",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.uniqueClicks,
+    render: (c) => (c.uniqueClicks === null ? "Não disponível" : formatInteger(c.uniqueClicks)),
+  },
+  {
+    id: "estimatedAdRecallRate",
+    label: "Taxa de lembrança do anúncio",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.estimatedAdRecallRate,
+    render: (c) => (c.estimatedAdRecallRate === null ? "Não disponível" : formatPercent(c.estimatedAdRecallRate)),
+  },
+  {
+    id: "estimatedAdRecallers",
+    label: "Pessoas que lembrarão do anúncio",
+    numeric: true,
+    defaultVisible: false,
+    value: (c) => c.estimatedAdRecallers,
+    render: (c) => (c.estimatedAdRecallers === null ? "Não disponível" : formatInteger(c.estimatedAdRecallers)),
+  },
 ];
+
+function formatSeconds(seconds: number): string {
+  return `${seconds.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
+}
 
 const STATUS_TONE: Record<CampaignStatus, string> = {
   ACTIVE: "bg-intel-green/10 text-intel-green border-intel-green/20",

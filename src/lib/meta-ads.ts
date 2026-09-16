@@ -130,6 +130,64 @@ function parseExtraConversions(actions: ActionNode[] | undefined, actionValues: 
   };
 }
 
+// "post_engagement" and "video_view" both live in the same `actions` array
+// already fetched for `conversations` above — no extra field needed.
+const POST_ENGAGEMENT_ACTION_TYPE = "post_engagement";
+const VIDEO_VIEW_ACTION_TYPE = "video_view";
+
+type ExtraEngagementFields = {
+  postEngagement: number | null;
+  videoViews: number | null;
+  // Meta returns `video_p100_watched_actions`/`video_avg_time_watched_actions`
+  // as one-element arrays (same shape as `actions`), not plain numbers.
+  videoCompletions: number | null;
+  // Average seconds watched per impression — an average, not a count, so
+  // deliberately kept OUT of Totals/sumTotals (metrics.ts) and out of the
+  // CSV export: naively averaging a per-campaign average across campaigns
+  // would misrepresent the real per-viewer average. Shown only as its own
+  // per-campaign value in the UI.
+  videoAvgWatchTimeSeconds: number | null;
+  outboundClicks: number | null;
+  uniqueClicks: number | null;
+  // Only ever populated for reach/brand-awareness objective campaigns —
+  // null for everything else, same "não disponível" rule as conversations.
+  // `estimatedAdRecallRate` is a percentage — same "not summable across
+  // campaigns" reasoning as videoAvgWatchTimeSeconds, kept out of
+  // Totals/CSV. `estimatedAdRecallers` is a headcount, safe to sum.
+  estimatedAdRecallRate: number | null;
+  estimatedAdRecallers: number | null;
+};
+
+/** Meta's video_pXX_watched_actions / video_avg_time_watched_actions shape: a one-element array, `[{ action_type: "video_view", value: "123" }]` — sum defensively in case Meta ever returns more than one row. */
+function sumActionArray(nodes: ActionNode[] | undefined): number | null {
+  if (!nodes || nodes.length === 0) return null;
+  return nodes.reduce((sum, n) => sum + Number(n.value ?? 0), 0);
+}
+
+function parseExtraEngagement(row: {
+  actions?: ActionNode[];
+  video_p100_watched_actions?: ActionNode[];
+  video_avg_time_watched_actions?: ActionNode[];
+  outbound_clicks?: ActionNode[];
+  unique_clicks?: string;
+  estimated_ad_recall_rate?: string;
+  estimated_ad_recallers?: string;
+}): ExtraEngagementFields {
+  return {
+    postEngagement: parseAction(row.actions, POST_ENGAGEMENT_ACTION_TYPE),
+    videoViews: parseAction(row.actions, VIDEO_VIEW_ACTION_TYPE),
+    videoCompletions: sumActionArray(row.video_p100_watched_actions),
+    videoAvgWatchTimeSeconds: sumActionArray(row.video_avg_time_watched_actions),
+    outboundClicks: sumActionArray(row.outbound_clicks),
+    uniqueClicks: row.unique_clicks ? Number(row.unique_clicks) : null,
+    estimatedAdRecallRate: row.estimated_ad_recall_rate ? Number(row.estimated_ad_recall_rate) : null,
+    estimatedAdRecallers: row.estimated_ad_recallers ? Number(row.estimated_ad_recallers) : null,
+  };
+}
+
+const EXTRA_ENGAGEMENT_FIELDS =
+  "video_p100_watched_actions,video_avg_time_watched_actions,outbound_clicks,unique_clicks,estimated_ad_recall_rate,estimated_ad_recallers";
+
 /** Graph API date params for either a named preset or a manually picked range. */
 function periodParams(period: Period): Record<string, string> {
   return period.kind === "preset"
@@ -501,6 +559,12 @@ type CampaignInsightNode = {
   actions?: ActionNode[];
   action_values?: ActionNode[];
   reach?: string;
+  video_p100_watched_actions?: ActionNode[];
+  video_avg_time_watched_actions?: ActionNode[];
+  outbound_clicks?: ActionNode[];
+  unique_clicks?: string;
+  estimated_ad_recall_rate?: string;
+  estimated_ad_recallers?: string;
 };
 
 async function getAccountCampaignInsights(
@@ -514,7 +578,7 @@ async function getAccountCampaignInsights(
     {
       level: "campaign",
       ...periodParams(period),
-      fields: "campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach",
+      fields: `campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach,${EXTRA_ENGAGEMENT_FIELDS}`,
       limit: "500",
     },
     accessToken
@@ -539,6 +603,7 @@ async function getAccountCampaignInsights(
       conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
       ...parseExtraConversions(row.actions, row.action_values),
+      ...parseExtraEngagement(row),
       dailyBudget: meta?.dailyBudget ?? null,
       lifetimeBudget: meta?.lifetimeBudget ?? null,
       budgetRemaining: meta?.budgetRemaining ?? null,
@@ -600,6 +665,12 @@ type AdSetInsightNode = {
   actions?: ActionNode[];
   action_values?: ActionNode[];
   reach?: string;
+  video_p100_watched_actions?: ActionNode[];
+  video_avg_time_watched_actions?: ActionNode[];
+  outbound_clicks?: ActionNode[];
+  unique_clicks?: string;
+  estimated_ad_recall_rate?: string;
+  estimated_ad_recallers?: string;
 };
 
 // One call per account (level: "adset"), exactly like getAccountCampaignInsights
@@ -618,7 +689,7 @@ async function getAccountAdSetInsights(
     {
       level: "adset",
       ...periodParams(period),
-      fields: "adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach",
+      fields: `adset_id,adset_name,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach,${EXTRA_ENGAGEMENT_FIELDS}`,
       limit: "500",
     },
     accessToken
@@ -639,6 +710,7 @@ async function getAccountAdSetInsights(
       conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
       ...parseExtraConversions(row.actions, row.action_values),
+      ...parseExtraEngagement(row),
       dailyBudget: meta?.dailyBudget ?? null,
       lifetimeBudget: meta?.lifetimeBudget ?? null,
       budgetRemaining: meta?.budgetRemaining ?? null,
@@ -695,6 +767,12 @@ type AdInsightNode = {
   actions?: ActionNode[];
   action_values?: ActionNode[];
   reach?: string;
+  video_p100_watched_actions?: ActionNode[];
+  video_avg_time_watched_actions?: ActionNode[];
+  outbound_clicks?: ActionNode[];
+  unique_clicks?: string;
+  estimated_ad_recall_rate?: string;
+  estimated_ad_recallers?: string;
 };
 
 // One call per account (level: "ad") — every ad across every ad set and
@@ -713,7 +791,7 @@ async function getAccountAdInsights(
     {
       level: "ad",
       ...periodParams(period),
-      fields: "ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach",
+      fields: `ad_id,ad_name,adset_id,campaign_id,spend,impressions,clicks,inline_link_clicks,actions,action_values,reach,${EXTRA_ENGAGEMENT_FIELDS}`,
       limit: "500",
     },
     accessToken
@@ -736,6 +814,7 @@ async function getAccountAdInsights(
       conversations: parseConversations(row.actions),
       reach: Number(row.reach ?? 0),
       ...parseExtraConversions(row.actions, row.action_values),
+      ...parseExtraEngagement(row),
       qualityRanking: quality?.quality ?? null,
       engagementRateRanking: quality?.engagement ?? null,
       conversionRateRanking: quality?.conversion ?? null,

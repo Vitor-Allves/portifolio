@@ -99,6 +99,31 @@ export type CampaignInsight = {
   dailyBudget: number | null;
   lifetimeBudget: number | null;
   budgetRemaining: number | null;
+  // On-platform engagement (likes/comments/shares/saves) — same
+  // null-means-not-reported rule as `conversations`.
+  postEngagement: number | null;
+  // "video_view" action_type — a view of any length, not tied to any
+  // completion threshold.
+  videoViews: number | null;
+  // Meta's `video_p100_watched_actions` — count of views that reached 100%.
+  videoCompletions: number | null;
+  // Average seconds watched per impression. An AVERAGE, not a count — never
+  // sum this across campaigns/rows (that would misrepresent the real
+  // per-viewer average); shown only as its own per-row value.
+  videoAvgWatchTimeSeconds: number | null;
+  // "outbound_click" — clicks that actually left the Meta platform,
+  // narrower than `linkClicks` (inline_link_clicks counts the click
+  // regardless of whether the destination page ever loaded off-platform).
+  outboundClicks: number | null;
+  uniqueClicks: number | null; // Meta's `unique_clicks` — clicks deduplicated per person, unlike `clicks`.
+  // Only ever populated for reach/brand-awareness objective campaigns —
+  // null for everything else. `estimatedAdRecallRate` is a PERCENTAGE: same
+  // "never sum across rows" rule as videoAvgWatchTimeSeconds.
+  // `estimatedAdRecallRate` (%) and `estimatedAdRecallers` (headcount) are
+  // Meta's own modeled estimate, not a directly measured/attributable
+  // number.
+  estimatedAdRecallRate: number | null;
+  estimatedAdRecallers: number | null;
 };
 
 // Tagged per account (not pre-summed) so the client can re-aggregate
@@ -152,6 +177,15 @@ export type AdSetInsight = {
   dailyBudget: number | null;
   lifetimeBudget: number | null;
   budgetRemaining: number | null;
+  // See CampaignInsight.postEngagement/videoViews/videoCompletions/videoAvgWatchTimeSeconds/outboundClicks/uniqueClicks/estimatedAdRecallRate/estimatedAdRecallers.
+  postEngagement: number | null;
+  videoViews: number | null;
+  videoCompletions: number | null;
+  videoAvgWatchTimeSeconds: number | null;
+  outboundClicks: number | null;
+  uniqueClicks: number | null;
+  estimatedAdRecallRate: number | null;
+  estimatedAdRecallers: number | null;
 };
 
 // One level below AdSetInsight — the individual ad creative. Same fetch
@@ -191,6 +225,15 @@ export type AdInsight = {
   creativeTitle: string | null;
   creativeBody: string | null;
   callToAction: string | null; // Meta's raw call_to_action_type, e.g. "SHOP_NOW", "LEARN_MORE"
+  // See CampaignInsight.postEngagement/videoViews/videoCompletions/videoAvgWatchTimeSeconds/outboundClicks/uniqueClicks/estimatedAdRecallRate/estimatedAdRecallers.
+  postEngagement: number | null;
+  videoViews: number | null;
+  videoCompletions: number | null;
+  videoAvgWatchTimeSeconds: number | null;
+  outboundClicks: number | null;
+  uniqueClicks: number | null;
+  estimatedAdRecallRate: number | null;
+  estimatedAdRecallers: number | null;
 };
 
 // One number per account for the whole period — NOT the sum of each
