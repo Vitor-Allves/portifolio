@@ -28,10 +28,9 @@ import BreakdownAnalysis, {
   PLATFORM_LABEL,
   PLACEMENT_LABEL,
   DEVICE_LABEL,
-  HOUR_ORDER,
-  hourShortLabel,
 } from "./BreakdownAnalysis";
 import CampaignsTable from "./CampaignsTable";
+import TopHoursTable from "./TopHoursTable";
 import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
 import StrategicInsightsCompact from "./StrategicInsightsCompact";
@@ -913,16 +912,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     </div>
 
                     <m.div custom={18} initial="hidden" animate="visible" variants={fadeUp}>
-                      <BreakdownAnalysis
-                        title="Distribuição por horário do dia"
-                        barColor="var(--color-intel-cyan)"
-                        segments={filteredHours}
-                        bucketKey={(s) => s.hour}
-                        bucketLabel={hourShortLabel}
-                        order={HOUR_ORDER}
-                        defaultMetric="spend"
-                        hideMetrics={["reach"]}
-                      />
+                      <TopHoursTable segments={filteredHours} />
                     </m.div>
                   </div>
                 )}
