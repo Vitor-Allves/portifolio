@@ -304,6 +304,131 @@ function SortButton({
   );
 }
 
+type NumericRange = { min: number | null; max: number | null };
+const EMPTY_SELECTION: Set<string> = new Set();
+const EMPTY_RANGE: NumericRange = { min: null, max: null };
+
+function FilterIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className={active ? "text-intel-cyan" : "text-intel-text-dim/50"}
+    >
+      <path
+        d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5L2 3Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+        fill={active ? "currentColor" : "none"}
+        fillOpacity={active ? 0.25 : 0}
+      />
+    </svg>
+  );
+}
+
+/** Per-column, spreadsheet-style filter — a checklist of distinct values for a text/categorical column, or a min/max range for a numeric one. Layered on top of (never replacing) the free-text campaign search above the table. */
+function ColumnFilterButton({
+  column,
+  isOpen,
+  onToggleOpen,
+  categoricalOptions,
+  selectedValues,
+  onToggleValue,
+  numericRange,
+  onChangeNumericRange,
+  onClear,
+}: {
+  column: Column;
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  categoricalOptions: string[];
+  selectedValues: Set<string>;
+  onToggleValue: (value: string) => void;
+  numericRange: NumericRange;
+  onChangeNumericRange: (range: NumericRange) => void;
+  onClear: () => void;
+}) {
+  const active = column.numeric ? numericRange.min !== null || numericRange.max !== null : selectedValues.size > 0;
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+        aria-label={`Filtrar ${column.label}`}
+        className="p-0.5 rounded hover:bg-white/[0.08] transition-colors duration-150"
+      >
+        <FilterIcon active={active} />
+      </button>
+      {isOpen && (
+        <div className={`absolute z-30 top-full mt-2 w-56 py-2.5 normal-case ${column.numeric ? "left-0" : "right-0"} ${INTEL_POPOVER}`}>
+          {column.numeric ? (
+            <div className="px-3.5 space-y-2.5">
+              <div>
+                <label className="block mb-1 text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim">Mínimo</label>
+                <input
+                  type="number"
+                  value={numericRange.min ?? ""}
+                  onChange={(e) =>
+                    onChangeNumericRange({ min: e.target.value === "" ? null : Number(e.target.value), max: numericRange.max })
+                  }
+                  className={INTEL_INPUT}
+                />
+              </div>
+              <div>
+                <label className="block mb-1 text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim">Máximo</label>
+                <input
+                  type="number"
+                  value={numericRange.max ?? ""}
+                  onChange={(e) =>
+                    onChangeNumericRange({ min: numericRange.min, max: e.target.value === "" ? null : Number(e.target.value) })
+                  }
+                  className={INTEL_INPUT}
+                />
+              </div>
+            </div>
+          ) : (
+            <ul className="max-h-56 overflow-y-auto">
+              {categoricalOptions.length === 0 ? (
+                <li className="px-4 py-1.5 text-[12.5px] text-intel-text-dim/70">Sem valores no período</li>
+              ) : (
+                categoricalOptions.map((value) => (
+                  <li key={value}>
+                    <label className="flex items-center gap-2.5 px-4 py-1.5 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text cursor-pointer transition-colors duration-150">
+                      <input
+                        type="checkbox"
+                        checked={selectedValues.has(value)}
+                        onChange={() => onToggleValue(value)}
+                        className="h-3.5 w-3.5 accent-intel-cyan"
+                      />
+                      {value}
+                    </label>
+                  </li>
+                ))
+              )}
+            </ul>
+          )}
+          {active && (
+            <div className="px-3.5 pt-2.5 mt-2 border-t border-white/[0.06]">
+              <button
+                type="button"
+                onClick={onClear}
+                className="text-[11px] tracking-[0.06em] uppercase text-intel-cyan hover:text-intel-text transition-colors duration-200"
+              >
+                Limpar filtro
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type CampaignsTableProps = {
   campaigns: CampaignInsight[];
   adSets: AdSetInsight[];
@@ -325,6 +450,70 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [detailCampaign, setDetailCampaign] = useState<CampaignInsight | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Per-column spreadsheet-style filters — layered on top of the free-text
+  // search above, never replacing it. Keyed by ColumnId; a column absent
+  // from the map means "no restriction" for it.
+  const [categoricalFilters, setCategoricalFilters] = useState<Map<ColumnId, Set<string>>>(new Map());
+  const [numericFilters, setNumericFilters] = useState<Map<ColumnId, NumericRange>>(new Map());
+  const [openFilterColumn, setOpenFilterColumn] = useState<ColumnId | null>(null);
+
+  // Distinct values per text/categorical column, computed from the FULL
+  // unfiltered campaign set — so a facet's own options never shrink away
+  // just because another column's filter is currently narrowing the rows.
+  const categoricalOptionsByColumn = useMemo(() => {
+    const map = new Map<ColumnId, string[]>();
+    for (const col of availableColumns) {
+      if (col.numeric) continue;
+      const values = new Set<string>();
+      for (const c of campaigns) values.add(col.render(c));
+      map.set(col.id, [...values].sort((a, b) => a.localeCompare(b, "pt-BR")));
+    }
+    return map;
+  }, [availableColumns, campaigns]);
+
+  function toggleCategoricalValue(columnId: ColumnId, value: string) {
+    setCategoricalFilters((prev) => {
+      const next = new Map(prev);
+      const current = new Set(next.get(columnId) ?? []);
+      if (current.has(value)) current.delete(value);
+      else current.add(value);
+      if (current.size === 0) next.delete(columnId);
+      else next.set(columnId, current);
+      return next;
+    });
+  }
+
+  function setNumericRange(columnId: ColumnId, range: NumericRange) {
+    setNumericFilters((prev) => {
+      const next = new Map(prev);
+      if (range.min === null && range.max === null) next.delete(columnId);
+      else next.set(columnId, range);
+      return next;
+    });
+  }
+
+  function clearColumnFilter(columnId: ColumnId) {
+    setCategoricalFilters((prev) => {
+      if (!prev.has(columnId)) return prev;
+      const next = new Map(prev);
+      next.delete(columnId);
+      return next;
+    });
+    setNumericFilters((prev) => {
+      if (!prev.has(columnId)) return prev;
+      const next = new Map(prev);
+      next.delete(columnId);
+      return next;
+    });
+  }
+
+  function clearAllColumnFilters() {
+    setCategoricalFilters(new Map());
+    setNumericFilters(new Map());
+  }
+
+  const activeColumnFilterCount = categoricalFilters.size + numericFilters.size;
 
   const adSetsByCampaignId = useMemo(() => {
     const map = new Map<string, AdSetInsight[]>();
@@ -360,9 +549,24 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return campaigns;
-    return campaigns.filter((c) => c.campaignName.toLowerCase().includes(q));
-  }, [campaigns, search]);
+    return campaigns.filter((c) => {
+      if (q && !c.campaignName.toLowerCase().includes(q)) return false;
+      for (const [columnId, values] of categoricalFilters) {
+        const col = COLUMNS.find((cc) => cc.id === columnId);
+        if (col && !values.has(col.render(c))) return false;
+      }
+      for (const [columnId, range] of numericFilters) {
+        const col = COLUMNS.find((cc) => cc.id === columnId);
+        if (!col) continue;
+        const raw = col.value(c);
+        const v = typeof raw === "number" ? raw : null;
+        if (v === null) return false;
+        if (range.min !== null && v < range.min) return false;
+        if (range.max !== null && v > range.max) return false;
+      }
+      return true;
+    });
+  }, [campaigns, search, categoricalFilters, numericFilters]);
 
   const sorted = useMemo(() => {
     const column = sortColumn === "name" ? null : COLUMNS.find((c) => c.id === sortColumn) ?? null;
@@ -457,6 +661,16 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
             )}
           </div>
 
+          {activeColumnFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearAllColumnFilters}
+              className="text-[12px] tracking-[0.04em] px-3 py-1.5 rounded-lg border border-intel-cyan/40 text-intel-cyan hover:bg-intel-cyan/[0.1] transition-colors duration-200"
+            >
+              Limpar filtros ({activeColumnFilterCount})
+            </button>
+          )}
+
           <button
             type="button"
             onClick={exportCsv}
@@ -487,14 +701,27 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
                 </th>
                 {activeColumns.map((c) => (
                   <th key={c.id} className={c.numeric ? thNum : th}>
-                    <SortButton
-                      columnId={c.id}
-                      label={c.label}
-                      numeric={c.numeric}
-                      sortColumn={sortColumn}
-                      sortDir={sortDir}
-                      onToggle={toggleSort}
-                    />
+                    <div className={`inline-flex items-center gap-1 ${c.numeric ? "flex-row-reverse" : ""}`}>
+                      <SortButton
+                        columnId={c.id}
+                        label={c.label}
+                        numeric={c.numeric}
+                        sortColumn={sortColumn}
+                        sortDir={sortDir}
+                        onToggle={toggleSort}
+                      />
+                      <ColumnFilterButton
+                        column={c}
+                        isOpen={openFilterColumn === c.id}
+                        onToggleOpen={() => setOpenFilterColumn((prev) => (prev === c.id ? null : c.id))}
+                        categoricalOptions={categoricalOptionsByColumn.get(c.id) ?? []}
+                        selectedValues={categoricalFilters.get(c.id) ?? EMPTY_SELECTION}
+                        onToggleValue={(value) => toggleCategoricalValue(c.id, value)}
+                        numericRange={numericFilters.get(c.id) ?? EMPTY_RANGE}
+                        onChangeNumericRange={(range) => setNumericRange(c.id, range)}
+                        onClear={() => clearColumnFilter(c.id)}
+                      />
+                    </div>
                   </th>
                 ))}
                 {comparisonByCampaignId && <th className={thNum}>Δ Investimento</th>}

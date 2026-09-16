@@ -803,6 +803,63 @@ function drawAdSetTableChunk(doc: jsPDF, ctx: Ctx, y: number, campaignName: stri
   return (doc as any).lastAutoTable.finalY + 6;
 }
 
+/**
+ * Ranks hour-of-day buckets by investment and tables only the best 6 —
+ * deliberately its own titled section, never folded into the generic
+ * "Distribuição" bar-list loop above it. For every other dimension there
+ * (age, region, device, ...) the useful question is "how is spend spread
+ * across every bucket"; for hour of day the useful question is "which
+ * handful of hours are actually worth acting on", which a 24-row bar list
+ * answers poorly. Mirrors the dashboard's own "Melhores horários" table.
+ */
+function drawTopHoursTable(doc: jsPDF, ctx: Ctx, y: number, hours: HourSegment[], allowed: AllowedColumns): number {
+  const byHour = new Map<string, { spend: number; clicks: number; impressions: number }>();
+  for (const h of hours) {
+    const entry = byHour.get(h.hour) ?? { spend: 0, clicks: 0, impressions: 0 };
+    entry.spend += h.spend;
+    entry.clicks += h.clicks;
+    entry.impressions += h.impressions;
+    byHour.set(h.hour, entry);
+  }
+  const ranked = [...byHour.entries()]
+    .map(([hour, totals]) => ({ hour, ...totals }))
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 6);
+  if (ranked.length === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, "Melhores horários do período");
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(
+    "Os 6 horários com maior investimento no período — horário local de cada conta.",
+    MARGIN_X,
+    y + 3
+  );
+  y += 8;
+
+  const extraCols: { label: string; render: (r: { spend: number; clicks: number; impressions: number }) => string }[] = [];
+  if (isAllowed(allowed, "clicks")) extraCols.push({ label: "Cliques", render: (r) => formatInteger(r.clicks) });
+  if (isAllowed(allowed, "ctr")) {
+    extraCols.push({ label: "CTR", render: (r) => (r.impressions > 0 ? formatPercent((r.clicks / r.impressions) * 100) : "—") });
+  }
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 42, halign: "right" } },
+    head: [["Horário", "Investimento", ...extraCols.map((c) => c.label)]],
+    body: ranked.map((r, i) => [`${i + 1}º · ${r.hour.slice(0, 2)}h`, formatCurrencyBRL(r.spend), ...extraCols.map((c) => c.render(r))]),
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
 function campaignInfoCardHeight(metricCount: number, hasBudget: boolean): number {
   const budgetExtra = hasBudget ? 5 : 0;
   if (metricCount === 0) return 17 + budgetExtra;
@@ -1472,15 +1529,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
 
   if (showAudienceBreakdowns && isAllowed(allowed, "spend") && input.hours.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    const byHour = new Map<string, number>();
-    for (const h of input.hours) byHour.set(h.hour, (byHour.get(h.hour) ?? 0) + h.spend);
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 56 }, {
-      title: "Distribuição por horário do dia",
-      caption: "Métrica: Investimento (R$) · horário local da conta",
-      items: [...byHour.entries()].map(([label, value]) => ({ label: label.slice(0, 2) + "h", value })).sort((a, b) => a.label.localeCompare(b.label)),
-      formatValue: formatCurrencyBRL,
-    });
-    y += 62;
+    y = drawTopHoursTable(doc, ctx, y, input.hours, allowed);
   }
 
   const showDetailedExtras = input.reportType === "detailed";
