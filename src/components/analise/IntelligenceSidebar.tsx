@@ -133,6 +133,21 @@ function SidebarContent({
         ))}
       </nav>
 
+      {!collapsed && (
+        <div className="px-5 pb-4 flex items-end justify-center gap-2 opacity-90">
+          <img
+            src="/login/titan-480.webp"
+            alt="Titan, mascote analista da Legado Enterprise"
+            className="h-16 w-auto object-contain object-bottom"
+          />
+          <img
+            src="/login/legacy-480.webp"
+            alt="Legacy, mascote analista da Legado Enterprise"
+            className="h-16 w-auto object-contain object-bottom"
+          />
+        </div>
+      )}
+
       {isAdmin && (
         <div className="px-2.5 pb-2">
           <Link
