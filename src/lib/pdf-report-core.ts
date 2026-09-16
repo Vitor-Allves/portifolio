@@ -83,6 +83,8 @@ export type ReportPdfInput = {
   generatedAt: Date;
   /** The dashboard payload's own generatedAt (ISO) — "última atualização dos dados", distinct from generatedAt above. */
   dataGeneratedAt: string;
+  /** Which sections to draw — see PdfReportType. */
+  reportType: PdfReportType;
   campaigns: CampaignInsight[];
   comparisonCampaigns: CampaignInsight[] | null;
   /**
@@ -126,6 +128,17 @@ export type ReportAssets = {
 };
 
 export class ReportPdfError extends Error {}
+
+/**
+ * Which sections buildReportPdf draws. "detailed" is the original full
+ * report (unchanged). "executive" keeps only what a decision-maker reads in
+ * one pass: headline KPIs, the executive summary, the evolution charts and
+ * the strategic analysis — no campaign-by-campaign detail, no distribution
+ * breakdowns. "audience" flips that: only the audience/distribution
+ * breakdowns (age/gender, region, platform/placement/device/country, hour),
+ * nothing else.
+ */
+export type PdfReportType = "executive" | "detailed" | "audience";
 
 // ---------------------------------------------------------------------------
 // Brand tokens (print/light identity — deliberately NOT the dashboard's dark
@@ -340,6 +353,39 @@ const METRIC_GROUP_B: KpiId[] = ["clicks", "linkClicks", "ctr", "cpc", "conversa
 
 function isAllowed(allowed: AllowedColumns, id: CampaignColumnId): boolean {
   return allowed.has(id);
+}
+
+// For KpiDef ids whose *display* should be gated on a raw structural field
+// being populated (Pixel/CAPI never configured, ad objective doesn't support
+// messaging, etc.) rather than on the derived value itself, which can be
+// null for the unrelated reason of a zero denominator (e.g. "Custo por
+// conversa" is null both when conversations isn't tracked at all AND when
+// conversations is a real, reportable zero for the period — only the first
+// case should hide the card). ctr/cpc/cpm and the raw spend/impressions/
+// clicks/linkClicks fields are never structurally absent, so they're simply
+// left out of this map and always considered populated.
+const STRUCTURAL_GATE: Partial<Record<CampaignColumnId, (t: Totals) => boolean>> = {
+  conversations: (t) => t.conversations !== null,
+  costPerConversation: (t) => t.conversations !== null,
+  purchases: (t) => t.purchases !== null,
+  purchaseValue: (t) => t.purchaseValue !== null,
+  roas: (t) => t.purchaseValue !== null,
+  leads: (t) => t.leads !== null,
+  addToCart: (t) => t.addToCart !== null,
+  completeRegistrations: (t) => t.completeRegistrations !== null,
+  postEngagement: (t) => t.postEngagement !== null,
+  videoViews: (t) => t.videoViews !== null,
+  videoCompletions: (t) => t.videoCompletions !== null,
+  outboundClicks: (t) => t.outboundClicks !== null,
+  uniqueClicks: (t) => t.uniqueClicks !== null,
+  estimatedAdRecallers: (t) => t.estimatedAdRecallers !== null,
+};
+
+/** True when this KPI genuinely has something to report — never true/false based on permission (that's isAllowed's job), only on whether the underlying data exists at all. A KpiDef never named in STRUCTURAL_GATE (spend/impressions/clicks/linkClicks/ctr/cpc/cpm) is always populated. "reach" is gated on the reach argument since a null reach means "couldn't be apurado com confiança", not a real zero. */
+function isKpiPopulated(def: KpiDef, totals: Totals, reach: number | null): boolean {
+  if (def.id === "reach") return reach !== null;
+  const gate = STRUCTURAL_GATE[def.id];
+  return gate ? gate(totals) : true;
 }
 
 function allowedMetricDefs(allowed: AllowedColumns, ids: KpiId[]): MetricColDef[] {
@@ -1204,20 +1250,22 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += lines.length * 4 + 3;
   }
 
-  const visibleKpiDefs = KPI_DEFS.filter((d) => isAllowed(allowed, d.id));
+  const showKpiGrid = input.reportType !== "audience";
+  const visibleKpiDefs = showKpiGrid ? KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, totalReach)) : [];
   y += 2;
-  if (visibleKpiDefs.length > 0) {
+  if (showKpiGrid && visibleKpiDefs.length > 0) {
     y = ensureSpace(doc, ctx, y, kpiGridHeight(visibleKpiDefs, Boolean(ctx.periodLine && comparisonTotals)));
     y = drawKpiGrid(doc, ctx, y, visibleKpiDefs, totals, totalReach, comparisonTotals, comparisonReach);
-  } else {
+  } else if (showKpiGrid) {
     doc.setFont(fonts.body, "normal");
     doc.setFontSize(9);
     setColor(doc, "setTextColor", TEXT_MUTED);
-    doc.text("Nenhum indicador autorizado para exibição neste relatório.", MARGIN_X, y + 4);
+    doc.text("Nenhum indicador disponível para exibição neste relatório.", MARGIN_X, y + 4);
     y += 14;
   }
 
-  if (insights.summary.length > 0) {
+  const showExecutiveSummary = input.reportType !== "audience";
+  if (showExecutiveSummary && insights.summary.length > 0) {
     y = ensureSpace(doc, ctx, y, 20);
     doc.setFont(fonts.body, "bold");
     doc.setFontSize(9.5);
@@ -1236,8 +1284,9 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   }
 
   // ---- Evolução e distribuição ----
+  const showEvolution = input.reportType !== "audience";
   const nonSpendPrimary = primaryKpiIds(input.campaigns).find((id) => id !== "spend" && isAllowed(allowed, id)) ?? [...METRIC_GROUP_B, ...METRIC_GROUP_A].find((id) => isAllowed(allowed, id));
-  const hasEvolutionSection = isAllowed(allowed, "spend") || nonSpendPrimary !== undefined;
+  const hasEvolutionSection = showEvolution && (isAllowed(allowed, "spend") || nonSpendPrimary !== undefined);
 
   if (hasEvolutionSection) {
     // A fresh page unless the executive summary above already spilled onto a
@@ -1305,7 +1354,8 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     }
   }
 
-  if (isAllowed(allowed, "spend")) {
+  const showCampaignDistribution = input.reportType === "detailed";
+  if (showCampaignDistribution && isAllowed(allowed, "spend")) {
     y = ensureSpace(doc, ctx, y, 70);
     const distItems = [...input.campaigns].sort((a, b) => b.spend - a.spend).map((c) => ({ label: c.campaignName, value: c.spend }));
     drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 62 }, {
@@ -1317,8 +1367,17 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 68;
   }
 
+  // Standalone title for the audience-only report — "detailed" already got
+  // one from the evolution section above, and "executive" never reaches
+  // this branch (showAudienceBreakdowns is false for it).
+  const showAudienceBreakdowns = input.reportType === "detailed" || input.reportType === "audience";
+  if (input.reportType === "audience") {
+    y = ensureSpace(doc, ctx, y, 16);
+    y = sectionTitle(doc, ctx, y, "Público e distribuição");
+  }
+
   const chartW2 = (CONTENT_W - 8) / 2;
-  if (isAllowed(allowed, "conversations") && input.audience.length > 0) {
+  if (showAudienceBreakdowns && isAllowed(allowed, "conversations") && input.audience.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     // null-propagation: a bucket only accumulates a number once at least one
     // of its rows actually reports conversations; buckets that never do stay
@@ -1346,7 +1405,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 58;
   }
 
-  if (isAllowed(allowed, "reach") && input.regions.length > 0) {
+  if (showAudienceBreakdowns && isAllowed(allowed, "reach") && input.regions.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const byRegion = new Map<string, number>();
     for (const r of input.regions) byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + r.reach);
@@ -1367,7 +1426,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   };
   const deviceLabel: Record<string, string> = { desktop: "Desktop", mobile_app: "App mobile", mobile_web: "Web mobile" };
 
-  if (isAllowed(allowed, "spend") && (input.platforms.length > 0 || input.placements.length > 0)) {
+  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && (input.platforms.length > 0 || input.placements.length > 0)) {
     y = ensureSpace(doc, ctx, y, 60);
     const chartW2c = (CONTENT_W - 8) / 2;
     const byPlatform = new Map<string, number>();
@@ -1389,7 +1448,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 58;
   }
 
-  if (isAllowed(allowed, "spend") && (input.devices.length > 0 || input.countries.length > 0)) {
+  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && (input.devices.length > 0 || input.countries.length > 0)) {
     y = ensureSpace(doc, ctx, y, 60);
     const chartW2d = (CONTENT_W - 8) / 2;
     const byDevice = new Map<string, number>();
@@ -1411,7 +1470,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 58;
   }
 
-  if (isAllowed(allowed, "spend") && input.hours.length > 0) {
+  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && input.hours.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const byHour = new Map<string, number>();
     for (const h of input.hours) byHour.set(h.hour, (byHour.get(h.hour) ?? 0) + h.spend);
@@ -1424,7 +1483,10 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 62;
   }
 
-  const visibleConversionDefs = EXTRA_CONVERSION_KPI_DEFS.filter((d) => isAllowed(allowed, d.id));
+  const showDetailedExtras = input.reportType === "detailed";
+  const visibleConversionDefs = showDetailedExtras
+    ? EXTRA_CONVERSION_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null))
+    : [];
   if (visibleConversionDefs.length > 0) {
     y = ensureSpace(doc, ctx, y, 12);
     doc.setFont(fonts.body, "bold");
@@ -1435,13 +1497,15 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     doc.setFont(fonts.body, "normal");
     doc.setFontSize(7.4);
     setColor(doc, "setTextColor", TEXT_MUTED);
-    doc.text("Só aparece dado real quando a conta já tem Pixel ou Conversions API configurado — do contrário, os cartões abaixo mostram \"não disponível\".", MARGIN_X, y + 3);
+    doc.text("Mostra apenas os indicadores com dado real reportado pela conta — Pixel/Conversions API configurados parcialmente exibem só os efetivamente reportados.", MARGIN_X, y + 3);
     y += 9;
     y = ensureSpace(doc, ctx, y, kpiGridHeight(visibleConversionDefs, false));
     y = drawKpiGrid(doc, ctx, y, visibleConversionDefs, totals, null, null, null);
   }
 
-  const visibleEngagementDefs = EXTRA_ENGAGEMENT_KPI_DEFS.filter((d) => isAllowed(allowed, d.id));
+  const visibleEngagementDefs = showDetailedExtras
+    ? EXTRA_ENGAGEMENT_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null))
+    : [];
   if (visibleEngagementDefs.length > 0) {
     y = ensureSpace(doc, ctx, y, 12);
     doc.setFont(fonts.body, "bold");
@@ -1454,24 +1518,29 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   }
 
   // ---- Campaign → ad set hierarchy ----
-  y = ensureSpace(doc, ctx, y, 60);
-  y = drawCampaignHierarchy(doc, ctx, y, input.campaigns, input.adSets, input.selectedAdSetIds, allowed);
+  if (showDetailedExtras) {
+    y = ensureSpace(doc, ctx, y, 60);
+    y = drawCampaignHierarchy(doc, ctx, y, input.campaigns, input.adSets, input.selectedAdSetIds, allowed);
+  }
 
   // ---- Analysis & next actions ----
-  y = ensureSpace(doc, ctx, y, 60);
-  y = sectionTitle(doc, ctx, y, "Análise e próximas ações");
-  doc.setFont(fonts.body, "normal");
-  doc.setFontSize(7.6);
-  setColor(doc, "setTextColor", TEXT_MUTED);
-  const limitLines = wrapText(doc, insights.limitations, CONTENT_W);
-  doc.text(limitLines, MARGIN_X, y);
-  y += limitLines.length * 3.8 + 6;
+  const showAnalysis = input.reportType !== "audience";
+  if (showAnalysis) {
+    y = ensureSpace(doc, ctx, y, 60);
+    y = sectionTitle(doc, ctx, y, "Análise e próximas ações");
+    doc.setFont(fonts.body, "normal");
+    doc.setFontSize(7.6);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    const limitLines = wrapText(doc, insights.limitations, CONTENT_W);
+    doc.text(limitLines, MARGIN_X, y);
+    y += limitLines.length * 3.8 + 6;
 
-  // The engine itself groups findings by client and objective before ever
-  // comparing two campaigns (see strategic-insights.ts), and now also skips
-  // any finding built on a metric this recipient isn't authorized to see —
-  // a single call over the full filtered set is already scoped correctly.
-  y = drawAnalysisForScope(doc, ctx, y, insights);
+    // The engine itself groups findings by client and objective before ever
+    // comparing two campaigns (see strategic-insights.ts), and now also skips
+    // any finding built on a metric this recipient isn't authorized to see —
+    // a single call over the full filtered set is already scoped correctly.
+    y = drawAnalysisForScope(doc, ctx, y, insights);
+  }
 
   // ---- Methodology notes ----
   y = ensureSpace(doc, ctx, y, 60);
