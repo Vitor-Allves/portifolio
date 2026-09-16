@@ -32,8 +32,28 @@ function getPool(): Pool {
   return pool;
 }
 
+// Bump this whenever a new statement is added below. ensureSchema() checks
+// this against schema_migrations before doing anything else, so a cold
+// serverless instance that finds the schema already at the current version
+// pays for exactly 2 round-trips instead of the full ~30-statement sequence
+// — on Vercel Hobby's 10s function timeout, running the whole sequence on
+// every cold start was enough by itself to time out requests (observed in
+// production as 504s on GET /analise/, no code involved past getDb()).
+const SCHEMA_VERSION = 1;
+
 async function ensureSchema(): Promise<void> {
   const db = getPool();
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  const { rows: migrationRows } = await db.query<{ version: number }>(
+    `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1`
+  );
+  if ((migrationRows[0]?.version ?? 0) >= SCHEMA_VERSION) return;
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS client_access (
       id TEXT PRIMARY KEY,
@@ -209,6 +229,11 @@ async function ensureSchema(): Promise<void> {
     )
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log (created_at DESC)`);
+
+  await db.query(
+    `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`,
+    [SCHEMA_VERSION]
+  );
 }
 
 function slugifyUsernameCandidate(raw: string): string {
