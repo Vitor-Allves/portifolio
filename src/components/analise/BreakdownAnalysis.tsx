@@ -174,7 +174,10 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
       byBucket.set(key, entry);
     }
 
-    const keys = [...byBucket.keys()];
+    // "unknown" (Meta couldn't determine the person's age/gender/etc. for
+    // this row) is excluded outright rather than shown as a labeled bucket
+    // — it's not an actionable segment to read a decision from.
+    const keys = [...byBucket.keys()].filter((k) => k !== "unknown");
     if (order) {
       keys.sort((a, b) => {
         const ia = order.indexOf(a);

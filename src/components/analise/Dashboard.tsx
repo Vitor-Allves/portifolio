@@ -225,10 +225,6 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     () => data.devices.filter((d) => accountIds.has(d.accountId)),
     [data.devices, accountIds]
   );
-  const filteredCountries = useMemo(
-    () => data.countries.filter((c) => accountIds.has(c.accountId)),
-    [data.countries, accountIds]
-  );
   const filteredHours = useMemo(
     () => data.hours.filter((h) => accountIds.has(h.accountId)),
     [data.hours, accountIds]
@@ -889,27 +885,16 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                       </m.div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <m.div custom={16} initial="hidden" animate="visible" variants={fadeUp}>
-                        <BreakdownAnalysis
-                          title="Distribuição por dispositivo"
-                          barColor="var(--color-intel-cyan)"
-                          segments={filteredDevices}
-                          bucketKey={(s) => s.device}
-                          bucketLabel={(k) => DEVICE_LABEL[k] ?? k}
-                          defaultMetric="spend"
-                        />
-                      </m.div>
-                      <m.div custom={17} initial="hidden" animate="visible" variants={fadeUp}>
-                        <BreakdownAnalysis
-                          title="Distribuição por país"
-                          barColor="var(--color-intel-violet)"
-                          segments={filteredCountries}
-                          bucketKey={(s) => s.country}
-                          defaultMetric="reach"
-                        />
-                      </m.div>
-                    </div>
+                    <m.div custom={16} initial="hidden" animate="visible" variants={fadeUp}>
+                      <BreakdownAnalysis
+                        title="Distribuição por dispositivo"
+                        barColor="var(--color-intel-cyan)"
+                        segments={filteredDevices}
+                        bucketKey={(s) => s.device}
+                        bucketLabel={(k) => DEVICE_LABEL[k] ?? k}
+                        defaultMetric="spend"
+                      />
+                    </m.div>
 
                     <m.div custom={18} initial="hidden" animate="visible" variants={fadeUp}>
                       <TopHoursTable segments={filteredHours} />
