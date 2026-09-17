@@ -245,68 +245,26 @@ function resolvePeriodRange(period: Period, now: Date = new Date()): DateRange {
   }
 }
 
-function calendarSpanDays(range: DateRange): number {
-  return (
-    Math.round(
-      (new Date(`${range.until}T00:00:00Z`).getTime() -
-        new Date(`${range.since}T00:00:00Z`).getTime()) /
-        86_400_000
-    ) + 1
-  );
-}
-
-// Monday–Friday, no holiday calendar (a national/state/municipal holiday
-// table would need its own maintenance and still wouldn't cover every
-// account's own operating calendar) — good enough to correct for the one
-// systematic skew this comparison needs to avoid: two calendar-equal
-// windows landing on a different number of weekdays depending on where
-// weekends fall.
-function isBusinessDay(iso: string): boolean {
-  const day = new Date(`${iso}T00:00:00Z`).getUTCDay();
-  return day !== 0 && day !== 6;
-}
-
-function countBusinessDays(range: DateRange): number {
-  let count = 0;
-  for (let cursor = range.since; cursor <= range.until; cursor = shiftDate(cursor, 1)) {
-    if (isBusinessDay(cursor)) count++;
-  }
-  return count;
+/** Same day-of-month, `deltaMonths` months away — clamped to the target month's own last day (e.g. Aug 31 minus 1 month lands on Jul 31, but Mar 31 minus 1 month lands on Feb 28/29, not a rolled-over Mar 3). */
+function shiftMonths(iso: string, deltaMonths: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const targetIndex = (y * 12 + (m - 1)) + deltaMonths;
+  const targetYear = Math.floor(targetIndex / 12);
+  const targetMonth = ((targetIndex % 12) + 12) % 12; // 0-11
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const targetDay = Math.min(d, lastDayOfTargetMonth);
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
 }
 
 /**
- * Immediately preceding window sized so it contains the SAME NUMBER OF
- * BUSINESS DAYS as `range` — not simply the same calendar-day span. Two
- * windows of equal calendar length can still contain a different count of
- * weekdays depending on where weekends fall inside them (e.g. the first 15
- * calendar days of September vs. the last 15 of August), which skews any
- * day-driven metric (spend, delivery) between "current" and "previous"
- * before the comparison even starts. This walks backward one calendar day
- * at a time from the day before `range` starts, counting only business
- * days, until it has accumulated as many as `range` itself has — the
- * resulting window's calendar length can differ from `range`'s, which is
- * the whole point.
- *
- * Falls back to the same calendar-day span when `range` itself has zero
- * business days (an all-weekend custom range) — there's no business-day
- * count to match in that case.
+ * The same period one calendar month earlier — `since` and `until` each
+ * shifted back exactly one month, day-of-month preserved (clamped for
+ * month-end edge dates). This is what "comparar com o período anterior"
+ * means throughout the dashboard: the literal same date range a month ago,
+ * not merely the immediately preceding window of equal length.
  */
 function previousEquivalentRange(range: DateRange): DateRange {
-  const targetBusinessDays = countBusinessDays(range);
-  const prevUntil = shiftDate(range.since, -1);
-
-  if (targetBusinessDays === 0) {
-    const prevSince = shiftDate(prevUntil, -(calendarSpanDays(range) - 1));
-    return { since: prevSince, until: prevUntil };
-  }
-
-  let prevSince = prevUntil;
-  let counted = isBusinessDay(prevUntil) ? 1 : 0;
-  while (counted < targetBusinessDays) {
-    prevSince = shiftDate(prevSince, -1);
-    if (isBusinessDay(prevSince)) counted++;
-  }
-  return { since: prevSince, until: prevUntil };
+  return { since: shiftMonths(range.since, -1), until: shiftMonths(range.until, -1) };
 }
 
 export class MetaApiError extends Error {

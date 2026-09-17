@@ -58,7 +58,7 @@ type BreakdownAnalysisProps<T extends BucketTotals> = {
   segments: T[];
   bucketKey: (segment: T) => string;
   bucketLabel?: (key: string) => string;
-  /** Fixed display order (e.g. chronological age brackets) — hides the "ordenar por" picker in favor of this order. Omit to let the person choose which metric to rank buckets by instead (there's no inherent order for region/platform/device). */
+  /** Fixed display order (e.g. chronological age brackets), offered as the default "Ordem padrão" option — the person can still switch to any metric-ranked order via the picker, same as every other breakdown. Omit when there's no inherent order (region/platform/device). */
   order?: string[];
   defaultRankMetric?: BreakdownRankMetric;
 };
@@ -81,7 +81,7 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
   order,
   defaultRankMetric = "spend",
 }: BreakdownAnalysisProps<T>) {
-  const [rankMetric, setRankMetric] = useState<BreakdownRankMetric>(defaultRankMetric);
+  const [rankMetric, setRankMetric] = useState<BreakdownRankMetric | "default">(order ? "default" : defaultRankMetric);
 
   const { rows, hasConversations } = useMemo(() => {
     const byBucket = new Map<string, BucketTotals>();
@@ -100,22 +100,23 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
     const anyConversations = [...byBucket.values()].some((t) => t.conversations !== null);
 
     let keys: string[];
-    if (order) {
+    if (rankMetric === "default" && order) {
       keys = [...byBucket.keys()].sort((a, b) => {
         const ia = order.indexOf(a);
         const ib = order.indexOf(b);
         return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
       });
     } else {
+      const metric = rankMetric === "default" ? defaultRankMetric : rankMetric;
       keys = [...byBucket.entries()]
-        .map(([key, totals]) => ({ key, rank: rankValue(totals, rankMetric) }))
+        .map(([key, totals]) => ({ key, rank: rankValue(totals, metric) }))
         .filter((row): row is { key: string; rank: number } => row.rank !== null)
         .sort((a, b) => b.rank - a.rank)
         .map((row) => row.key);
     }
 
     return { rows: keys.map((key) => ({ key, totals: byBucket.get(key)! })), hasConversations: anyConversations };
-  }, [segments, bucketKey, order, rankMetric]);
+  }, [segments, bucketKey, order, rankMetric, defaultRankMetric]);
 
   if (segments.length === 0) {
     return (
@@ -130,23 +131,33 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
     <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-[13px] font-medium text-intel-text">{title}</h3>
-        {!order && (
-          <div className="flex flex-wrap gap-1" role="group" aria-label={`Ordenar ${title} por`}>
-            {RANK_METRICS.filter((m) => m.id !== "conversations" || hasConversations).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                aria-pressed={rankMetric === m.id}
-                onClick={() => setRankMetric(m.id)}
-                className={`text-[11px] px-2.5 py-1.5 rounded-full transition-colors duration-200 ${
-                  rankMetric === m.id ? "bg-intel-cyan/[0.14] text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
-                }`}
-              >
-                Ordenar por {m.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1" role="group" aria-label={`Ordenar ${title} por`}>
+          {order && (
+            <button
+              type="button"
+              aria-pressed={rankMetric === "default"}
+              onClick={() => setRankMetric("default")}
+              className={`text-[11px] px-2.5 py-1.5 rounded-full transition-colors duration-200 ${
+                rankMetric === "default" ? "bg-intel-cyan/[0.14] text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
+              }`}
+            >
+              Ordem padrão
+            </button>
+          )}
+          {RANK_METRICS.filter((m) => m.id !== "conversations" || hasConversations).map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={rankMetric === m.id}
+              onClick={() => setRankMetric(m.id)}
+              className={`text-[11px] px-2.5 py-1.5 rounded-full transition-colors duration-200 ${
+                rankMetric === m.id ? "bg-intel-cyan/[0.14] text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
+              }`}
+            >
+              Ordenar por {m.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {rows.length === 0 ? (
