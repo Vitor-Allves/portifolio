@@ -20,15 +20,7 @@ import KpiCard from "./KpiCard";
 import TrendChart, { type TrendMetric } from "./TrendChart";
 import SpendDistributionChart from "./SpendDistributionChart";
 import RankingChart from "./RankingChart";
-import BreakdownAnalysis, {
-  AGE_ORDER,
-  GENDER_ORDER,
-  GENDER_LABEL,
-  unknownAsNaoInformado,
-  PLATFORM_LABEL,
-  PLACEMENT_LABEL,
-  DEVICE_LABEL,
-} from "./BreakdownAnalysis";
+import BreakdownAnalysis, { AGE_ORDER, GENDER_ORDER, GENDER_LABEL, PLATFORM_LABEL, DEVICE_LABEL } from "./BreakdownAnalysis";
 import CampaignsTable from "./CampaignsTable";
 import TopHoursTable from "./TopHoursTable";
 import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
@@ -216,10 +208,6 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   const filteredPlatforms = useMemo(
     () => data.platforms.filter((p) => accountIds.has(p.accountId)),
     [data.platforms, accountIds]
-  );
-  const filteredPlacements = useMemo(
-    () => data.placements.filter((p) => accountIds.has(p.accountId)),
-    [data.placements, accountIds]
   );
   const filteredDevices = useMemo(
     () => data.devices.filter((d) => accountIds.has(d.accountId)),
@@ -831,23 +819,20 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                       <m.div custom={11} initial="hidden" animate="visible" variants={fadeUp}>
                         <BreakdownAnalysis
                           title="Público por idade"
-                          barColor="var(--color-intel-cyan)"
+                          bucketColumnLabel="Idade"
                           segments={filteredAudience}
                           bucketKey={(s) => s.age}
-                          bucketLabel={unknownAsNaoInformado}
                           order={AGE_ORDER}
-                          defaultMetric="conversations"
                         />
                       </m.div>
                       <m.div custom={12} initial="hidden" animate="visible" variants={fadeUp}>
                         <BreakdownAnalysis
                           title="Público por gênero"
-                          barColor="var(--color-intel-violet)"
+                          bucketColumnLabel="Gênero"
                           segments={filteredAudience}
                           bucketKey={(s) => s.gender}
                           bucketLabel={(k) => GENDER_LABEL[k] ?? k}
                           order={GENDER_ORDER}
-                          defaultMetric="conversations"
                         />
                       </m.div>
                     </div>
@@ -855,10 +840,10 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     <m.div custom={13} initial="hidden" animate="visible" variants={fadeUp}>
                       <BreakdownAnalysis
                         title="Público por região"
-                        barColor="var(--color-intel-cyan)"
+                        bucketColumnLabel="Região"
                         segments={filteredRegions}
                         bucketKey={(s) => s.region}
-                        defaultMetric="reach"
+                        defaultRankMetric="reach"
                       />
                     </m.div>
 
@@ -866,35 +851,22 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                       <m.div custom={14} initial="hidden" animate="visible" variants={fadeUp}>
                         <BreakdownAnalysis
                           title="Distribuição por plataforma"
-                          barColor="var(--color-intel-cyan)"
+                          bucketColumnLabel="Plataforma"
                           segments={filteredPlatforms}
                           bucketKey={(s) => s.platform}
                           bucketLabel={(k) => PLATFORM_LABEL[k] ?? k}
-                          defaultMetric="spend"
                         />
                       </m.div>
                       <m.div custom={15} initial="hidden" animate="visible" variants={fadeUp}>
                         <BreakdownAnalysis
-                          title="Distribuição por posicionamento"
-                          barColor="var(--color-intel-violet)"
-                          segments={filteredPlacements}
-                          bucketKey={(s) => s.placement}
-                          bucketLabel={(k) => PLACEMENT_LABEL[k] ?? k}
-                          defaultMetric="spend"
+                          title="Distribuição por dispositivo"
+                          bucketColumnLabel="Dispositivo"
+                          segments={filteredDevices}
+                          bucketKey={(s) => s.device}
+                          bucketLabel={(k) => DEVICE_LABEL[k] ?? k}
                         />
                       </m.div>
                     </div>
-
-                    <m.div custom={16} initial="hidden" animate="visible" variants={fadeUp}>
-                      <BreakdownAnalysis
-                        title="Distribuição por dispositivo"
-                        barColor="var(--color-intel-cyan)"
-                        segments={filteredDevices}
-                        bucketKey={(s) => s.device}
-                        bucketLabel={(k) => DEVICE_LABEL[k] ?? k}
-                        defaultMetric="spend"
-                      />
-                    </m.div>
 
                     <m.div custom={18} initial="hidden" animate="visible" variants={fadeUp}>
                       <TopHoursTable segments={filteredHours} />

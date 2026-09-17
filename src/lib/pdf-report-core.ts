@@ -29,7 +29,6 @@ import type {
   DateRange,
   RegionSegment,
   PlatformSegment,
-  PlacementSegment,
   DeviceSegment,
   HourSegment,
 } from "./meta-ads-types";
@@ -110,7 +109,6 @@ export type ReportPdfInput = {
   audience: AudienceSegment[];
   regions: RegionSegment[];
   platforms: PlatformSegment[];
-  placements: PlacementSegment[];
   devices: DeviceSegment[];
   hours: HourSegment[];
   /** Accounts that failed to load for this request — surfaced so totals are never mistaken for "genuinely zero". */
@@ -133,8 +131,7 @@ export class ReportPdfError extends Error {}
  * one pass: headline KPIs, the executive summary, the evolution charts and
  * the strategic analysis — no campaign-by-campaign detail, no distribution
  * breakdowns. "audience" flips that: only the audience/distribution
- * breakdowns (age/gender, region, platform/placement/device/country, hour),
- * nothing else.
+ * breakdowns (age/gender, region, platform/device, hour), nothing else.
  */
 export type PdfReportType = "executive" | "detailed" | "audience";
 
@@ -864,6 +861,91 @@ function drawTopHoursTable(doc: jsPDF, ctx: Ctx, y: number, hours: HourSegment[]
   return (doc as any).lastAutoTable.finalY + 8;
 }
 
+type BreakdownRow = { key: string; label: string; spend: number; clicks: number; impressions: number; reach: number; conversations: number | null };
+
+/**
+ * Aggregates one Meta breakdown dimension (age, gender, region, platform,
+ * device — each attributes exactly one bucket per reached person, so
+ * summing spend/clicks/reach across rows is safe) into ranked totals.
+ * "unknown" (Meta couldn't determine the value for a row) is excluded
+ * outright, same as the live dashboard's BreakdownAnalysis component.
+ */
+function aggregateBreakdown<T extends { spend: number; impressions: number; clicks: number; reach: number; conversations: number | null }>(
+  segments: T[],
+  keyOf: (s: T) => string,
+  labelOf: (key: string) => string
+): BreakdownRow[] {
+  const byKey = new Map<string, BreakdownRow>();
+  for (const seg of segments) {
+    const key = keyOf(seg);
+    if (key === "unknown") continue;
+    const entry = byKey.get(key) ?? { key, label: labelOf(key), spend: 0, clicks: 0, impressions: 0, reach: 0, conversations: null };
+    entry.spend += seg.spend;
+    entry.clicks += seg.clicks;
+    entry.impressions += seg.impressions;
+    entry.reach += seg.reach;
+    if (seg.conversations !== null) entry.conversations = (entry.conversations ?? 0) + seg.conversations;
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()].sort((a, b) => b.spend - a.spend);
+}
+
+/**
+ * Same "columns, not a single-metric bar list" logic as drawTopHoursTable:
+ * every core metric the recipient is allowed to see, shown side by side per
+ * bucket, mirroring the live dashboard's BreakdownAnalysis table. A column
+ * only appears when its own permission allows it, and the whole section is
+ * skipped if none do — never a table with only a label column.
+ */
+function drawBreakdownTable(
+  doc: jsPDF,
+  ctx: Ctx,
+  y: number,
+  title: string,
+  caption: string,
+  bucketColumnLabel: string,
+  rows: BreakdownRow[],
+  allowed: AllowedColumns
+): number {
+  if (rows.length === 0) return y;
+  const hasConversations = rows.some((r) => r.conversations !== null);
+
+  type Col = { label: string; render: (r: BreakdownRow) => string };
+  const cols: Col[] = [];
+  if (isAllowed(allowed, "spend")) cols.push({ label: "Investimento", render: (r) => formatCurrencyBRL(r.spend) });
+  if (isAllowed(allowed, "clicks")) cols.push({ label: "Cliques", render: (r) => formatInteger(r.clicks) });
+  if (isAllowed(allowed, "ctr")) {
+    cols.push({ label: "CTR", render: (r) => (r.impressions > 0 ? formatPercent((r.clicks / r.impressions) * 100) : "—") });
+  }
+  if (isAllowed(allowed, "reach")) cols.push({ label: "Alcance", render: (r) => formatInteger(r.reach) });
+  if (isAllowed(allowed, "conversations") && hasConversations) {
+    cols.push({ label: "Conversa iniciada", render: (r) => (r.conversations === null ? "Não disponível" : formatInteger(r.conversations)) });
+  }
+  if (cols.length === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, title);
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(caption, MARGIN_X, y + 3);
+  y += 8;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    columnStyles: { 0: { cellWidth: 62 } },
+    head: [[bucketColumnLabel, ...cols.map((c) => c.label)]],
+    body: rows.map((r) => [r.label, ...cols.map((c) => c.render(r))]),
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
 function campaignInfoCardHeight(metricCount: number, hasBudget: boolean): number {
   const budgetExtra = hasBudget ? 5 : 0;
   if (metricCount === 0) return 17 + budgetExtra;
@@ -1437,48 +1519,19 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y = sectionTitle(doc, ctx, y, "Público e distribuição");
   }
 
-  const chartW2 = (CONTENT_W - 8) / 2;
-  if (showAudienceBreakdowns && isAllowed(allowed, "conversations") && input.audience.length > 0) {
+  if (showAudienceBreakdowns && input.audience.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    // null-propagation: a bucket only accumulates a number once at least one
-    // of its rows actually reports conversations; buckets that never do stay
-    // out of the bar list entirely rather than rendering a fabricated zero.
-    const byAge = new Map<string, number>();
-    const byGender = new Map<string, number>();
-    for (const a of input.audience) {
-      if (a.conversations === null) continue;
-      // "unknown" (Meta couldn't determine age/gender for this row) is
-      // excluded outright — not an actionable segment to read here.
-      if (a.age !== "unknown") byAge.set(a.age, (byAge.get(a.age) ?? 0) + a.conversations);
-      if (a.gender !== "unknown") byGender.set(a.gender, (byGender.get(a.gender) ?? 0) + a.conversations);
-    }
     const genderLabel: Record<string, string> = { male: "Masculino", female: "Feminino" };
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2, h: 52 }, {
-      title: "Público por idade",
-      caption: "Métrica: Conversa iniciada",
-      items: [...byAge.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
-      formatValue: formatInteger,
-    });
-    drawBarList(doc, ctx, { x: MARGIN_X + chartW2 + 8, y, w: chartW2, h: 52 }, {
-      title: "Público por gênero",
-      caption: "Métrica: Conversa iniciada",
-      items: [...byGender.entries()].map(([label, value]) => ({ label: genderLabel[label] ?? label, value })).sort((a, b) => b.value - a.value),
-      formatValue: formatInteger,
-    });
-    y += 58;
+    const ageRows = aggregateBreakdown(input.audience, (a) => a.age, (k) => k);
+    const genderRows = aggregateBreakdown(input.audience, (a) => a.gender, (k) => genderLabel[k] ?? k);
+    y = drawBreakdownTable(doc, ctx, y, "Público por idade", "Faixas etárias com dados reportados pela Meta no período.", "Idade", ageRows, allowed);
+    y = drawBreakdownTable(doc, ctx, y, "Público por gênero", "Gêneros com dados reportados pela Meta no período.", "Gênero", genderRows, allowed);
   }
 
-  if (showAudienceBreakdowns && isAllowed(allowed, "reach") && input.regions.length > 0) {
+  if (showAudienceBreakdowns && input.regions.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    const byRegion = new Map<string, number>();
-    for (const r of input.regions) byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + r.reach);
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 56 }, {
-      title: "Público por região",
-      caption: "Métrica: Alcance (estimativa Meta)",
-      items: [...byRegion.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
-      formatValue: formatInteger,
-    });
-    y += 62;
+    const regionRows = aggregateBreakdown(input.regions, (r) => r.region, (k) => k);
+    y = drawBreakdownTable(doc, ctx, y, "Público por região", "Estados com dados reportados pela Meta no período.", "Região", regionRows, allowed);
   }
 
   const platformLabel: Record<string, string> = {
@@ -1489,39 +1542,16 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   };
   const deviceLabel: Record<string, string> = { desktop: "Desktop", mobile_app: "App mobile", mobile_web: "Web mobile" };
 
-  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && (input.platforms.length > 0 || input.placements.length > 0)) {
+  if (showAudienceBreakdowns && input.platforms.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    const chartW2c = (CONTENT_W - 8) / 2;
-    const byPlatform = new Map<string, number>();
-    for (const p of input.platforms) byPlatform.set(p.platform, (byPlatform.get(p.platform) ?? 0) + p.spend);
-    const byPlacement = new Map<string, number>();
-    for (const p of input.placements) byPlacement.set(p.placement, (byPlacement.get(p.placement) ?? 0) + p.spend);
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: chartW2c, h: 52 }, {
-      title: "Distribuição por plataforma",
-      caption: "Métrica: Investimento (R$)",
-      items: [...byPlatform.entries()].map(([label, value]) => ({ label: platformLabel[label] ?? label, value })).sort((a, b) => b.value - a.value),
-      formatValue: formatCurrencyBRL,
-    });
-    drawBarList(doc, ctx, { x: MARGIN_X + chartW2c + 8, y, w: chartW2c, h: 52 }, {
-      title: "Distribuição por posicionamento",
-      caption: "Métrica: Investimento (R$)",
-      items: [...byPlacement.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 8),
-      formatValue: formatCurrencyBRL,
-    });
-    y += 58;
+    const platformRows = aggregateBreakdown(input.platforms, (p) => p.platform, (k) => platformLabel[k] ?? k);
+    y = drawBreakdownTable(doc, ctx, y, "Distribuição por plataforma", "Plataformas com dados reportados pela Meta no período.", "Plataforma", platformRows, allowed);
   }
 
-  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && input.devices.length > 0) {
+  if (showAudienceBreakdowns && input.devices.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    const byDevice = new Map<string, number>();
-    for (const d of input.devices) byDevice.set(d.device, (byDevice.get(d.device) ?? 0) + d.spend);
-    drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 52 }, {
-      title: "Distribuição por dispositivo",
-      caption: "Métrica: Investimento (R$)",
-      items: [...byDevice.entries()].map(([label, value]) => ({ label: deviceLabel[label] ?? label, value })).sort((a, b) => b.value - a.value),
-      formatValue: formatCurrencyBRL,
-    });
-    y += 58;
+    const deviceRows = aggregateBreakdown(input.devices, (d) => d.device, (k) => deviceLabel[k] ?? k);
+    y = drawBreakdownTable(doc, ctx, y, "Distribuição por dispositivo", "Dispositivos com dados reportados pela Meta no período.", "Dispositivo", deviceRows, allowed);
   }
 
   if (showAudienceBreakdowns && isAllowed(allowed, "spend") && input.hours.length > 0) {

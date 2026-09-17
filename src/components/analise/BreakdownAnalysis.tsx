@@ -2,111 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { ctr, cpc, cpm, costPerConversation } from "@/lib/metrics";
-
-export type BreakdownMetric =
-  | "spend"
-  | "impressions"
-  | "clicks"
-  | "linkClicks"
-  | "conversations"
-  | "costPerConversation"
-  | "ctr"
-  | "cpc"
-  | "cpm"
-  | "reach";
-
-const METRICS: { id: BreakdownMetric; label: string }[] = [
-  { id: "spend", label: "Investimento" },
-  { id: "impressions", label: "Impressões" },
-  { id: "clicks", label: "Cliques totais" },
-  { id: "linkClicks", label: "Cliques no link" },
-  { id: "conversations", label: "Conversa iniciada" },
-  { id: "costPerConversation", label: "Custo/Conversa" },
-  { id: "ctr", label: "CTR" },
-  { id: "cpc", label: "CPC" },
-  { id: "cpm", label: "CPM" },
-  { id: "reach", label: "Alcance" },
-];
-
-type BucketTotals = { spend: number; impressions: number; clicks: number; linkClicks: number; conversations: number | null; reach: number };
-
-function metricValue(totals: BucketTotals, metric: BreakdownMetric): number | null {
-  switch (metric) {
-    case "spend":
-      return totals.spend;
-    case "impressions":
-      return totals.impressions;
-    case "clicks":
-      return totals.clicks;
-    case "linkClicks":
-      return totals.linkClicks;
-    case "conversations":
-      return totals.conversations;
-    case "costPerConversation":
-      return costPerConversation(totals);
-    case "ctr":
-      return ctr(totals);
-    case "cpc":
-      return cpc(totals);
-    case "cpm":
-      return cpm(totals);
-    case "reach":
-      return totals.reach;
-  }
-}
-
-function formatValue(value: number, metric: BreakdownMetric): string {
-  switch (metric) {
-    case "spend":
-    case "cpc":
-    case "cpm":
-    case "costPerConversation":
-      return formatCurrencyBRL(value);
-    case "impressions":
-    case "clicks":
-    case "linkClicks":
-    case "conversations":
-    case "reach":
-      return formatInteger(value);
-    case "ctr":
-      return formatPercent(value);
-  }
-}
+import { ctr } from "@/lib/metrics";
 
 export const AGE_ORDER = ["13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65+", "unknown"];
 export const GENDER_ORDER = ["female", "male", "unknown"];
 export const GENDER_LABEL: Record<string, string> = { male: "Masculino", female: "Feminino", unknown: "Não informado" };
-export const unknownAsNaoInformado = (key: string) => (key === "unknown" ? "Não informado" : key);
 
 export const PLATFORM_LABEL: Record<string, string> = {
   facebook: "Facebook",
   instagram: "Instagram",
   audience_network: "Audience Network",
   messenger: "Messenger",
-};
-
-// Meta's platform_position values aren't fully enumerable (new placements
-// ship over time) — known ones get a readable label, anything else falls
-// back to the raw value rather than being hidden.
-export const PLACEMENT_LABEL: Record<string, string> = {
-  feed: "Feed",
-  facebook_reels: "Reels (Facebook)",
-  instagram_reels: "Reels (Instagram)",
-  instagram_stream: "Feed (Instagram)",
-  instagram_stories: "Stories (Instagram)",
-  facebook_stories: "Stories (Facebook)",
-  story: "Stories",
-  video_feeds: "Feed de vídeos",
-  instream_video: "Vídeo in-stream",
-  marketplace: "Marketplace",
-  right_hand_column: "Coluna lateral",
-  search: "Busca",
-  suggested_video: "Vídeos sugeridos",
-  explore: "Explorar (Instagram)",
-  explore_home: "Explorar - início (Instagram)",
-  profile_feed: "Feed do perfil",
-  msite_feed: "Feed (mobile site)",
 };
 
 export const DEVICE_LABEL: Record<string, string> = {
@@ -116,88 +22,100 @@ export const DEVICE_LABEL: Record<string, string> = {
 };
 
 // Meta returns each hour bucket as "HH:00:00 - HH:59:59" in the account's
-// own timezone — this order keeps the bar list chronological (00h → 23h)
-// instead of sorted by the selected metric's value.
-export const HOUR_ORDER = Array.from({ length: 24 }, (_, h) => {
-  const hh = String(h).padStart(2, "0");
-  return `${hh}:00:00 - ${hh}:59:59`;
-});
+// own timezone.
 export const hourShortLabel = (key: string) => key.slice(0, 2) + "h";
+
+export type BreakdownRankMetric = "spend" | "clicks" | "ctr" | "reach" | "conversations";
+
+const RANK_METRICS: { id: BreakdownRankMetric; label: string }[] = [
+  { id: "spend", label: "Investimento" },
+  { id: "clicks", label: "Cliques" },
+  { id: "ctr", label: "CTR" },
+  { id: "reach", label: "Alcance" },
+  { id: "conversations", label: "Conversa iniciada" },
+];
+
+type BucketTotals = { spend: number; impressions: number; clicks: number; reach: number; conversations: number | null };
+
+function rankValue(totals: BucketTotals, metric: BreakdownRankMetric): number | null {
+  switch (metric) {
+    case "spend":
+      return totals.spend;
+    case "clicks":
+      return totals.clicks;
+    case "ctr":
+      return ctr(totals);
+    case "reach":
+      return totals.reach;
+    case "conversations":
+      return totals.conversations;
+  }
+}
 
 type BreakdownAnalysisProps<T extends BucketTotals> = {
   title: string;
-  barColor: string;
+  bucketColumnLabel: string;
   segments: T[];
   bucketKey: (segment: T) => string;
   bucketLabel?: (key: string) => string;
-  /** Fixed display order (e.g. chronological age brackets). Omit to rank buckets by the selected metric's value instead — the natural choice when there's no inherent order (region, for instance). */
+  /** Fixed display order (e.g. chronological age brackets) — hides the "ordenar por" picker in favor of this order. Omit to let the person choose which metric to rank buckets by instead (there's no inherent order for region/platform/device). */
   order?: string[];
-  defaultMetric?: BreakdownMetric;
-  maxRows?: number;
-  /** Metrics to omit from the picker — e.g. "reach" for the hour-of-day breakdown, where a person seen in multiple hours the same day is counted in each bucket, so summing it across hours isn't a real total (same caveat as DailyMetrics.reach). */
-  hideMetrics?: BreakdownMetric[];
+  defaultRankMetric?: BreakdownRankMetric;
 };
 
-// Generic "one metric, broken down by one dimension" panel — used for
-// Público por idade/gênero/região. Each caller supplies which field of its
-// own segment type is the bucket key; the metric picker and bar rendering
-// are shared. Buckets from the same underlying Meta breakdown are always
-// mutually exclusive per person (age, gender, and region each assign
-// exactly one value per reached person), so summing spend/impressions/
-// clicks/reach across rows here is safe — unlike per-campaign or per-day
-// reach, which the AccountReach type's own comment warns against summing.
+// Same "columns, not a metric switcher" logic as TopHoursTable: every
+// breakdown answers "which buckets are actually worth acting on" better as
+// a ranked table with every core metric shown side by side than as a bar
+// list you switch one metric at a time. Buckets from the same underlying
+// Meta breakdown are always mutually exclusive per person (age, gender,
+// region, platform, device each assign exactly one value per reached
+// person), so summing spend/impressions/clicks/reach across rows here is
+// safe. "unknown" (Meta couldn't determine the value for a row) is excluded
+// outright — not an actionable segment to read a decision from.
 export default function BreakdownAnalysis<T extends BucketTotals>({
   title,
-  barColor,
+  bucketColumnLabel,
   segments,
   bucketKey,
   bucketLabel,
   order,
-  defaultMetric = "reach",
-  maxRows,
-  hideMetrics,
+  defaultRankMetric = "spend",
 }: BreakdownAnalysisProps<T>) {
-  const [metric, setMetric] = useState<BreakdownMetric>(defaultMetric);
-  const availableMetrics = hideMetrics ? METRICS.filter((m) => !hideMetrics.includes(m.id)) : METRICS;
+  const [rankMetric, setRankMetric] = useState<BreakdownRankMetric>(defaultRankMetric);
 
-  const rows = useMemo(() => {
+  const { rows, hasConversations } = useMemo(() => {
     const byBucket = new Map<string, BucketTotals>();
     for (const seg of segments) {
       const key = bucketKey(seg);
-      const entry = byBucket.get(key) ?? { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, conversations: null, reach: 0 };
+      if (key === "unknown") continue;
+      const entry = byBucket.get(key) ?? { spend: 0, impressions: 0, clicks: 0, reach: 0, conversations: null };
       entry.spend += seg.spend;
       entry.impressions += seg.impressions;
       entry.clicks += seg.clicks;
-      entry.linkClicks += seg.linkClicks;
-      if (seg.conversations !== null) entry.conversations = (entry.conversations ?? 0) + seg.conversations;
       entry.reach += seg.reach;
+      if (seg.conversations !== null) entry.conversations = (entry.conversations ?? 0) + seg.conversations;
       byBucket.set(key, entry);
     }
 
-    // "unknown" (Meta couldn't determine the person's age/gender/etc. for
-    // this row) is excluded outright rather than shown as a labeled bucket
-    // — it's not an actionable segment to read a decision from.
-    const keys = [...byBucket.keys()].filter((k) => k !== "unknown");
+    const anyConversations = [...byBucket.values()].some((t) => t.conversations !== null);
+
+    let keys: string[];
     if (order) {
-      keys.sort((a, b) => {
+      keys = [...byBucket.keys()].sort((a, b) => {
         const ia = order.indexOf(a);
         const ib = order.indexOf(b);
         return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
       });
+    } else {
+      keys = [...byBucket.entries()]
+        .map(([key, totals]) => ({ key, rank: rankValue(totals, rankMetric) }))
+        .filter((row): row is { key: string; rank: number } => row.rank !== null)
+        .sort((a, b) => b.rank - a.rank)
+        .map((row) => row.key);
     }
 
-    let mapped = keys
-      .map((key) => ({ key, value: metricValue(byBucket.get(key)!, metric) }))
-      .filter((row): row is { key: string; value: number } => row.value !== null);
-
-    if (!order) {
-      mapped = mapped.sort((a, b) => b.value - a.value);
-    }
-    if (maxRows) {
-      mapped = mapped.slice(0, maxRows);
-    }
-    return mapped;
-  }, [segments, bucketKey, metric, order, maxRows]);
+    return { rows: keys.map((key) => ({ key, totals: byBucket.get(key)! })), hasConversations: anyConversations };
+  }, [segments, bucketKey, order, rankMetric]);
 
   if (segments.length === 0) {
     return (
@@ -208,48 +126,71 @@ export default function BreakdownAnalysis<T extends BucketTotals>({
     );
   }
 
-  const maxValue = Math.max(...rows.map((r) => r.value), 1);
-
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-[13px] font-medium text-intel-text">{title}</h3>
-        <div className="flex flex-wrap gap-1" role="group" aria-label={`Selecionar métrica para ${title}`}>
-          {availableMetrics.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              aria-pressed={metric === m.id}
-              onClick={() => setMetric(m.id)}
-              className={`text-[11px] px-2.5 py-1.5 rounded-full transition-colors duration-200 ${
-                metric === m.id ? "bg-intel-cyan/[0.14] text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        {!order && (
+          <div className="flex flex-wrap gap-1" role="group" aria-label={`Ordenar ${title} por`}>
+            {RANK_METRICS.filter((m) => m.id !== "conversations" || hasConversations).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                aria-pressed={rankMetric === m.id}
+                onClick={() => setRankMetric(m.id)}
+                className={`text-[11px] px-2.5 py-1.5 rounded-full transition-colors duration-200 ${
+                  rankMetric === m.id ? "bg-intel-cyan/[0.14] text-intel-cyan" : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
+                }`}
+              >
+                Ordenar por {m.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {rows.length === 0 ? (
         <p className="text-sm text-intel-text-dim">Sem dados para esse indicador no período.</p>
       ) : (
-        <ul className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-          {rows.map((row) => (
-            <li key={row.key}>
-              <div className="flex items-baseline justify-between gap-3 mb-1">
-                <span className="text-[13px] text-intel-text-dim">{bucketLabel ? bucketLabel(row.key) : row.key}</span>
-                <span className="text-[13px] tabular-nums text-intel-text">{formatValue(row.value, metric)}</span>
-              </div>
-              <div className="h-3 rounded-full bg-white/[0.05] overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${Math.max((row.value / maxValue) * 100, 2)}%`, backgroundColor: barColor }}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2 px-3">
+                  {bucketColumnLabel}
+                </th>
+                <th className="text-right text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2 px-3">Investimento</th>
+                <th className="text-right text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2 px-3">Cliques</th>
+                <th className="text-right text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2 px-3">CTR</th>
+                <th className="text-right text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2 px-3">Alcance</th>
+                {hasConversations && (
+                  <th className="text-right text-[10.5px] tracking-[0.08em] uppercase text-intel-text-dim font-medium py-2 px-3">
+                    Conversa iniciada
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const rowCtr = ctr(row.totals);
+                return (
+                  <tr key={row.key} className="border-t border-white/[0.05]">
+                    <td className="py-2.5 px-3 text-[13px] text-intel-text">{bucketLabel ? bucketLabel(row.key) : row.key}</td>
+                    <td className="py-2.5 px-3 text-[13px] tabular-nums text-intel-text text-right">{formatCurrencyBRL(row.totals.spend)}</td>
+                    <td className="py-2.5 px-3 text-[13px] tabular-nums text-intel-text text-right">{formatInteger(row.totals.clicks)}</td>
+                    <td className="py-2.5 px-3 text-[13px] tabular-nums text-intel-text text-right">{rowCtr === null ? "—" : formatPercent(rowCtr)}</td>
+                    <td className="py-2.5 px-3 text-[13px] tabular-nums text-intel-text text-right">{formatInteger(row.totals.reach)}</td>
+                    {hasConversations && (
+                      <td className="py-2.5 px-3 text-[13px] tabular-nums text-intel-text text-right">
+                        {row.totals.conversations === null ? "Não disponível" : formatInteger(row.totals.conversations)}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
