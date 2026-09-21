@@ -41,10 +41,20 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Only a same-origin relative path is accepted — an absolute or
+  // protocol-relative value (e.g. "https://evil.example" or "//evil.example")
+  // would otherwise let a crafted login link (?from=...) bounce a real
+  // session to an attacker's page right after real credentials were entered
+  // on this legitimate domain, a classic post-login open-redirect phish.
+  function safeDestination(from: string | null): string {
+    if (!from || !from.startsWith("/") || from.startsWith("//") || from.startsWith("/\\")) {
+      return "/analise/";
+    }
+    return `${from.replace(/\/$/, "")}/`;
+  }
+
   function goToDestination() {
-    const from = searchParams.get("from");
-    const destination = from ? `${from.replace(/\/$/, "")}/` : "/analise/";
-    router.push(destination);
+    router.push(safeDestination(searchParams.get("from")));
     router.refresh();
   }
 
