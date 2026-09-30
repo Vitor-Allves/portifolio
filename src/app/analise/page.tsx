@@ -11,6 +11,17 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// This page fetches every selected account's campaigns/insights from the
+// Meta Graph API synchronously before rendering — inherently variable
+// latency that grows with the number of linked accounts, and was hitting
+// the platform's default 10s function budget as 504s in production
+// (GET /analise/, "Task timed out after 10 seconds"). Raised here rather
+// than optimizing the fetch itself: the account fan-out is already fully
+// parallelized (Promise.allSettled per account in meta-ads.ts), so the
+// remaining latency is Meta's own response time, not something this code
+// controls.
+export const maxDuration = 60;
+
 const DEFAULT_PERIOD: Period = { kind: "preset", preset: "last_30d" };
 
 export default async function AnalisePage() {

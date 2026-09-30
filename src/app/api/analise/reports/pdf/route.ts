@@ -18,6 +18,10 @@ import {
 import { writeAudit } from "@/lib/audit-log";
 
 export const runtime = "nodejs";
+// See the same comment on src/app/analise/page.tsx — generating a report
+// fetches the same multi-account Meta data plus builds a PDF on top, so it's
+// at least as exposed to the platform's default 10s function budget.
+export const maxDuration = 60;
 
 // ---------------------------------------------------------------------------
 // Every metric/column-visibility decision below flows from ONE place: the
