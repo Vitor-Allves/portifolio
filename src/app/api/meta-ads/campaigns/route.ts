@@ -11,6 +11,10 @@ import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { resolveAllowedAccountIds } from "@/lib/session-scope";
 
 export const runtime = "nodejs";
+// See the same comment on src/app/analise/page.tsx — this route runs the
+// identical multi-account Meta fetch on every period/filter change and was
+// hitting the platform's default 10s function budget as 504s in production.
+export const maxDuration = 60;
 
 function resolvePeriod(req: NextRequest): Period | { error: string } {
   const since = req.nextUrl.searchParams.get("since");

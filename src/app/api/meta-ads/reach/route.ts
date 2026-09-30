@@ -11,6 +11,10 @@ import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { resolveAllowedAccountIds } from "@/lib/session-scope";
 
 export const runtime = "nodejs";
+// See the same comment on src/app/analise/page.tsx — this route also fans
+// out to the Meta Graph API per account and was hitting the platform's
+// default 10s function budget as 504s in production.
+export const maxDuration = 60;
 
 type ReachRequestBody = {
   period?: { kind?: string; preset?: string; range?: { since?: string; until?: string } };

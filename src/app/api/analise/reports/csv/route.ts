@@ -14,6 +14,9 @@ import { isActionAllowed, type CampaignColumnId } from "@/lib/client-permissions
 import { writeAudit } from "@/lib/audit-log";
 
 export const runtime = "nodejs";
+// See the same comment on src/app/analise/page.tsx — this route fetches the
+// same multi-account Meta data as the dashboard/PDF export.
+export const maxDuration = 60;
 
 // ---------------------------------------------------------------------------
 // Same permission model as /api/analise/reports/pdf: the dataset is fetched
