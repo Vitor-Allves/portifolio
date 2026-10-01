@@ -64,8 +64,9 @@ export type ReportPdfInput = {
    * True when a specific recipient's permissions were actually resolved and
    * applied (the client generated their own report, or an admin generated
    * one explicitly on behalf of a named client). False for an admin's own
-   * internal/unrestricted export — that case is never labeled as if it were
-   * safe to hand to a client, see the cover page's own scope line.
+   * unrestricted, all-metrics export — in that case the "Permissões
+   * aplicadas" methodology note is omitted entirely, since there's no
+   * recipient-specific permission set to describe.
    */
   isClientScoped: boolean;
   allowedColumns: AllowedColumns;
@@ -256,7 +257,7 @@ function drawHeader(doc: jsPDF, ctx: Ctx) {
   doc.setFontSize(8.5);
   doc.text(ctx.periodLine, PAGE_W - MARGIN_X, 12.5, { align: "right" });
   setColor(doc, "setTextColor", TEXT_MUTED);
-  doc.text("Confidencial — uso interno do cliente", PAGE_W - MARGIN_X, 18, { align: "right" });
+  doc.text("Legado Intelligence · Relatório executivo", PAGE_W - MARGIN_X, 18, { align: "right" });
 
   setColor(doc, "setDrawColor", BORDER);
   doc.setLineWidth(0.3);
@@ -1328,18 +1329,6 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   doc.text(`${input.title} · ${input.periodLabel}`, MARGIN_X, y);
   y += 9;
 
-  if (!input.isClientScoped) {
-    doc.setFont(fonts.body, "bold");
-    doc.setFontSize(8.4);
-    setColor(doc, "setTextColor", BAD);
-    doc.text(
-      "RELATÓRIO INTERNO — visão administrativa completa, sem aplicação de permissões de cliente. Não distribua como se fosse um relatório aprovado para um cliente específico.",
-      MARGIN_X,
-      y
-    );
-    y += 6;
-  }
-
   const metaCols = 3;
   const metaColW = CONTENT_W / metaCols;
   const metaRows: [string, string][] = [
@@ -1655,12 +1644,12 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
         ? `${input.partialAccountNames.length} conta(s) não puderam ser carregadas na geração deste relatório (${input.partialAccountNames.join(", ")}) — os totais não as incluem e não devem ser lidos como "zero" para essas contas. Um indicador exibido como "—" significa ausência de base para o cálculo (ex.: divisão por zero), não um valor nulo.`
         : 'Todas as contas do escopo carregaram normalmente. Um indicador exibido como "—" significa ausência de base para o cálculo (ex.: divisão por zero), não um valor de zero.',
   });
-  methodology.push({
-    heading: "Permissões aplicadas",
-    body: input.isClientScoped
-      ? `Este relatório inclui apenas os indicadores autorizados para ${input.clientLabel ?? "o destinatário"} no momento da geração — qualquer indicador não autorizado foi completamente omitido, não apenas ocultado visualmente.`
-      : "Relatório interno gerado sem aplicação de permissões de cliente — inclui todos os indicadores disponíveis. Não use como um relatório já adequado às permissões de um cliente específico.",
-  });
+  if (input.isClientScoped) {
+    methodology.push({
+      heading: "Permissões aplicadas",
+      body: `Este relatório inclui apenas os indicadores autorizados para ${input.clientLabel ?? "o destinatário"} no momento da geração — qualquer indicador não autorizado foi completamente omitido, não apenas ocultado visualmente.`,
+    });
+  }
   methodology.push({ heading: "Limites das conclusões", body: insights.limitations });
 
   for (const section of methodology) {

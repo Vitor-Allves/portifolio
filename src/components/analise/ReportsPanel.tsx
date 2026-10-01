@@ -217,11 +217,10 @@ export default function ReportsPanel({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Admin-only: which client this PDF should be generated FOR — "" means the
-  // administrator's own internal/unrestricted export, never silently treated
-  // as if it were already scoped to a specific client (see the cover page's
-  // own "RELATÓRIO INTERNO" banner for the unscoped case). The permissions
-  // actually applied are always resolved server-side from this id, never
-  // trusted from anything else sent by the browser.
+  // administrator's own unrestricted, all-metrics export, never silently
+  // treated as if it were already scoped to a specific client. The
+  // permissions actually applied are always resolved server-side from this
+  // id, never trusted from anything else sent by the browser.
   const [recipientClients, setRecipientClients] = useState<ClientAccessSummary[] | null>(null);
   const [recipientClientId, setRecipientClientId] = useState<string>("");
 
@@ -481,18 +480,18 @@ export default function ReportsPanel({
               onChange={(e) => setRecipientClientId(e.target.value)}
               className={`${INTEL_INPUT} mt-2`}
             >
-              <option value="">Relatório interno (visão administrativa completa)</option>
+              <option value="">Visão administrativa completa</option>
               {(recipientClients ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>
               ))}
             </select>
-            <p className="mt-1.5 text-[11px] text-intel-text-dim/70">
-              {recipientClientId
-                ? "O PDF será gerado com as permissões de indicadores atuais deste cliente — nunca com os privilégios de administrador."
-                : "Sem destinatário selecionado, o PDF é um relatório interno com todos os indicadores — não deve ser distribuído como se fosse um relatório aprovado para um cliente."}
-            </p>
+            {recipientClientId && (
+              <p className="mt-1.5 text-[11px] text-intel-text-dim/70">
+                O PDF será gerado com as permissões de indicadores atuais deste cliente — nunca com os privilégios de administrador.
+              </p>
+            )}
           </div>
         )}
         <p className="text-[11px] text-intel-text-dim/70 mb-5">Arquivo: {previewFileName}</p>
