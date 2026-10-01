@@ -3,9 +3,9 @@ import { isRateLimited } from "@/lib/rate-limit";
 import {
   ANALISE_SESSION_COOKIE,
   ANALISE_PENDING_COOKIE,
-  SESSION_MAX_AGE_SECONDS,
   createSessionToken,
   verifyPendingToken,
+  sessionMaxAgeSeconds,
 } from "@/lib/analise-session-node";
 import { getDb } from "@/lib/db";
 import { verifyTotpCode, verifyRecoveryCode } from "@/lib/totp";
@@ -83,14 +83,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const token = createSessionToken("staff", row.id, row.session_version);
+  const token = createSessionToken("staff", row.id, row.session_version, pending.remember);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(ANALISE_SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
+    maxAge: sessionMaxAgeSeconds(pending.remember),
   });
   res.cookies.delete(ANALISE_PENDING_COOKIE);
   return res;
