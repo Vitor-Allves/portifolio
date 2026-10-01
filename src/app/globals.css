@@ -58,6 +58,18 @@
   --animate-intel-in: intel-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-intel-pulse: intel-pulse 1.6s ease-in-out infinite;
   --animate-intel-shimmer: intel-shimmer 1.8s linear infinite;
+  --animate-mascot-in: mascot-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  @keyframes mascot-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
   @keyframes fade-up {
     from {
@@ -159,6 +171,19 @@ select:focus-visible {
 
 .text-balance {
   text-wrap: balance;
+}
+
+/* Mascot illustrations (Titan/Legacy): hidden below 480px in a tab's opening
+   banner (room for filters/content wins over decoration there), but kept —
+   just smaller — in empty/error/loading/success states, where the mascot is
+   part of the message itself. */
+@media (max-width: 479px) {
+  .mascot-banner-img {
+    display: none;
+  }
+  .mascot-state-img {
+    height: 120px !important;
+  }
 }
 
 /* Discrete grid texture used as a background layer across dark sections */

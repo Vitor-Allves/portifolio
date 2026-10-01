@@ -32,14 +32,35 @@ async function fetchAsDataUrl(path: string): Promise<string | null> {
 
 /** Never throws — a missing logo or font just falls back to a plain layout instead of failing the whole report. */
 export async function loadReportAssets(): Promise<ReportAssets> {
-  const [logoDataUrl, montserratRegular, montserratSemiBold, montserratBold, cinzelBold] = await Promise.all([
-    fetchAsDataUrl("/brand/logo-legado.png"),
+  const [
+    logoDataUrl,
+    titanBoasVindasDataUrl,
+    legacyOlaDataUrl,
+    titanIndicadoresDataUrl,
+    montserratRegular,
+    montserratSemiBold,
+    montserratBold,
+    cinzelBold,
+  ] = await Promise.all([
+    fetchAsDataUrl("/brand/pdf/logo-legado-intelligence-colorido.png"),
+    fetchAsDataUrl("/brand/pdf/titan-boasvindas.png"),
+    fetchAsDataUrl("/brand/pdf/legacy-ola.png"),
+    fetchAsDataUrl("/brand/pdf/titan-indicadores.png"),
     fetchAsDataUrl("/fonts/Montserrat-Regular.ttf"),
     fetchAsDataUrl("/fonts/Montserrat-SemiBold.ttf"),
     fetchAsDataUrl("/fonts/Montserrat-Bold.ttf"),
     fetchAsDataUrl("/fonts/Cinzel-Bold.ttf"),
   ]);
-  return { logoDataUrl, montserratRegular, montserratSemiBold, montserratBold, cinzelBold };
+  return {
+    logoDataUrl,
+    titanBoasVindasDataUrl,
+    legacyOlaDataUrl,
+    titanIndicadoresDataUrl,
+    montserratRegular,
+    montserratSemiBold,
+    montserratBold,
+    cinzelBold,
+  };
 }
 
 /** Loads assets, builds the document and triggers a browser download. Never throws for a missing logo/font — the report still generates with graceful fallbacks. Throws ReportPdfError only if jsPDF itself fails to produce a document. */

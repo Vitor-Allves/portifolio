@@ -45,7 +45,7 @@ import {
   REFERENCE_TIME_ZONE,
 } from "./format";
 import { sumTotals, ctr, cpc, cpm, costPerConversation, roas, pctChange, aggregateDailyByDate, type Totals } from "./metrics";
-import { computeStrategicInsights, type StrategicInsights, type InsightItem } from "./strategic-insights";
+import { computeStrategicInsights } from "./strategic-insights";
 import { primaryKpiIds, type KpiId } from "./kpi-hierarchy";
 
 // ---------------------------------------------------------------------------
@@ -117,7 +117,14 @@ export type ReportPdfInput = {
 };
 
 export type ReportAssets = {
+  /** Legado Intelligence's colored logo — used in the repeated header and on the cover page. */
   logoDataUrl: string | null;
+  /** Titan waving — the cover page and, alongside legacyOlaDataUrl, the opening page's info block. */
+  titanBoasVindasDataUrl: string | null;
+  /** Legacy waving — the cover page, the opening page's info block, and the closing block. */
+  legacyOlaDataUrl: string | null;
+  /** Titan pointing at the numbers — small accent next to "Resumo executivo". */
+  titanIndicadoresDataUrl: string | null;
   montserratRegular: string | null;
   montserratSemiBold: string | null;
   montserratBold: string | null;
@@ -158,6 +165,14 @@ const MARGIN_X = 14;
 const HEADER_BOTTOM = 24;
 const FOOTER_TOP = PAGE_H - 14;
 const CONTENT_W = PAGE_W - MARGIN_X * 2;
+
+// Fixed width/height ratios of the source art (public/brand/pdf/*.png) —
+// hardcoded rather than read from the image bytes since these are our own
+// curated, never-user-supplied assets; update these if the source files are
+// ever re-exported at different pixel dimensions.
+const TITAN_ASPECT_WH = 512 / 768;
+const LEGACY_ASPECT_WH = 540 / 768;
+const LOGO_ASPECT_WH = 1168 / 1270;
 
 type Fonts = { body: string; heading: string };
 
@@ -1166,102 +1181,6 @@ function drawCampaignHierarchy(
 }
 
 // ---------------------------------------------------------------------------
-// Strategic analysis (reuses the same rule-based engine as the dashboard —
-// never a separate/invented interpretation)
-// ---------------------------------------------------------------------------
-
-function drawInsightBlock(doc: jsPDF, ctx: Ctx, y: number, heading: string, dotColor: [number, number, number], items: InsightItem[]): number {
-  if (items.length === 0) return y;
-  // Enough room for the heading plus at least the start of its first item —
-  // otherwise the heading itself would strand alone at the bottom of a page.
-  y = ensureSpace(doc, ctx, y, 22);
-  doc.setFont(ctx.fonts.body, "bold");
-  doc.setFontSize(9);
-  setColor(doc, "setTextColor", NAVY_DEEP);
-  doc.text(heading, MARGIN_X + 4, y);
-  y += 5.5;
-
-  for (const item of items) {
-    const lines = wrapText(doc, item.text, CONTENT_W - 12);
-    // Each recommendation also carries its own limitation/hypothesis and,
-    // when actionable, a suggested next step plus the indicator to watch —
-    // never just the headline claim on its own.
-    const limitationLines = item.limitation ? wrapText(doc, item.limitation, CONTENT_W - 12) : [];
-    const actionText = [item.action, item.watchIndicator ? `Indicador a acompanhar: ${item.watchIndicator}` : null].filter(Boolean).join(" · ");
-    const actionLines = actionText ? wrapText(doc, actionText, CONTENT_W - 12) : [];
-
-    y = ensureSpace(doc, ctx, y, lines.length * 4.6 + limitationLines.length * 3.6 + actionLines.length * 3.6 + 4);
-    setColor(doc, "setFillColor", dotColor);
-    doc.circle(MARGIN_X + 5, y - 1.3, 0.9, "F");
-    doc.setFont(ctx.fonts.body, "normal");
-    doc.setFontSize(8.3);
-    setColor(doc, "setTextColor", TEXT);
-    doc.text(lines, MARGIN_X + 9, y);
-    y += lines.length * 4.6;
-
-    if (limitationLines.length > 0) {
-      doc.setFontSize(7.3);
-      setColor(doc, "setTextColor", TEXT_MUTED);
-      doc.text(limitationLines, MARGIN_X + 9, y + 2.6);
-      y += limitationLines.length * 3.6 + 2.6;
-    }
-    if (actionLines.length > 0) {
-      doc.setFontSize(7.3);
-      setColor(doc, "setTextColor", NAVY);
-      doc.text(actionLines, MARGIN_X + 9, y + (limitationLines.length > 0 ? 1 : 2.6));
-      y += actionLines.length * 3.6 + (limitationLines.length > 0 ? 1 : 2.6);
-    }
-    y += 2.5;
-  }
-  return y + 3;
-}
-
-function drawAnalysisForScope(doc: jsPDF, ctx: Ctx, y: number, insights: StrategicInsights): number {
-  if (!insights.hasData) {
-    doc.setFont(ctx.fonts.body, "normal");
-    doc.setFontSize(8.6);
-    setColor(doc, "setTextColor", TEXT_MUTED);
-    doc.text(wrapText(doc, insights.summary[0]?.text ?? "Sem dados suficientes para interpretação neste escopo.", CONTENT_W - 8), MARGIN_X + 4, y);
-    return y + 10;
-  }
-
-  y = ensureSpace(doc, ctx, y, 14);
-  doc.setFont(ctx.fonts.body, "normal");
-  doc.setFontSize(7.6);
-  setColor(doc, "setTextColor", TEXT_MUTED);
-  const scopeLines = wrapText(doc, insights.scopeNote, CONTENT_W - 8);
-  doc.text(scopeLines, MARGIN_X + 4, y);
-  y += scopeLines.length * 3.8 + 4;
-
-  y = drawInsightBlock(doc, ctx, y, "Principais resultados", NAVY, insights.summary);
-  y = drawInsightBlock(doc, ctx, y, "Principais mudanças", NAVY, insights.changes);
-  y = drawInsightBlock(doc, ctx, y, "Pontos de atenção", BAD, insights.attention);
-  y = drawInsightBlock(doc, ctx, y, "Oportunidades", GOOD, insights.opportunities);
-  y = drawInsightBlock(doc, ctx, y, "Próximas ações priorizadas", NAVY, insights.nextActions);
-  return y;
-}
-
-// ---------------------------------------------------------------------------
-// Methodology notes — metric definitions only mention indicators the
-// recipient is actually authorized to see; the reach-deduplication note is
-// dropped entirely when reach itself isn't authorized.
-// ---------------------------------------------------------------------------
-
-const METRIC_DEFINITION_SENTENCES: Record<KpiId, string> = {
-  spend: "Investimento: valor gasto no período.",
-  impressions: "Impressões: exibições dos anúncios.",
-  clicks: "Cliques totais: todo tipo de clique registrado pelo Meta, não apenas cliques no link de destino.",
-  linkClicks: "Cliques no link: cliques que levam ao destino do anúncio (campo inline_link_clicks) — não é uma conversa iniciada.",
-  conversations:
-    'Conversa iniciada: conversas por mensagem efetivamente iniciadas no Messenger/Instagram/WhatsApp, com atribuição de 7 dias após clique (campo actions, action_type onsite_conversion.messaging_conversation_started_7d) — disponível apenas para campanhas com objetivo de mensagens; quando o objetivo da campanha não suporta essa métrica, ela aparece como "Não disponível", nunca como zero.',
-  costPerConversation: "Custo por conversa = Investimento ÷ Conversa iniciada válida, usando apenas o investimento do mesmo escopo filtrado.",
-  ctr: "CTR = Cliques totais ÷ Impressões × 100.",
-  cpc: "CPC = Investimento ÷ Cliques totais.",
-  cpm: "CPM = Investimento ÷ Impressões × 1.000.",
-  reach: "Alcance: pessoas únicas estimadas alcançadas no período (ver limitação de deduplicação abaixo).",
-};
-
-// ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
 
@@ -1279,6 +1198,71 @@ function slugify(value: string): string {
 export function reportFileName(input: Pick<ReportPdfInput, "clientLabel" | "resolvedRange">): string {
   const scope = slugify(input.clientLabel ?? "consolidado");
   return `legado-intelligence_${scope}_${input.resolvedRange.since}_a_${input.resolvedRange.until}.pdf`;
+}
+
+/**
+ * A dedicated opening page — logo, title/client/period, then Titan and
+ * Legacy together near the bottom — drawn on the document's first page
+ * before any content page is added. Deliberately skips the repeated
+ * header/footer chrome (drawHeader/drawFooter): this is a brand moment, not
+ * a content page, and it's left out of the "Página X de Y" footer pass in
+ * buildReportPdf so numbering starts clean on the first real content page.
+ */
+function drawCoverPage(doc: jsPDF, ctx: Ctx, input: ReportPdfInput) {
+  const { assets, fonts } = ctx;
+
+  setColor(doc, "setFillColor", NAVY);
+  doc.rect(0, 0, PAGE_W, 3, "F");
+  doc.rect(0, PAGE_H - 3, PAGE_W, 3, "F");
+
+  let y = 18;
+  if (assets.logoDataUrl) {
+    const h = 34;
+    const w = h * LOGO_ASPECT_WH;
+    try {
+      doc.addImage(assets.logoDataUrl, "PNG", (PAGE_W - w) / 2, y, w, h);
+    } catch {
+      // A corrupt/unsupported logo asset never blocks the cover itself.
+    }
+    y += h;
+  }
+  y += 14;
+
+  doc.setFont(fonts.heading, "bold");
+  doc.setFontSize(23);
+  setColor(doc, "setTextColor", NAVY);
+  doc.text(input.title || "Relatório executivo", PAGE_W / 2, y, { align: "center" });
+  y += 9;
+
+  doc.setFont(fonts.body, "normal");
+  doc.setFontSize(12);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(input.clientLabel ?? "Visão consolidada — múltiplas contas", PAGE_W / 2, y, { align: "center" });
+  y += 8;
+
+  doc.setFontSize(9.5);
+  doc.text(ctx.periodLine, PAGE_W / 2, y, { align: "center" });
+  y += 6;
+
+  doc.setFontSize(8);
+  doc.text(`Gerado em ${formatDateTimeTz(input.generatedAt)}`, PAGE_W / 2, y, { align: "center" });
+
+  const mascotH = 70;
+  const titanW = mascotH * TITAN_ASPECT_WH;
+  const legacyW = mascotH * LEGACY_ASPECT_WH;
+  const gap = 8;
+  const startX = (PAGE_W - (titanW + gap + legacyW)) / 2;
+  const mascotY = PAGE_H - 14 - mascotH;
+  try {
+    if (assets.titanBoasVindasDataUrl) {
+      doc.addImage(assets.titanBoasVindasDataUrl, "PNG", startX, mascotY, titanW, mascotH);
+    }
+    if (assets.legacyOlaDataUrl) {
+      doc.addImage(assets.legacyOlaDataUrl, "PNG", startX + titanW + gap, mascotY, legacyW, mascotH);
+    }
+  } catch {
+    // A corrupt/unsupported mascot asset never blocks the cover itself.
+  }
 }
 
 /** Pure document builder — no fetching, no DOM download. Runs identically in Node (the permission-enforcing server route) or the browser. */
@@ -1314,7 +1298,11 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     allowedMetrics: allowedKpiIds,
   });
 
-  // ---- Page 1: abertura e visão executiva ----
+  // ---- Cover page ----
+  drawCoverPage(doc, ctx, input);
+  doc.addPage("a4", "landscape");
+
+  // ---- Page 2: abertura e visão executiva ----
   drawHeader(doc, ctx);
   let y = HEADER_BOTTOM + 8;
 
@@ -1329,8 +1317,33 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   doc.text(`${input.title} · ${input.periodLabel}`, MARGIN_X, y);
   y += 9;
 
+  {
+    const duoH = 52;
+    const titanW = duoH * TITAN_ASPECT_WH;
+    const legacyW = duoH * LEGACY_ASPECT_WH;
+    const duoX = PAGE_W - MARGIN_X - (titanW + 4 + legacyW);
+    const duoY = HEADER_BOTTOM + 6;
+    try {
+      if (assets.titanBoasVindasDataUrl) {
+        doc.addImage(assets.titanBoasVindasDataUrl, "PNG", duoX, duoY, titanW, duoH);
+      }
+      if (assets.legacyOlaDataUrl) {
+        doc.addImage(assets.legacyOlaDataUrl, "PNG", duoX + titanW + 4, duoY, legacyW, duoH);
+      }
+    } catch {
+      // A corrupt/unsupported mascot asset never blocks the page itself.
+    }
+  }
+
+  // Reserved on the right for the Titan+Legacy duo below — every line in
+  // this info block (meta grid, filters, partial-accounts warning) wraps at
+  // this narrower width instead of CONTENT_W so none of them ever runs text
+  // under the mascots, whichever optional lines end up present.
+  const PAGE2_MASCOT_GUTTER = 85;
+  const infoBlockW = CONTENT_W - PAGE2_MASCOT_GUTTER;
+
   const metaCols = 3;
-  const metaColW = CONTENT_W / metaCols;
+  const metaColW = infoBlockW / metaCols;
   const metaRows: [string, string][] = [
     ["Período", `${formatShortDate(input.resolvedRange.since)} a ${formatShortDate(input.resolvedRange.until)}`],
     [
@@ -1367,7 +1380,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     doc.setFontSize(7.6);
     setColor(doc, "setTextColor", TEXT_MUTED);
     const filtersText = `Filtros ativos: ${input.filters.map((f) => `${f.label}: ${f.value}`).join(" · ")}`;
-    const lines = wrapText(doc, filtersText, CONTENT_W);
+    const lines = wrapText(doc, filtersText, infoBlockW);
     doc.text(lines, MARGIN_X, y);
     y += lines.length * 4 + 3;
   }
@@ -1377,7 +1390,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     doc.setFont(fonts.body, "normal");
     doc.setFontSize(7.6);
     const note = `${input.partialAccountNames.length} conta(s) não puderam ser carregadas neste momento (${input.partialAccountNames.join(", ")}) — os totais abaixo estão incompletos, não zerados.`;
-    const lines = wrapText(doc, note, CONTENT_W);
+    const lines = wrapText(doc, note, infoBlockW);
     doc.text(lines, MARGIN_X, y);
     y += lines.length * 4 + 3;
   }
@@ -1399,11 +1412,26 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   const showExecutiveSummary = input.reportType !== "audience";
   if (showExecutiveSummary && insights.summary.length > 0) {
     y = ensureSpace(doc, ctx, y, 20);
+    const summaryTitleY = y;
     doc.setFont(fonts.body, "bold");
     doc.setFontSize(9.5);
     setColor(doc, "setTextColor", NAVY_DEEP);
     doc.text("Resumo executivo", MARGIN_X, y);
     y += 5.5;
+    if (assets.titanIndicadoresDataUrl) {
+      const h = 28;
+      const w = h * TITAN_ASPECT_WH;
+      const imgY = summaryTitleY - 5;
+      try {
+        doc.addImage(assets.titanIndicadoresDataUrl, "PNG", PAGE_W - MARGIN_X - w, imgY, w, h);
+        // Pushes the summary bullets below the image's bottom instead of
+        // wrapping them beside it, so a small decorative accent can never
+        // run text underneath it.
+        y = Math.max(y, imgY + h + 3);
+      } catch {
+        // A corrupt/unsupported mascot asset never blocks the section itself.
+      }
+    }
     doc.setFont(fonts.body, "normal");
     doc.setFontSize(8.4);
     setColor(doc, "setTextColor", TEXT);
@@ -1588,89 +1616,28 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y = drawCampaignHierarchy(doc, ctx, y, input.campaigns, input.adSets, input.selectedAdSetIds, allowed);
   }
 
-  // ---- Analysis & next actions ----
-  const showAnalysis = input.reportType !== "audience";
-  if (showAnalysis) {
-    y = ensureSpace(doc, ctx, y, 60);
-    y = sectionTitle(doc, ctx, y, "Análise e próximas ações");
-    doc.setFont(fonts.body, "normal");
-    doc.setFontSize(7.6);
-    setColor(doc, "setTextColor", TEXT_MUTED);
-    const limitLines = wrapText(doc, insights.limitations, CONTENT_W);
-    doc.text(limitLines, MARGIN_X, y);
-    y += limitLines.length * 3.8 + 6;
-
-    // The engine itself groups findings by client and objective before ever
-    // comparing two campaigns (see strategic-insights.ts), and now also skips
-    // any finding built on a metric this recipient isn't authorized to see —
-    // a single call over the full filtered set is already scoped correctly.
-    y = drawAnalysisForScope(doc, ctx, y, insights);
+  // ---- Closing block ----
+  if (assets.legacyOlaDataUrl) {
+    const h = 40;
+    const w = h * LEGACY_ASPECT_WH;
+    y = ensureSpace(doc, ctx, y, h + 6);
+    try {
+      doc.addImage(assets.legacyOlaDataUrl, "PNG", MARGIN_X, y, w, h);
+      doc.setFont(fonts.body, "normal");
+      doc.setFontSize(10);
+      setColor(doc, "setTextColor", NAVY_DEEP);
+      const closingLines = wrapText(doc, "Dúvidas sobre estes números? Fale com o seu consultor da Legado.", CONTENT_W - w - 8);
+      const textY = y + h / 2 - (closingLines.length * 4.6) / 2 + 3;
+      doc.text(closingLines, MARGIN_X + w + 8, textY);
+      y += h + 6;
+    } catch {
+      // A corrupt/unsupported mascot asset never blocks the report itself.
+    }
   }
 
-  // ---- Methodology notes ----
-  y = ensureSpace(doc, ctx, y, 60);
-  y = sectionTitle(doc, ctx, y, "Notas metodológicas");
-
-  const allowedDefinitionSentences = (Object.keys(METRIC_DEFS) as KpiId[])
-    .filter((id) => isAllowed(allowed, id))
-    .map((id) => METRIC_DEFINITION_SENTENCES[id]);
-
-  const methodology: { heading: string; body: string }[] = [];
-  if (allowedDefinitionSentences.length > 0) {
-    methodology.push({ heading: "Definições das métricas", body: allowedDefinitionSentences.join(" ") });
-  }
-  methodology.push({ heading: "Fonte dos dados", body: "Meta Ads API, via os Business Managers configurados para esta conta Legado Enterprise, agregados por conta de anúncios, campanha e conjunto de anúncios." });
-  if (input.compare && input.comparisonRange) {
-    methodology.push({
-      heading: "Período de comparação",
-      body: "O período anterior não é simplesmente o mesmo número de dias corridos imediatamente antes do período atual — ele é ajustado para conter a mesma quantidade de dias úteis (segunda a sexta, sem calendário de feriados) que o período atual, já que dois intervalos de igual duração em dias corridos podem cair sobre uma quantidade diferente de dias úteis dependendo de onde os fins de semana caem, o que distorceria a comparação de indicadores que variam com a atividade da semana (ex.: investimento, entrega).",
-    });
-  }
-  if (isAllowed(allowed, "reach")) {
-    methodology.push({
-      heading: "Limitações de alcance e deduplicação",
-      body:
-        "O Alcance é uma estimativa do Meta, deduplicada apenas dentro de uma única consulta (uma conta, um período, e — quando os filtros deste relatório restringem a campanhas específicas — o mesmo conjunto de campanhas). Por isso o Alcance total nunca é a soma do alcance de cada campanha, conjunto ou dia — somar essas quebras contaria a mesma pessoa mais de uma vez; quando o filtro seleciona um subconjunto de campanhas, o Alcance é recalculado na origem para esse subconjunto exato, preservando a deduplicação, em vez de somar valores individuais. O alcance listado por conjunto de anúncios é individual de cada conjunto — nunca some essas linhas para estimar o alcance da campanha; use o alcance exibido no cabeçalho da campanha, já corretamente deduplicado. Se essa apuração não puder ser concluída com confiança para os filtros aplicados, o indicador é exibido como \"Não disponível\" em vez do valor consolidado da conta.",
-    });
-  }
-  methodology.push({
-    heading: "Critério de atribuição",
-    body: "As métricas seguem o critério de atribuição padrão configurado em cada conta de anúncios de origem no Meta Ads Manager — a Legado Intelligence não aplica um modelo de atribuição próprio nem o altera.",
-  });
-  methodology.push({
-    heading: "Tratamento de dados ausentes",
-    body:
-      input.partialAccountNames.length > 0
-        ? `${input.partialAccountNames.length} conta(s) não puderam ser carregadas na geração deste relatório (${input.partialAccountNames.join(", ")}) — os totais não as incluem e não devem ser lidos como "zero" para essas contas. Um indicador exibido como "—" significa ausência de base para o cálculo (ex.: divisão por zero), não um valor nulo.`
-        : 'Todas as contas do escopo carregaram normalmente. Um indicador exibido como "—" significa ausência de base para o cálculo (ex.: divisão por zero), não um valor de zero.',
-  });
-  if (input.isClientScoped) {
-    methodology.push({
-      heading: "Permissões aplicadas",
-      body: `Este relatório inclui apenas os indicadores autorizados para ${input.clientLabel ?? "o destinatário"} no momento da geração — qualquer indicador não autorizado foi completamente omitido, não apenas ocultado visualmente.`,
-    });
-  }
-  methodology.push({ heading: "Limites das conclusões", body: insights.limitations });
-
-  for (const section of methodology) {
-    y = ensureSpace(doc, ctx, y, 14);
-    doc.setFont(fonts.body, "bold");
-    doc.setFontSize(8.6);
-    setColor(doc, "setTextColor", NAVY_DEEP);
-    doc.text(section.heading, MARGIN_X, y);
-    y += 4.4;
-    doc.setFont(fonts.body, "normal");
-    doc.setFontSize(7.8);
-    setColor(doc, "setTextColor", TEXT);
-    const lines = wrapText(doc, section.body, CONTENT_W);
-    y = ensureSpace(doc, ctx, y, lines.length * 3.9);
-    doc.text(lines, MARGIN_X, y);
-    y += lines.length * 3.9 + 5;
-  }
-
-  // ---- Final pass: footer with "Página X de Y" on every page ----
+  // ---- Final pass: footer with "Página X de Y" on every page except the cover ----
   const totalPages = doc.getNumberOfPages();
-  for (let p = 1; p <= totalPages; p++) {
+  for (let p = 2; p <= totalPages; p++) {
     doc.setPage(p);
     drawFooter(doc, ctx, p, totalPages);
   }

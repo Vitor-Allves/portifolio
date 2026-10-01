@@ -29,6 +29,7 @@ import StrategicInsightsCompact from "./StrategicInsightsCompact";
 import ExecutiveSummary from "./ExecutiveSummary";
 import ReportsPanel from "./ReportsPanel";
 import IntegrationsPanel from "./IntegrationsPanel";
+import { MascotTabBanner, MascotState } from "./Mascot";
 
 type DashboardProps = {
   initialData: DashboardData;
@@ -865,17 +866,23 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           )}
 
           {error && (
-            <div className="mb-5 rounded-xl border border-intel-red/25 bg-intel-red/[0.06] px-4 py-3 flex items-center justify-between gap-3">
-              <p className="text-[13px] text-intel-red" role="alert">
-                {error}
-              </p>
-              <button
-                type="button"
-                onClick={() => refetch(period, compare)}
-                className="shrink-0 text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
-              >
-                Tentar novamente
-              </button>
+            <div className="mb-5 rounded-xl border border-intel-red/25 bg-intel-red/[0.06] px-4">
+              <MascotState
+                pose="titan-duvida"
+                alt="Titan, mascote da Legado, em dúvida após uma falha ao carregar os dados"
+                tone="error"
+                message={error}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => refetch(period, compare)}
+                    className="text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
+                  >
+                    Tentar novamente
+                  </button>
+                }
+                className="py-5"
+              />
             </div>
           )}
 
@@ -945,6 +952,18 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
               <div className={`transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
+                    <MascotTabBanner
+                      pose="titan-boasvindas"
+                      alt="Titan, mascote da Legado, acenando em boas-vindas"
+                      title={clientLabel ? `Olá, ${clientLabel}!` : "Olá!"}
+                      description="Aqui estão os números do período."
+                    />
+                    <MascotTabBanner
+                      pose="titan-indicadores"
+                      alt="Titan, mascote da Legado, apontando para os indicadores"
+                      title="Visão geral"
+                      description="Os indicadores consolidados do período selecionado, atualizados a cada filtro."
+                    />
                     {!hiddenSectionIds.has("insights") && (
                       <m.div custom={0} initial="hidden" animate="visible" variants={fadeUp}>
                         <ExecutiveSummary insights={insights} compare={compare} />
@@ -1073,6 +1092,12 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
 
                 {section === "campaigns" && !hiddenSectionIds.has("campaigns") && (
                   <div className="space-y-5">
+                    <MascotTabBanner
+                      pose="titan-conquista"
+                      alt="Titan, mascote da Legado, comemorando o desempenho das campanhas"
+                      title="Campanhas"
+                      description="Desempenho detalhado por campanha e conjunto de anúncios."
+                    />
                     <CampaignsTable
                       campaigns={filteredCampaigns}
                       adSets={filteredAdSets}
@@ -1086,45 +1111,69 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                 )}
 
                 {section === "insights" && !hiddenSectionIds.has("insights") && (
-                  <StrategicInsightsPanel
-                    insights={insights}
-                    onShowFlaggedCampaigns={showFlaggedCampaigns}
-                    isProcessing={isPending}
-                  />
+                  <div className="space-y-5">
+                    <MascotTabBanner
+                      pose="legacy-conquista"
+                      alt="Legacy, mascote da Legado, ao lado das análises estratégicas"
+                      title="Análises estratégicas"
+                      description="Leituras automáticas por regras estatísticas — trate como hipóteses a validar."
+                    />
+                    <StrategicInsightsPanel
+                      insights={insights}
+                      onShowFlaggedCampaigns={showFlaggedCampaigns}
+                      isProcessing={isPending}
+                    />
+                  </div>
                 )}
 
                 {section === "reports" && !hiddenSectionIds.has("reports") && (
-                  <ReportsPanel
-                    campaigns={filteredCampaigns}
-                    periodLabel={insights.periodLabel}
-                    clientLabel={clientLabel}
-                    isAdmin={isAdmin}
-                    dbConfigured={dbConfigured}
-                    period={period}
-                    resolvedRange={data.resolvedRange}
-                    compare={compare}
-                    reachPending={reachPending}
-                    accountIds={accountIds}
-                    accountOptions={accountOptions}
-                    campaignIds={campaignIds}
-                    campaignOptions={campaignOptions}
-                    adSetIds={adSetIds}
-                    adSetOptions={adSetOptions}
-                    objectiveIds={objectiveIds}
-                    objectiveOptions={objectiveOptions}
-                    statusIds={statusIds}
-                    statusOptions={statusOptions}
-                  />
+                  <div className="space-y-5">
+                    <MascotTabBanner
+                      pose="titan-relatorio"
+                      alt="Titan, mascote da Legado, apresentando os relatórios"
+                      title="Relatórios"
+                      description="Baixe o relatório em PDF ou exporte os dados em CSV."
+                    />
+                    <ReportsPanel
+                      campaigns={filteredCampaigns}
+                      periodLabel={insights.periodLabel}
+                      clientLabel={clientLabel}
+                      isAdmin={isAdmin}
+                      dbConfigured={dbConfigured}
+                      period={period}
+                      resolvedRange={data.resolvedRange}
+                      compare={compare}
+                      reachPending={reachPending}
+                      accountIds={accountIds}
+                      accountOptions={accountOptions}
+                      campaignIds={campaignIds}
+                      campaignOptions={campaignOptions}
+                      adSetIds={adSetIds}
+                      adSetOptions={adSetOptions}
+                      objectiveIds={objectiveIds}
+                      objectiveOptions={objectiveOptions}
+                      statusIds={statusIds}
+                      statusOptions={statusOptions}
+                    />
+                  </div>
                 )}
 
                 {section === "integrations" && !hiddenSectionIds.has("integrations") && (
-                  <IntegrationsPanel
-                    accountsCount={data.accounts.length}
-                    partialAccountsCount={data.partialAccounts.length}
-                    generatedAt={data.generatedAt}
-                    dbConfigured={dbConfigured}
-                    isInternal={isInternal}
-                  />
+                  <div className="space-y-5">
+                    <MascotTabBanner
+                      pose="legacy-ola"
+                      alt="Legacy, mascote da Legado, acenando nas integrações"
+                      title="Integrações"
+                      description="Status das integrações com o Meta Ads e configurações da conta."
+                    />
+                    <IntegrationsPanel
+                      accountsCount={data.accounts.length}
+                      partialAccountsCount={data.partialAccounts.length}
+                      generatedAt={data.generatedAt}
+                      dbConfigured={dbConfigured}
+                      isInternal={isInternal}
+                    />
+                  </div>
                 )}
               </div>
             </>
