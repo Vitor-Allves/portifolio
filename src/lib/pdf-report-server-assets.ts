@@ -19,12 +19,33 @@ async function readAsDataUrl(relPath: string, mime: string): Promise<string | nu
 }
 
 export async function loadReportAssetsServer(): Promise<ReportAssets> {
-  const [logoDataUrl, montserratRegular, montserratSemiBold, montserratBold, cinzelBold] = await Promise.all([
-    readAsDataUrl("brand/logo-legado.png", "image/png"),
+  const [
+    logoDataUrl,
+    titanBoasVindasDataUrl,
+    legacyOlaDataUrl,
+    titanIndicadoresDataUrl,
+    montserratRegular,
+    montserratSemiBold,
+    montserratBold,
+    cinzelBold,
+  ] = await Promise.all([
+    readAsDataUrl("brand/pdf/logo-legado-intelligence-colorido.png", "image/png"),
+    readAsDataUrl("brand/pdf/titan-boasvindas.png", "image/png"),
+    readAsDataUrl("brand/pdf/legacy-ola.png", "image/png"),
+    readAsDataUrl("brand/pdf/titan-indicadores.png", "image/png"),
     readAsDataUrl("fonts/Montserrat-Regular.ttf", "font/ttf"),
     readAsDataUrl("fonts/Montserrat-SemiBold.ttf", "font/ttf"),
     readAsDataUrl("fonts/Montserrat-Bold.ttf", "font/ttf"),
     readAsDataUrl("fonts/Cinzel-Bold.ttf", "font/ttf"),
   ]);
-  return { logoDataUrl, montserratRegular, montserratSemiBold, montserratBold, cinzelBold };
+  return {
+    logoDataUrl,
+    titanBoasVindasDataUrl,
+    legacyOlaDataUrl,
+    titanIndicadoresDataUrl,
+    montserratRegular,
+    montserratSemiBold,
+    montserratBold,
+    cinzelBold,
+  };
 }

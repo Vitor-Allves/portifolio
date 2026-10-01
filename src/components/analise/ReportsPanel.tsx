@@ -10,6 +10,7 @@ import type { PdfReportType } from "@/lib/pdf-report-core";
 import type { ClientAccessSummary } from "@/lib/client-access-types";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
+import { MascotState } from "./Mascot";
 
 class ExportError extends Error {}
 
@@ -211,17 +212,23 @@ export default function ReportsPanel({
   const [currentError, setCurrentError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const t = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(t);
+  }, [successMessage]);
 
   const [newTemplateName, setNewTemplateName] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Admin-only: which client this PDF should be generated FOR — "" means the
-  // administrator's own internal/unrestricted export, never silently treated
-  // as if it were already scoped to a specific client (see the cover page's
-  // own "RELATÓRIO INTERNO" banner for the unscoped case). The permissions
-  // actually applied are always resolved server-side from this id, never
-  // trusted from anything else sent by the browser.
+  // administrator's own unrestricted, all-metrics export, never silently
+  // treated as if it were already scoped to a specific client. The
+  // permissions actually applied are always resolved server-side from this
+  // id, never trusted from anything else sent by the browser.
   const [recipientClients, setRecipientClients] = useState<ClientAccessSummary[] | null>(null);
   const [recipientClientId, setRecipientClientId] = useState<string>("");
 
@@ -303,11 +310,13 @@ export default function ReportsPanel({
           { title: `Relatório ${report.label.toLowerCase()}`, filters, reportType: report.id, recipientClientId: recipientClientId || null },
           previewFileNameFor(clientLabel, resolvedRange)
         );
+        setSuccessMessage("Relatório gerado!");
       } else {
         await downloadCsvFromServer(
           { kind: report.csvKind, filters, recipientClientId: recipientClientId || null },
           `${report.id === "creative" ? "criativos-e-qualidade" : "exportacao-completa"}-${today}.csv`
         );
+        setSuccessMessage("Arquivo gerado!");
       }
     } catch (err) {
       setPredefinedError({
@@ -328,6 +337,7 @@ export default function ReportsPanel({
         { kind: "campaigns", filters: currentFiltersForExport(), recipientClientId: recipientClientId || null },
         `campanhas-${today}.csv`
       );
+      setSuccessMessage("Arquivo gerado!");
     } catch (err) {
       setExportError(err instanceof ExportError ? err.message : "Não foi possível exportar. Tente novamente.");
     } finally {
@@ -344,6 +354,7 @@ export default function ReportsPanel({
         { kind: "account-summary", filters: currentFiltersForExport(), recipientClientId: recipientClientId || null },
         `resumo-por-conta-${today}.csv`
       );
+      setSuccessMessage("Arquivo gerado!");
     } catch (err) {
       setExportError(err instanceof ExportError ? err.message : "Não foi possível exportar. Tente novamente.");
     } finally {
@@ -378,6 +389,7 @@ export default function ReportsPanel({
         { title: "Relatório de campanhas", filters, recipientClientId: recipientClientId || null },
         previewFileNameFor(clientLabel, resolvedRange)
       );
+      setSuccessMessage("Relatório gerado!");
     } catch (err) {
       setCurrentError(err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
     } finally {
@@ -438,6 +450,7 @@ export default function ReportsPanel({
         { title: template.name, filters: template.filters, recipientClientId: recipientClientId || null },
         previewFileNameFor(clientLabel, resolvedRange)
       );
+      setSuccessMessage("Relatório gerado!");
     } catch (err) {
       setRowError({
         id: template.id,
@@ -465,6 +478,19 @@ export default function ReportsPanel({
 
   return (
     <div className="space-y-4">
+      {successMessage && (
+        <div className="rounded-2xl border border-intel-green/20 bg-intel-green/[0.06]">
+          <MascotState
+            pose="legacy-conquista"
+            secondaryPose="titan-conquista"
+            alt="Legacy, mascote da Legado, comemorando o relatório gerado"
+            secondaryAlt="Titan, mascote da Legado, comemorando o relatório gerado"
+            message={successMessage}
+            tone="success"
+            className="py-4"
+          />
+        </div>
+      )}
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Baixar relatório em PDF</h3>
         <p className="text-[12px] text-intel-text-dim mb-1">
@@ -481,18 +507,18 @@ export default function ReportsPanel({
               onChange={(e) => setRecipientClientId(e.target.value)}
               className={`${INTEL_INPUT} mt-2`}
             >
-              <option value="">Relatório interno (visão administrativa completa)</option>
+              <option value="">Visão administrativa completa</option>
               {(recipientClients ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>
               ))}
             </select>
-            <p className="mt-1.5 text-[11px] text-intel-text-dim/70">
-              {recipientClientId
-                ? "O PDF será gerado com as permissões de indicadores atuais deste cliente — nunca com os privilégios de administrador."
-                : "Sem destinatário selecionado, o PDF é um relatório interno com todos os indicadores — não deve ser distribuído como se fosse um relatório aprovado para um cliente."}
-            </p>
+            {recipientClientId && (
+              <p className="mt-1.5 text-[11px] text-intel-text-dim/70">
+                O PDF será gerado com as permissões de indicadores atuais deste cliente — nunca com os privilégios de administrador.
+              </p>
+            )}
           </div>
         )}
         <p className="text-[11px] text-intel-text-dim/70 mb-5">Arquivo: {previewFileName}</p>
@@ -511,6 +537,14 @@ export default function ReportsPanel({
           )}
           {generatingCurrent ? "Gerando relatório..." : reachPending ? "Calculando alcance dos filtros..." : "Baixar PDF do período atual"}
         </button>
+        {generatingCurrent && (
+          <MascotState
+            pose="titan-carregando"
+            alt="Titan, mascote da Legado, buscando os dados do período"
+            message="Buscando os dados do período…"
+            className="py-4"
+          />
+        )}
         {reachPending && !currentError && (
           <p className="mt-2 text-[12px] text-intel-text-dim">
             Recalculando o alcance deduplicado para os filtros de campanha atuais antes de liberar o download.

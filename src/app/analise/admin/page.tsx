@@ -10,6 +10,7 @@ import { DbConfigError } from "@/lib/db";
 import AnaliseHeader from "@/components/analise/AnaliseHeader";
 import AdminClientsPanel from "@/components/analise/AdminClientsPanel";
 import AdminUsersPanel from "@/components/analise/AdminUsersPanel";
+import { MascotTabBanner } from "@/components/analise/Mascot";
 
 export const metadata: Metadata = {
   title: "Usuários e acessos — Legado Intelligence",
@@ -58,10 +59,14 @@ export default async function AnaliseAdminPage() {
         >
           <span aria-hidden="true">←</span> Voltar ao painel
         </Link>
-        <h1 className="font-sans text-2xl font-semibold text-intel-text mb-1">Usuários e acessos</h1>
-        <p className="text-sm text-intel-text-dim mb-8">
-          Crie e administre os acessos da equipe Legado e dos clientes — cada seção tem sua própria listagem, busca e criação.
-        </p>
+        <MascotTabBanner
+          pose="titan-acesso"
+          alt="Titan, mascote da Legado, indicando os acessos e permissões"
+          title="Usuários e acessos"
+          description="Crie e administre os acessos da equipe Legado e dos clientes — cada seção tem sua própria listagem, busca e criação."
+          headingLevel="h1"
+          className="mb-8"
+        />
 
         {dbNotConfigured ? (
           <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-8 max-w-xl">

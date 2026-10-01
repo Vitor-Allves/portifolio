@@ -8,6 +8,7 @@ import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } 
 import { ctr, cpc, cpm, costPerConversation, roas, pctChange } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { INTEL_INPUT, INTEL_POPOVER } from "./intel-styles";
+import { MascotState } from "./Mascot";
 
 // Kept in sync with client-permissions.ts's CAMPAIGN_COLUMN_OPTIONS by
 // reusing its id type directly — a hidden-column id from the admin form
@@ -683,7 +684,11 @@ export default function CampaignsTable({ campaigns, adSets, ads, comparisonByCam
       </div>
 
       {sorted.length === 0 ? (
-        <p className="text-sm text-intel-text-dim">Nenhuma campanha encontrada.</p>
+        <MascotState
+          pose="legacy-duvida"
+          alt="Legacy, mascote da Legado, em dúvida sem encontrar dados para os filtros atuais"
+          message="Nenhum dado para estes filtros. Tente outro período ou outra conta."
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] border-collapse">

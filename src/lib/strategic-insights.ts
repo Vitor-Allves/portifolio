@@ -72,7 +72,7 @@ export type StrategicInsights = {
 };
 
 const METHODOLOGY =
-  "Análise estratégica gerada por um mecanismo de regras estatísticas sobre os dados exibidos no painel — nenhum modelo de IA generativa está configurado nesta instalação (veja a aba Integrações para o que falta para ativar um). Cada campanha é comparada apenas com campanhas do mesmo cliente e do mesmo grupo de objetivo; a análise nunca deduz vendas, receita, lucro ou retorno a partir de cliques ou conversas, e nunca usa metas ou benchmarks externos ao que está no painel. Trate os pontos abaixo como hipóteses a validar, não como conclusões definitivas — não considera sazonalidade, criativos, concorrência ou contexto de mercado.";
+  "Análise estratégica gerada por um mecanismo de regras estatísticas sobre os dados exibidos no painel. Cada campanha é comparada apenas com campanhas do mesmo cliente e do mesmo grupo de objetivo; a análise nunca deduz vendas, receita, lucro ou retorno a partir de cliques ou conversas, e nunca usa metas ou benchmarks externos ao que está no painel. Trate os pontos abaixo como hipóteses a validar, não como conclusões definitivas — não considera sazonalidade, criativos, concorrência ou contexto de mercado.";
 
 // Confidence gates — every comparison below must clear all of the ones that
 // apply to it before it's allowed to become a finding. These are
