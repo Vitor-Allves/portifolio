@@ -8,7 +8,7 @@ import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate } from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
-import { OBJECTIVE_NONE_KEY, filterCampaignsByIds } from "@/lib/campaign-filters";
+import { OBJECTIVE_NONE_KEY, filterCampaignsByIds, resolveIdFilter, toSavedIdFilter } from "@/lib/campaign-filters";
 import { fetchDashboardData, fetchScopedReach, DashboardFetchError, type ScopedReachResult } from "@/lib/dashboard-fetch";
 import { computeNarrowedCampaignIdsByAccount } from "@/lib/reach-scope";
 import { primaryKpiIds, type KpiId } from "@/lib/kpi-hierarchy";
@@ -51,9 +51,18 @@ const fadeUp: Variants = {
 
 const NONE_KEY = OBJECTIVE_NONE_KEY;
 
-function allIds<T extends { id: string }>(items: T[]): Set<string> {
-  return new Set(items.map((i) => i.id));
-}
+/** localStorage key for remembering the live dashboard's own filter selection (not the same thing as a saved report template) — restores on reload, survives switching between Visão geral/Campanhas/etc. since those never unmount this component anyway. */
+const FILTERS_STORAGE_KEY = "legado-analise-filters-v1";
+
+type PersistedFilters = {
+  period: Period;
+  compare: boolean;
+  accountFilter: string[] | null;
+  campaignFilter: string[] | null;
+  adSetFilter: string[] | null;
+  objectiveFilter: string[] | null;
+  statusFilter: string[] | null;
+};
 
 function uniqueOptions(campaigns: CampaignInsight[], key: (c: CampaignInsight) => string, label: (c: CampaignInsight) => string) {
   const seen = new Map<string, string>();
@@ -120,23 +129,88 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>("spend");
 
-  const [accountIds, setAccountIds] = useState(() => allIds(initialData.accounts.map((a) => ({ id: a.id }))));
-  const [campaignIds, setCampaignIds] = useState(() => new Set(initialData.campaigns.map((c) => c.campaignId)));
-  const [adSetIds, setAdSetIds] = useState(() => new Set(initialData.adSets.map((a) => a.adSetId)));
-  const [objectiveIds, setObjectiveIds] = useState(
-    () => new Set(initialData.campaigns.map((c) => c.objective ?? NONE_KEY))
-  );
-  const [statusIds, setStatusIds] = useState<Set<string>>(() => new Set(initialData.campaigns.map((c) => c.status)));
+  // Each filter dimension is stored as the same "saved selection" shape the
+  // report-template flow already uses (campaign-filters.ts/report-data.ts):
+  // null = "no restriction" (tracks whatever becomes available as data
+  // reloads), a concrete list = an explicit narrowing that survives a data
+  // reload by id, automatically dropping only the ids that stop existing
+  // (resolveIdFilter) rather than the whole filter resetting to "all". This
+  // is what makes every filter independent and cumulative — selecting one
+  // never has to touch another's stored state.
+  const [accountFilter, setAccountFilter] = useState<string[] | null>(null);
+  const [campaignFilter, setCampaignFilter] = useState<string[] | null>(null);
+  const [adSetFilter, setAdSetFilter] = useState<string[] | null>(null);
+  const [objectiveFilter, setObjectiveFilter] = useState<string[] | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string[] | null>(null);
+  // Short-lived notice for the one allowed exception: a filter selection
+  // that became impossible (e.g. a selected campaign's account was just
+  // deselected) gets pruned automatically, and this says what/why.
+  const [filterWarning, setFilterWarning] = useState<string | null>(null);
 
   const defaultPeriod: Period = initialData.period;
 
-  function resetFilters(nextData: DashboardData) {
-    setAccountIds(allIds(nextData.accounts.map((a) => ({ id: a.id }))));
-    setCampaignIds(new Set(nextData.campaigns.map((c) => c.campaignId)));
-    setAdSetIds(new Set(nextData.adSets.map((a) => a.adSetId)));
-    setObjectiveIds(new Set(nextData.campaigns.map((c) => c.objective ?? NONE_KEY)));
-    setStatusIds(new Set(nextData.campaigns.map((c) => c.status)));
-  }
+  useEffect(() => {
+    if (!filterWarning) return;
+    const t = setTimeout(() => setFilterWarning(null), 8000);
+    return () => clearTimeout(t);
+  }, [filterWarning]);
+
+  // Restore a previous session's filters once on mount — never on a later
+  // re-render, so this can't fight with the user's own subsequent changes.
+  // A saved explicit list that resolves to zero matches against what this
+  // viewer can actually see (stale data from a different account/session
+  // sharing the same browser) is treated as absent instead of applied, so
+  // it can never silently zero out every account/campaign on load.
+  useEffect(() => {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(FILTERS_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    let saved: Partial<PersistedFilters> | null = null;
+    try {
+      saved = JSON.parse(raw) as Partial<PersistedFilters>;
+    } catch {
+      return;
+    }
+    if (!saved || typeof saved !== "object") return;
+
+    const applyIfValid = (
+      value: unknown,
+      available: Iterable<string>,
+      setter: (next: string[] | null) => void
+    ) => {
+      if (value === null) {
+        setter(null);
+        return;
+      }
+      if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) return;
+      if (resolveIdFilter(value, available).size > 0) setter(value);
+    };
+
+    applyIfValid(saved.accountFilter, initialData.accounts.map((a) => a.id), setAccountFilter);
+    applyIfValid(saved.campaignFilter, initialData.campaigns.map((c) => c.campaignId), setCampaignFilter);
+    applyIfValid(saved.adSetFilter, initialData.adSets.map((a) => a.adSetId), setAdSetFilter);
+    applyIfValid(
+      saved.objectiveFilter,
+      initialData.campaigns.map((c) => c.objective ?? NONE_KEY),
+      setObjectiveFilter
+    );
+    applyIfValid(saved.statusFilter, initialData.campaigns.map((c) => c.status), setStatusFilter);
+
+    if (
+      saved.period &&
+      (JSON.stringify(saved.period) !== JSON.stringify(initialData.period) || Boolean(saved.compare) !== false)
+    ) {
+      refetch(saved.period, Boolean(saved.compare));
+    }
+    // Deliberately mount-only: this restores a previous session's filters
+    // exactly once and must never re-fire on the state changes it itself
+    // triggers (that would fight the user's own subsequent edits).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function refetch(nextPeriod: Period, nextCompare: boolean) {
     setPeriod(nextPeriod);
@@ -146,7 +220,6 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       try {
         const nextData = await fetchDashboardData(nextPeriod, nextCompare);
         setData(nextData);
-        resetFilters(nextData);
       } catch (err) {
         setError(err instanceof DashboardFetchError ? err.message : "Falha de conexão ao buscar os dados.");
       }
@@ -167,6 +240,113 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     () => uniqueOptions(data.campaigns, (c) => c.status, (c) => statusLabel(c.status)),
     [data.campaigns]
   );
+
+  // The actual Sets every filter/derived memo below consumes — re-resolved
+  // against whatever's currently available every time either side changes.
+  // An untouched (null) filter always tracks "everything currently
+  // available"; an explicit selection keeps exactly those ids that still
+  // exist and silently drops the rest (e.g. a campaign with no activity in
+  // a newly selected period) — never collapses back to "everything".
+  const accountIds = useMemo(
+    () => resolveIdFilter(accountFilter, accountOptions.map((o) => o.id)),
+    [accountFilter, accountOptions]
+  );
+  const campaignIds = useMemo(
+    () => resolveIdFilter(campaignFilter, campaignOptions.map((o) => o.id)),
+    [campaignFilter, campaignOptions]
+  );
+  const adSetIds = useMemo(() => resolveIdFilter(adSetFilter, adSetOptions.map((o) => o.id)), [adSetFilter, adSetOptions]);
+  const objectiveIds = useMemo(
+    () => resolveIdFilter(objectiveFilter, objectiveOptions.map((o) => o.id)),
+    [objectiveFilter, objectiveOptions]
+  );
+  const statusIds = useMemo(() => resolveIdFilter(statusFilter, statusOptions.map((o) => o.id)), [statusFilter, statusOptions]);
+
+  const campaignAccountById = useMemo(() => new Map(data.campaigns.map((c) => [c.campaignId, c.accountId])), [data.campaigns]);
+  const adSetAccountById = useMemo(() => new Map(data.adSets.map((a) => [a.adSetId, a.accountId])), [data.adSets]);
+
+  function setCampaignIds(next: Set<string>) {
+    setCampaignFilter(toSavedIdFilter(next, campaignOptions));
+  }
+  function setAdSetIds(next: Set<string>) {
+    setAdSetFilter(toSavedIdFilter(next, adSetOptions));
+  }
+  function setObjectiveIds(next: Set<string>) {
+    setObjectiveFilter(toSavedIdFilter(next, objectiveOptions));
+  }
+  function setStatusIds(next: Set<string>) {
+    setStatusFilter(toSavedIdFilter(next, statusOptions));
+  }
+
+  // The one allowed exception to "a filter never touches another filter":
+  // deselecting an account can make an explicitly-selected campaign/ad set
+  // impossible to ever match again (each belongs to exactly one account).
+  // Rather than leaving that dead selection silently stored, this prunes
+  // only the ids that actually became unreachable and says so — everything
+  // else (objective/status, every other account, period, comparison) is
+  // left completely untouched.
+  function setAccountIds(next: Set<string>) {
+    const removedAccountIds = [...accountIds].filter((id) => !next.has(id));
+    setAccountFilter(toSavedIdFilter(next, accountOptions));
+    if (removedAccountIds.length === 0) return;
+
+    const accountNameById = new Map(accountOptions.map((o) => [o.id, o.label]));
+    const removedAccountNames = removedAccountIds.map((id) => accountNameById.get(id) ?? id);
+
+    let removedCampaignCount = 0;
+    if (campaignFilter !== null) {
+      const keep = campaignFilter.filter((id) => {
+        const owner = campaignAccountById.get(id);
+        return owner === undefined || next.has(owner);
+      });
+      removedCampaignCount = campaignFilter.length - keep.length;
+      if (removedCampaignCount > 0) setCampaignFilter(keep.length === campaignOptions.length ? null : keep);
+    }
+
+    let removedAdSetCount = 0;
+    if (adSetFilter !== null) {
+      const keep = adSetFilter.filter((id) => {
+        const owner = adSetAccountById.get(id);
+        return owner === undefined || next.has(owner);
+      });
+      removedAdSetCount = adSetFilter.length - keep.length;
+      if (removedAdSetCount > 0) setAdSetFilter(keep.length === adSetOptions.length ? null : keep);
+    }
+
+    if (removedCampaignCount === 0 && removedAdSetCount === 0) return;
+    const parts: string[] = [];
+    if (removedCampaignCount > 0) parts.push(`${removedCampaignCount} campanha${removedCampaignCount === 1 ? "" : "s"}`);
+    if (removedAdSetCount > 0) parts.push(`${removedAdSetCount} conjunto${removedAdSetCount === 1 ? "" : "s"} de anúncios`);
+    const totalRemoved = removedCampaignCount + removedAdSetCount;
+    const isSingleAccount = removedAccountNames.length === 1;
+    const accountPhrase = isSingleAccount ? `da conta ${removedAccountNames[0]}` : `das contas ${removedAccountNames.join(", ")}`;
+    const article = isSingleAccount ? "a conta" : "as contas";
+    const verb = isSingleAccount ? "não está mais selecionada" : "não estão mais selecionadas";
+    const sair = totalRemoved === 1 ? "saiu" : "saíram";
+    setFilterWarning(`${parts.join(" e ")} ${accountPhrase} ${sair} do filtro porque ${article} ${verb}.`);
+  }
+
+  // Persists every change (filters, period, comparison) so a reload or a
+  // switch away and back to /analise restores exactly what was active —
+  // only the "Limpar filtros" button (FilterBar's clearAll) is allowed to
+  // zero all of this out, by setting every filter back to null/default,
+  // which this effect then persists like any other change.
+  useEffect(() => {
+    const toSave: PersistedFilters = {
+      period,
+      compare,
+      accountFilter,
+      campaignFilter,
+      adSetFilter,
+      objectiveFilter,
+      statusFilter,
+    };
+    try {
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(toSave));
+    } catch {
+      // localStorage unavailable (private browsing, quota) — filters simply won't survive a reload.
+    }
+  }, [period, compare, accountFilter, campaignFilter, adSetFilter, objectiveFilter, statusFilter]);
 
   // Shared with the report-template generation flow (ReportsPanel.tsx) via
   // campaign-filters.ts, so a generated report's campaign selection always
@@ -734,6 +914,23 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                 hiddenFilterIds={hiddenFilterIds}
                 disabled={isPending}
               />
+
+              {filterWarning && (
+                <div
+                  className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-[12.5px] text-amber-300"
+                  role="status"
+                >
+                  <span>{filterWarning}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterWarning(null)}
+                    aria-label="Dispensar aviso"
+                    className="shrink-0 text-amber-300/70 hover:text-amber-300 transition-colors duration-200"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
 
               {isPending && (
                 <div className="mb-4 flex items-center gap-2 text-[12.5px] text-intel-text-dim" role="status" aria-live="polite">
