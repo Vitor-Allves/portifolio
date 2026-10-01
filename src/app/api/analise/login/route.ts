@@ -3,10 +3,10 @@ import { isRateLimited } from "@/lib/rate-limit";
 import {
   ANALISE_SESSION_COOKIE,
   ANALISE_PENDING_COOKIE,
-  SESSION_MAX_AGE_SECONDS,
   PENDING_MAX_AGE_SECONDS,
   createSessionToken,
   createPendingToken,
+  sessionMaxAgeSeconds,
 } from "@/lib/analise-session-node";
 import { matchInternalUser } from "@/lib/internal-users";
 import { matchClientUser } from "@/lib/client-access";
@@ -22,13 +22,13 @@ function clientKey(req: NextRequest): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 }
 
-function setSessionCookie(res: NextResponse, token: string) {
+function setSessionCookie(res: NextResponse, token: string, remember: boolean) {
   res.cookies.set(ANALISE_SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
+    maxAge: sessionMaxAgeSeconds(remember),
   });
   res.cookies.delete(ANALISE_PENDING_COOKIE);
 }
@@ -63,13 +63,16 @@ export async function POST(req: NextRequest) {
 
   let username: unknown;
   let password: unknown;
+  let remember: unknown;
   try {
-    const body = (await req.json()) as { username?: unknown; password?: unknown };
+    const body = (await req.json()) as { username?: unknown; password?: unknown; remember?: unknown };
     username = body.username;
     password = body.password;
+    remember = body.remember;
   } catch {
     return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   }
+  const rememberMe = remember === true;
 
   if (typeof username !== "string" || !username.trim() || typeof password !== "string" || !password) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
@@ -90,22 +93,22 @@ export async function POST(req: NextRequest) {
     if (staffMatch) {
       if (staffMatch.role === "administrador_geral") {
         const stage = staffMatch.totpEnabled ? "verify" : "enroll";
-        const pending = createPendingToken(staffMatch.id, stage);
+        const pending = createPendingToken(staffMatch.id, stage, rememberMe);
         const res = NextResponse.json({ ok: true, stage });
         setPendingCookie(res, pending);
         return res;
       }
-      const token = createSessionToken("staff", staffMatch.id, staffMatch.sessionVersion);
+      const token = createSessionToken("staff", staffMatch.id, staffMatch.sessionVersion, rememberMe);
       const res = NextResponse.json({ ok: true, stage: "done" });
-      setSessionCookie(res, token);
+      setSessionCookie(res, token, rememberMe);
       return res;
     }
 
     const clientMatch = await matchClientUser(cleanUsername, password);
     if (clientMatch) {
-      const token = createSessionToken("client", clientMatch.id, clientMatch.sessionVersion);
+      const token = createSessionToken("client", clientMatch.id, clientMatch.sessionVersion, rememberMe);
       const res = NextResponse.json({ ok: true, stage: "done" });
-      setSessionCookie(res, token);
+      setSessionCookie(res, token, rememberMe);
       return res;
     }
   } catch (err) {

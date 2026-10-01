@@ -1,0 +1,114 @@
+/* Dark (login-screen) palette for the Legado Intelligence mark — matches
+   the "option 1" theme from the design reference exactly: hand/arrow/word
+   in white, the INTELLIGENCE subtitle in silver, bars going from muted
+   blue-grey (b1) to near-white (b4). */
+.mark {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.hand,
+.word,
+.arrowFill {
+  fill: #ffffff;
+}
+.sub {
+  fill: #bfc3c9;
+}
+.b1 {
+  fill: #6f86a8;
+}
+.b2 {
+  fill: #8ea3c2;
+}
+.b3 {
+  fill: #afc0da;
+}
+.b4 {
+  fill: #cdd8e8;
+}
+.bar.lit {
+  fill: #ffffff;
+}
+.intText {
+  font-family: var(--login-font-cinzel, "Cinzel", "Trajan Pro", Georgia, serif);
+  font-weight: 600;
+  font-size: 1060px;
+}
+
+.bar {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: fill 0.4s ease;
+}
+.arrow {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+}
+
+.intro .bar {
+  animation: grow 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.intro .b1 {
+  animation-delay: 0.15s;
+}
+.intro .b2 {
+  animation-delay: 0.3s;
+}
+.intro .b3 {
+  animation-delay: 0.45s;
+}
+.intro .b4 {
+  animation-delay: 0.6s;
+}
+.intro .arrow {
+  animation: rise 0.8s 0.85s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.bar.lit {
+  animation: pop 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+.win .arrow {
+  animation: launch 1s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate(-900px, 900px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pop {
+  0% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(1.12);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+@keyframes launch {
+  0% {
+    transform: none;
+  }
+  40% {
+    transform: translate(500px, -500px);
+  }
+  100% {
+    transform: none;
+  }
+}

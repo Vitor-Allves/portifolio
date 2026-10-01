@@ -28,6 +28,17 @@ export const ANALISE_PENDING_COOKIE = "legado_analise_pending";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
 export const SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;
 
+// "Manter conectado" on the login form — a longer-lived cookie/token, never
+// a different trust level: a revoked sessionVersion still cuts the session
+// immediately regardless of which TTL it was issued with (see auth-context.ts).
+const REMEMBER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d
+export const REMEMBER_SESSION_MAX_AGE_SECONDS = REMEMBER_SESSION_TTL_MS / 1000;
+
+/** The cookie `maxAge` matching whichever TTL `createSessionToken` was called with — always derive both from the same `remember` flag so the cookie never outlives (or expires before) the token it carries. */
+export function sessionMaxAgeSeconds(remember: boolean): number {
+  return remember ? REMEMBER_SESSION_MAX_AGE_SECONDS : SESSION_MAX_AGE_SECONDS;
+}
+
 // Short-lived — covers only the gap between "password verified" and
 // "TOTP code (or 2FA enrollment) confirmed" for an administrador_geral
 // login. Never grants any data access on its own (see auth-context.ts).
@@ -49,6 +60,8 @@ export type PendingTokenPayload = {
   exp: number;
   userId: string;
   stage: PendingStage;
+  /** Carries the login form's "Manter conectado" choice across the 2FA step, so the session it ends in gets the same TTL it would have gotten without 2FA. */
+  remember: boolean;
 };
 
 function requireSecret(): string {
@@ -91,8 +104,9 @@ function decode<T extends { exp: number }>(token: string | undefined | null): T 
 }
 
 /** Creates a signed, thin session token. Throws if the secret env var is missing. */
-export function createSessionToken(kind: SessionKind, userId: string, sessionVersion: number): string {
-  return encode<SessionTokenPayload>({ exp: Date.now() + SESSION_TTL_MS, kind, userId, sessionVersion });
+export function createSessionToken(kind: SessionKind, userId: string, sessionVersion: number, remember = false): string {
+  const ttl = remember ? REMEMBER_SESSION_TTL_MS : SESSION_TTL_MS;
+  return encode<SessionTokenPayload>({ exp: Date.now() + ttl, kind, userId, sessionVersion });
 }
 
 /** Verifies signature + expiry and returns the thin payload, or null if invalid/expired/missing. Callers needing the actual role/accountIds/permissions must hydrate via auth-context.ts — never trust a cached copy. */
@@ -101,8 +115,8 @@ export function verifySessionToken(token: string | undefined | null): SessionTok
 }
 
 /** Creates the short-lived token that bridges "password verified" and "2FA confirmed" for an administrador_geral login. Never accepted by any data-serving route. */
-export function createPendingToken(userId: string, stage: PendingStage): string {
-  return encode<PendingTokenPayload>({ exp: Date.now() + PENDING_TTL_MS, userId, stage });
+export function createPendingToken(userId: string, stage: PendingStage, remember = false): string {
+  return encode<PendingTokenPayload>({ exp: Date.now() + PENDING_TTL_MS, userId, stage, remember });
 }
 
 export function verifyPendingToken(token: string | undefined | null): PendingTokenPayload | null {

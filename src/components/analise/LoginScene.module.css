@@ -1,0 +1,181 @@
+/* Ported from the design reference (login-opcao-1.html, "option 1" — the
+   logo that comes alive). Only the structural/layout rules live here;
+   colors that come from Tailwind's design tokens stay as Tailwind classes
+   in the component. */
+
+.scene {
+  min-height: 100dvh;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: clamp(10px, 2.2vh, 22px);
+  padding: 28px 16px 40px;
+  background:
+    radial-gradient(42% 38% at 50% 26%, rgba(53, 102, 161, 0.55), transparent 70%),
+    radial-gradient(60% 40% at 50% 100%, rgba(31, 58, 99, 0.9), transparent 70%),
+    linear-gradient(180deg, #13264a 0%, #0b1526 75%);
+}
+
+.mark {
+  width: clamp(150px, 14.5vw, 215px);
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 380px) auto;
+  align-items: end;
+  gap: clamp(0px, 1.5vw, 22px);
+  position: relative;
+}
+
+.groundShadow {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: -26px;
+  height: 52px;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.45), transparent);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.who {
+  position: relative;
+  aspect-ratio: 720 / 1024;
+  height: clamp(280px, 47vh, 430px);
+  margin-bottom: -6px;
+  z-index: 1;
+}
+.whoLeft {
+  margin-right: -78px;
+}
+.whoRight {
+  margin-left: -78px;
+}
+
+.who img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: bottom;
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition:
+    opacity 0.26s ease,
+    transform 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+.who img.show {
+  opacity: 1;
+  transform: none;
+}
+
+.bubble {
+  margin: 0;
+  background: #fff;
+  color: #0b1526;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.35;
+  padding: 10px 14px;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+  text-align: center;
+  width: max-content;
+  max-width: 260px;
+  transition: opacity 0.2s;
+}
+.bubble.swap {
+  opacity: 0;
+}
+.bubble::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+/* Desktop: sits inside Titan's box, pointing down-right at him. */
+.desktopBubble {
+  position: absolute;
+  z-index: 6;
+  left: -14%;
+  bottom: 94%;
+}
+.desktopBubble::after {
+  left: 34px;
+  bottom: -6px;
+}
+
+/* Mobile: a normal grid row above both mascots, pointing down at the pair. */
+.mobileBubble {
+  display: none;
+  position: relative;
+}
+.mobileBubble::after {
+  left: 50%;
+  margin-left: -7px;
+  bottom: -6px;
+}
+
+.slot {
+  position: relative;
+  z-index: 3;
+}
+
+@media (max-width: 900px) {
+  .stage {
+    grid-template-columns: 1fr 1fr;
+    padding-top: 8px;
+  }
+  .desktopBubble {
+    display: none;
+  }
+  .mobileBubble {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    margin-bottom: 6px;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+  .slot {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: center;
+    width: 100%;
+    max-width: 380px;
+  }
+  .whoLeft {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .whoRight {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .who {
+    height: 200px;
+    justify-self: center;
+    margin-bottom: 20px;
+  }
+  .whoLeft,
+  .whoRight {
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .groundShadow {
+    bottom: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .who img {
+    transition: opacity 0.001ms !important;
+  }
+}

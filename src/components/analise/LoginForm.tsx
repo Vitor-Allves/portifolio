@@ -1,13 +1,40 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+// How long the "conquista" pose/bubble stays up before the real redirect
+// fires — purely a visual beat, requested explicitly, never gates the
+// actual auth: the session cookie is already set by the time this runs.
+const SUCCESS_HOLD_MS = 1000;
+
+/**
+ * Every visual cue LoginScene needs to drive the mascots/speech bubble/logo
+ * bars — LoginForm only ever emits these around its REAL auth calls; it
+ * never fakes a stage, a delay (besides the explicit success hold above),
+ * or an outcome that didn't actually happen.
+ */
+export type LoginVisualEvent =
+  | { type: "focus"; field: "username" | "password" }
+  | { type: "blur"; field: "password" }
+  /** 0 = both empty, 1 = usuário preenchido, 2 = usuário + senha preenchidos. */
+  | { type: "progress"; step: 0 | 1 | 2 }
+  | { type: "password-visibility"; visible: boolean }
+  | { type: "submit-start" }
+  /** Caught client-side before any request (empty field) — never touches the logo bars. */
+  | { type: "validation-error" }
+  /** A real server rejection (wrong credentials, invalid code, network failure). */
+  | { type: "auth-failed" }
+  | { type: "submit-success" }
+  | { type: "stage"; stage: "credentials" | "verify" | "enroll" }
+  | { type: "forgot-view"; open: boolean };
+
 const fieldClass =
-  "w-full rounded-xl border border-white/[0.12] bg-white/[0.04] px-4 py-3.5 text-[15px] text-white placeholder:text-silver-400/50 focus:border-silver-400/60 focus:bg-white/[0.06] focus:outline-none transition-colors duration-200";
-const labelClass = "block text-[11px] font-medium tracking-[0.14em] uppercase text-silver-400 mb-2";
+  "w-full h-[46px] rounded-[10px] border border-slate-300 bg-slate-50 px-3.5 text-[15px] font-medium text-[#16243D] placeholder:text-slate-400 focus:border-[#2E5BA8] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#2E5BA8]/20 transition-colors duration-200 aria-[invalid=true]:border-[#A23A3A]";
+const labelClass = "block text-[12.5px] font-semibold text-[#16243D] mb-1.5";
 const submitClass =
-  "mt-7 inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.12em] text-navy-900 shadow-[0_8px_24px_-8px_rgba(255,255,255,0.35)] transition-[filter,transform] duration-200 hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
+  "mt-1 inline-flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-[#1F3A63] px-6 text-[15px] font-bold tracking-[0.02em] text-white transition-[filter] duration-200 hover:brightness-110 disabled:cursor-progress disabled:saturate-[.6]";
+const linkClass = "bg-none border-0 p-0 text-[13px] font-semibold text-[#16243D] underline underline-offset-[3px] decoration-[#16243D]/35 cursor-pointer hover:decoration-[#16243D]/70";
 
 function Spinner() {
   return (
@@ -20,7 +47,7 @@ function Spinner() {
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <p className="mt-4 rounded-lg border border-intel-red/25 bg-intel-red/10 px-3.5 py-2.5 text-[13px] text-intel-red" role="alert">
+    <p className="mt-1 text-[13px] leading-snug text-[#A23A3A]" role="alert" aria-live="assertive">
       {message}
     </p>
   );
@@ -31,15 +58,30 @@ type Stage =
   | { kind: "verify" }
   | { kind: "enroll"; qrDataUrl: string; otpauthUri: string; recoveryCodes: string[]; acknowledged: boolean };
 
-export default function LoginForm() {
+export default function LoginForm({ onVisualEvent }: { onVisualEvent?: (event: LoginVisualEvent) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<Stage>({ kind: "credentials" });
+  const [forgotOpen, setForgotOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  function emit(event: LoginVisualEvent) {
+    onVisualEvent?.(event);
+  }
+
+  function progressStep(nextUsername: string, nextPassword: string): 0 | 1 | 2 {
+    if (!nextUsername.trim()) return 0;
+    return nextPassword ? 2 : 1;
+  }
 
   // Only a same-origin relative path is accepted — an absolute or
   // protocol-relative value (e.g. "https://evil.example" or "//evil.example")
@@ -61,17 +103,33 @@ export default function LoginForm() {
   async function handleCredentialsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (!username.trim()) {
+      emit({ type: "validation-error" });
+      setError("Informe o seu usuário para continuar.");
+      usernameRef.current?.focus();
+      return;
+    }
+    if (!password) {
+      emit({ type: "validation-error" });
+      setError("Digite a sua senha para entrar.");
+      passwordRef.current?.focus();
+      return;
+    }
+
     setLoading(true);
+    emit({ type: "submit-start" });
 
     try {
       const res = await fetch("/api/analise/login/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: username.trim(), password, remember }),
       });
       const body = (await res.json().catch(() => null)) as { error?: string; stage?: string } | null;
 
       if (!res.ok) {
+        emit({ type: "auth-failed" });
         setError(body?.error ?? "Não foi possível entrar.");
         setLoading(false);
         return;
@@ -79,6 +137,7 @@ export default function LoginForm() {
 
       if (body?.stage === "verify") {
         setStage({ kind: "verify" });
+        emit({ type: "stage", stage: "verify" });
         setLoading(false);
         return;
       }
@@ -89,6 +148,7 @@ export default function LoginForm() {
           | { error?: string; qrDataUrl?: string; otpauthUri?: string; recoveryCodes?: string[] }
           | null;
         if (!enrollRes.ok || !enrollBody?.qrDataUrl) {
+          emit({ type: "auth-failed" });
           setError(enrollBody?.error ?? "Não foi possível iniciar a configuração de segurança.");
           setLoading(false);
           return;
@@ -100,12 +160,16 @@ export default function LoginForm() {
           recoveryCodes: enrollBody.recoveryCodes ?? [],
           acknowledged: false,
         });
+        emit({ type: "stage", stage: "enroll" });
         setLoading(false);
         return;
       }
 
-      goToDestination();
+      emit({ type: "submit-success" });
+      setSuccess(true);
+      setTimeout(goToDestination, SUCCESS_HOLD_MS);
     } catch {
+      emit({ type: "auth-failed" });
       setError("Falha de conexão. Tente novamente.");
       setLoading(false);
     }
@@ -115,6 +179,7 @@ export default function LoginForm() {
     event.preventDefault();
     setError(null);
     setLoading(true);
+    emit({ type: "submit-start" });
     try {
       const res = await fetch("/api/analise/login/totp/", {
         method: "POST",
@@ -123,12 +188,16 @@ export default function LoginForm() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        emit({ type: "auth-failed" });
         setError(body?.error ?? "Código inválido.");
         setLoading(false);
         return;
       }
-      goToDestination();
+      emit({ type: "submit-success" });
+      setSuccess(true);
+      setTimeout(goToDestination, SUCCESS_HOLD_MS);
     } catch {
+      emit({ type: "auth-failed" });
       setError("Falha de conexão. Tente novamente.");
       setLoading(false);
     }
@@ -139,6 +208,7 @@ export default function LoginForm() {
     if (stage.kind !== "enroll") return;
     setError(null);
     setLoading(true);
+    emit({ type: "submit-start" });
     try {
       const res = await fetch("/api/analise/2fa/enroll/confirm/", {
         method: "POST",
@@ -147,40 +217,82 @@ export default function LoginForm() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        emit({ type: "auth-failed" });
         setError(body?.error ?? "Código inválido.");
         setLoading(false);
         return;
       }
-      goToDestination();
+      emit({ type: "submit-success" });
+      setSuccess(true);
+      setTimeout(goToDestination, SUCCESS_HOLD_MS);
     } catch {
+      emit({ type: "auth-failed" });
       setError("Falha de conexão. Tente novamente.");
       setLoading(false);
     }
   }
 
+  function openForgot() {
+    setForgotOpen(true);
+    setError(null);
+    emit({ type: "forgot-view", open: true });
+  }
+
+  function closeForgot() {
+    setForgotOpen(false);
+    emit({ type: "forgot-view", open: false });
+    emit({ type: "progress", step: progressStep(username, password) });
+  }
+
+  function toggleShowPassword() {
+    const next = !showPassword;
+    setShowPassword(next);
+    emit({ type: "password-visibility", visible: next });
+  }
+
+  if (forgotOpen) {
+    return (
+      <div className="grid gap-4">
+        <h1 className="text-[20px] font-semibold leading-tight text-[#16243D]">Primeiro acesso ou esqueceu a senha?</h1>
+        <p className="-mt-1 text-[13.5px] leading-relaxed text-[#5B6779]">
+          A redefinição de senha é feita pelo administrador da sua empresa ou pelo seu consultor da Legado — ainda não
+          existe um link automático por e-mail.
+        </p>
+        <p className="text-[13.5px] leading-relaxed text-[#5B6779]">
+          Fale com o seu consultor da Legado ou com o administrador do seu acesso para receber uma nova senha.
+        </p>
+        <button type="button" className={`${linkClass} justify-self-start`} onClick={closeForgot}>
+          Voltar para o login
+        </button>
+      </div>
+    );
+  }
+
   if (stage.kind === "verify") {
     return (
-      <form onSubmit={handleVerifySubmit} noValidate>
-        <p className="text-sm text-silver-400 mb-5">
+      <form onSubmit={handleVerifySubmit} noValidate className="grid gap-4">
+        <p className="text-[13.5px] leading-relaxed text-[#5B6779]">
           Digite o código de 6 dígitos do seu aplicativo autenticador, ou um código de recuperação.
         </p>
-        <label htmlFor="totp-code" className={labelClass}>
-          Código
-        </label>
-        <input
-          id="totp-code"
-          name="code"
-          inputMode="text"
-          autoComplete="one-time-code"
-          autoFocus
-          required
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          className={`${fieldClass} text-center tracking-[0.3em]`}
-          placeholder="000000"
-        />
+        <div>
+          <label htmlFor="totp-code" className={labelClass}>
+            Código
+          </label>
+          <input
+            id="totp-code"
+            name="code"
+            inputMode="text"
+            autoComplete="one-time-code"
+            autoFocus
+            required
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className={`${fieldClass} text-center tracking-[0.3em]`}
+            placeholder="000000"
+          />
+        </div>
         {error && <ErrorMessage message={error} />}
-        <button type="submit" disabled={loading} aria-busy={loading} className={submitClass}>
+        <button type="submit" disabled={loading || success} aria-busy={loading} className={submitClass}>
           {loading && <Spinner />}
           {loading ? "Verificando..." : "Confirmar"}
         </button>
@@ -192,32 +304,28 @@ export default function LoginForm() {
     const { qrDataUrl, recoveryCodes, acknowledged } = stage;
     if (!acknowledged) {
       return (
-        <div>
-          <p className="text-sm text-silver-400 mb-4">
+        <div className="grid gap-4">
+          <p className="text-[13.5px] leading-relaxed text-[#5B6779]">
             Como administrador geral, sua conta exige autenticação em duas etapas. Escaneie o código abaixo com um
             aplicativo autenticador (Google Authenticator, Authy, 1Password...).
           </p>
-          <div className="flex justify-center rounded-xl bg-white p-4">
+          <div className="flex justify-center rounded-xl border border-slate-200 bg-white p-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrDataUrl} alt="QR code para configurar a autenticação em duas etapas" width={200} height={200} />
           </div>
-          <p className="mt-5 text-[11px] font-medium tracking-[0.14em] uppercase text-silver-400 mb-2">
-            Códigos de recuperação
-          </p>
-          <p className="text-xs text-silver-400 mb-2">
-            Guarde estes códigos em um local seguro — cada um pode ser usado uma única vez caso você perca acesso ao
-            aplicativo autenticador. Eles não serão exibidos novamente.
-          </p>
-          <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] p-3 font-mono text-[12.5px] text-white">
-            {recoveryCodes.map((c) => (
-              <span key={c}>{c}</span>
-            ))}
+          <div>
+            <p className="text-[12.5px] font-semibold text-[#16243D] mb-1.5">Códigos de recuperação</p>
+            <p className="text-[12.5px] leading-relaxed text-[#5B6779] mb-2">
+              Guarde estes códigos em um local seguro — cada um pode ser usado uma única vez caso você perca acesso ao
+              aplicativo autenticador. Eles não serão exibidos novamente.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[12.5px] text-[#16243D]">
+              {recoveryCodes.map((c) => (
+                <span key={c}>{c}</span>
+              ))}
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setStage({ ...stage, acknowledged: true })}
-            className={submitClass}
-          >
+          <button type="button" onClick={() => setStage({ ...stage, acknowledged: true })} className={submitClass}>
             Já salvei os códigos de recuperação
           </button>
         </div>
@@ -225,27 +333,29 @@ export default function LoginForm() {
     }
 
     return (
-      <form onSubmit={handleEnrollConfirm} noValidate>
-        <p className="text-sm text-silver-400 mb-5">
+      <form onSubmit={handleEnrollConfirm} noValidate className="grid gap-4">
+        <p className="text-[13.5px] leading-relaxed text-[#5B6779]">
           Digite o código de 6 dígitos exibido no seu aplicativo autenticador para concluir a configuração.
         </p>
-        <label htmlFor="totp-confirm-code" className={labelClass}>
-          Código
-        </label>
-        <input
-          id="totp-confirm-code"
-          name="code"
-          inputMode="text"
-          autoComplete="one-time-code"
-          autoFocus
-          required
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          className={`${fieldClass} text-center tracking-[0.3em]`}
-          placeholder="000000"
-        />
+        <div>
+          <label htmlFor="totp-confirm-code" className={labelClass}>
+            Código
+          </label>
+          <input
+            id="totp-confirm-code"
+            name="code"
+            inputMode="text"
+            autoComplete="one-time-code"
+            autoFocus
+            required
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className={`${fieldClass} text-center tracking-[0.3em]`}
+            placeholder="000000"
+          />
+        </div>
         {error && <ErrorMessage message={error} />}
-        <button type="submit" disabled={loading} aria-busy={loading} className={submitClass}>
+        <button type="submit" disabled={loading || success} aria-busy={loading} className={submitClass}>
           {loading && <Spinner />}
           {loading ? "Confirmando..." : "Ativar e entrar"}
         </button>
@@ -254,47 +364,106 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleCredentialsSubmit} noValidate>
-      <label htmlFor="username" className={labelClass}>
-        Usuário
-      </label>
-      <input
-        id="username"
-        name="username"
-        type="text"
-        autoComplete="username"
-        autoCapitalize="off"
-        autoCorrect="off"
-        required
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        className={fieldClass}
-      />
+    <div className="grid gap-4">
+      <div>
+        <h1 className="text-[20px] font-semibold leading-tight text-[#16243D]">Acesse seu painel</h1>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-[#5B6779]">
+          Indicadores, filtros e relatórios da sua empresa, liberados conforme o seu acesso.
+        </p>
+      </div>
+      <form onSubmit={handleCredentialsSubmit} noValidate className="grid gap-3.5">
+        <div>
+          <label htmlFor="username" className={labelClass}>
+            Usuário
+          </label>
+          <input
+            id="username"
+            name="username"
+            ref={usernameRef}
+            type="text"
+            autoComplete="username"
+            autoCapitalize="off"
+            autoCorrect="off"
+            required
+            aria-invalid={Boolean(error) || undefined}
+            value={username}
+            onChange={(e) => {
+              const v = e.target.value;
+              setUsername(v);
+              setError(null);
+              emit({ type: "progress", step: progressStep(v, password) });
+            }}
+            onFocus={() => emit({ type: "focus", field: "username" })}
+            className={fieldClass}
+            placeholder="seu.usuario"
+          />
+        </div>
 
-      <label htmlFor="password" className={`${labelClass} mt-6`}>
-        Senha
-      </label>
-      <input
-        id="password"
-        name="password"
-        type="password"
-        autoComplete="current-password"
-        required
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className={fieldClass}
-      />
+        <div>
+          <label htmlFor="password" className={labelClass}>
+            Senha
+          </label>
+          <div className="relative">
+            <input
+              id="password"
+              name="password"
+              ref={passwordRef}
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              required
+              aria-invalid={Boolean(error) || undefined}
+              value={password}
+              onChange={(e) => {
+                const v = e.target.value;
+                setPassword(v);
+                setError(null);
+                emit({ type: "progress", step: progressStep(username, v) });
+              }}
+              onFocus={() => emit({ type: "focus", field: "password" })}
+              onBlur={() => {
+                if (!loading && !success) emit({ type: "blur", field: "password" });
+              }}
+              className={`${fieldClass} pr-[84px]`}
+              placeholder="Sua senha"
+            />
+            <button
+              type="button"
+              onClick={toggleShowPassword}
+              aria-controls="password"
+              aria-pressed={showPassword}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 rounded-lg px-3 text-[12.5px] font-semibold text-[#5B6779] hover:text-[#16243D] transition-colors duration-200"
+            >
+              {showPassword ? "Ocultar" : "Mostrar"}
+            </button>
+          </div>
+        </div>
 
-      {error && <ErrorMessage message={error} />}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <label className="inline-flex items-center gap-2 text-[13px] text-[#5B6779] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="h-4 w-4 accent-[#1F3A63]"
+            />
+            Manter conectado
+          </label>
+          <button type="button" className={linkClass} onClick={openForgot}>
+            Esqueci minha senha
+          </button>
+        </div>
 
-      <button type="submit" disabled={loading} aria-busy={loading} className={submitClass}>
-        {loading && <Spinner />}
-        {loading ? "Entrando..." : "Entrar"}
-      </button>
+        {error && <ErrorMessage message={error} />}
 
-      <p className="mt-5 text-center text-[12.5px] text-silver-400">
-        Esqueceu sua senha? Entre em contato com o administrador.
+        <button type="submit" disabled={loading || success} aria-busy={loading} className={submitClass}>
+          {loading && <Spinner />}
+          {loading ? "Entrando" : "Entrar"}
+        </button>
+      </form>
+
+      <p className="border-t border-slate-200 pt-3 text-[12px] leading-relaxed text-[#5B6779]">
+        Primeiro acesso ou sem permissão para alguma área? Fale com o seu consultor da Legado.
       </p>
-    </form>
+    </div>
   );
 }
