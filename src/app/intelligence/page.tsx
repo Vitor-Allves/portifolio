@@ -3,11 +3,12 @@ import { redirect } from "next/navigation";
 import { sessionScopeFromCookieStore } from "@/lib/auth-context";
 import { isFullAdmin, resolveAllowedAccountIds, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
+import { getClientConsultantInfo } from "@/lib/client-access";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
 
 export const metadata: Metadata = {
-  title: "Análise de Campanhas",
+  title: "Intelligence · Legado",
   robots: { index: false, follow: false },
 };
 
@@ -31,10 +32,10 @@ export default async function AnalisePage() {
   // role/company/permission changes on every load.
   const scope = await sessionScopeFromCookieStore();
   if (!scope) {
-    redirect("/analise/login/");
+    redirect("/intelligence/login/");
   }
   if (scope.mustChangePassword) {
-    redirect("/analise/trocar-senha/");
+    redirect("/intelligence/trocar-senha/");
   }
 
   const allowedAccountIds = resolveAllowedAccountIds(scope) ?? undefined;
@@ -45,6 +46,14 @@ export default async function AnalisePage() {
   const isInternal = scope.kind === "staff";
   const viewerLabel = scope.kind === "client" ? scope.label : `${scope.userName} · ${STAFF_ROLE_LABELS[scope.role]}`;
   const dbConfigured = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+
+  // Only a client session has exactly one company's consultant to resolve —
+  // an internal/admin viewer sees the button too, but it always falls back
+  // to Legado's own general number (see ConsultantWhatsAppButton).
+  const consultant =
+    scope.kind === "client" && dbConfigured
+      ? await getClientConsultantInfo(scope.clientAccessId).catch(() => null)
+      : null;
 
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
   let loadError: unknown = null;
@@ -75,6 +84,7 @@ export default async function AnalisePage() {
       clientLabel={viewerLabel}
       clientPermissions={clientPermissions}
       dbConfigured={dbConfigured}
+      consultant={consultant}
     />
   );
 }

@@ -2,11 +2,114 @@
 
 import { useMemo, useState } from "react";
 import type { CampaignStatus } from "@/lib/meta-ads-types";
-import { statusLabel } from "@/lib/campaign-labels";
+import { statusLabel, ctaLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { INTEL_INPUT } from "./intel-styles";
+
+function FormatIcon({ isVideo }: { isVideo?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-intel-text-dim/60">
+      {isVideo ? (
+        <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
+      ) : (
+        <>
+          <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+          <path d="M5 17l4.5-4.5 3 3L17 11l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** The ad creative thumbnail: lazy-loaded, with a play badge for video ads and a silver placeholder (never a broken-image icon) the moment Meta's time-limited thumbnail URL fails to load. */
+function AdThumbnail({ url, isVideo, size = 40 }: { url: string | null | undefined; isVideo?: boolean; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <span
+        className="flex shrink-0 items-center justify-center rounded-[10px] bg-white/[0.06] border border-white/10"
+        style={{ width: size, height: size }}
+      >
+        <FormatIcon isVideo={isVideo} />
+      </span>
+    );
+  }
+  return (
+    <span className="relative shrink-0 rounded-[10px] overflow-hidden" style={{ width: size, height: size }}>
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover"
+      />
+      {isVideo && (
+        <span className="absolute inset-0 flex items-center justify-center bg-black/25" aria-hidden="true">
+          <svg width={Math.round(size * 0.4)} height={Math.round(size * 0.4)} viewBox="0 0 24 24" fill="#fff">
+            <path d="M8 6.5v11l9-5.5-9-5.5Z" />
+          </svg>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function AdDetailModal({ row, onClose }: { row: RankedRow; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={`Detalhe do anúncio ${row.name}`}>
+      <button type="button" aria-label="Fechar" onClick={onClose} className="absolute inset-0 bg-black/70" />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-intel-surface-1 p-5 max-h-[85vh] overflow-y-auto">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fechar"
+          className="absolute right-4 top-4 text-intel-text-dim hover:text-intel-text transition-colors duration-200"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+        <div className="flex justify-center mb-4">
+          <AdThumbnail url={row.thumbnailUrl} isVideo={row.isVideo} size={160} />
+        </div>
+        <p className="text-[13px] font-medium text-intel-text mb-1">{row.name}</p>
+        <p className="text-[11.5px] text-intel-text-dim mb-4">
+          {row.campaignName} · {row.accountName}
+        </p>
+        {row.creativeTitle && <p className="text-[13px] text-intel-text mb-1">{row.creativeTitle}</p>}
+        {row.creativeBody && <p className="text-[12.5px] text-intel-text-dim leading-relaxed mb-2">{row.creativeBody}</p>}
+        {row.callToAction && (
+          <span className="inline-block text-[11px] px-2.5 py-1 rounded-full bg-white/[0.06] text-intel-text-dim mb-3">
+            {ctaLabel(row.callToAction)}
+          </span>
+        )}
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 pt-3 border-t border-white/[0.06]">
+          <div>
+            <dt className="text-[10px] uppercase tracking-[0.06em] text-intel-text-dim/70">Investimento</dt>
+            <dd className="text-[13px] text-intel-text tabular-nums">{formatCurrencyBRL(row.spend)}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase tracking-[0.06em] text-intel-text-dim/70">Alcance</dt>
+            <dd className="text-[13px] text-intel-text tabular-nums">{formatInteger(row.reach)}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase tracking-[0.06em] text-intel-text-dim/70">Cliques no link</dt>
+            <dd className="text-[13px] text-intel-text tabular-nums">{formatInteger(row.linkClicks)}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase tracking-[0.06em] text-intel-text-dim/70">Conversa iniciada</dt>
+            <dd className="text-[13px] text-intel-text tabular-nums">
+              {row.conversations === null ? "Não disponível" : formatInteger(row.conversations)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  );
+}
 
 export type RankedRow = {
   id: string;
@@ -20,6 +123,12 @@ export type RankedRow = {
   linkClicks: number;
   conversations: number | null;
   reach: number;
+  /** Creative fields — only ever set for the "Melhores anúncios" table (ad sets have no creative of their own). undefined everywhere else, which is what hides the thumbnail column for them. */
+  thumbnailUrl?: string | null;
+  isVideo?: boolean;
+  creativeTitle?: string | null;
+  creativeBody?: string | null;
+  callToAction?: string | null;
 };
 
 type ColumnId =
@@ -172,6 +281,8 @@ export default function RankedEntityTable({ title, nameLabel, rows, csvFilePrefi
   const [search, setSearch] = useState("");
   const [sortColumn, setSortColumn] = useState<ColumnId | "name">(defaultSort);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailRow, setDetailRow] = useState<RankedRow | null>(null);
+  const hasCreatives = rows.some((r) => r.thumbnailUrl !== undefined);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -249,6 +360,7 @@ export default function RankedEntityTable({ title, nameLabel, rows, csvFilePrefi
           <table className="w-full min-w-[820px] border-collapse">
             <thead>
               <tr>
+                {hasCreatives && <th className={`${th} w-12`} aria-hidden="true" />}
                 <th className={th}>
                   <SortButton columnId="name" label={nameLabel} numeric={false} sortColumn={sortColumn} sortDir={sortDir} onToggle={toggleSort} />
                 </th>
@@ -262,10 +374,28 @@ export default function RankedEntityTable({ title, nameLabel, rows, csvFilePrefi
             <tbody>
               {sorted.map((r) => (
                 <tr key={r.id} className="hover:bg-white/[0.035] transition-colors duration-150">
+                  {hasCreatives && (
+                    <td className={td}>
+                      <button type="button" onClick={() => setDetailRow(r)} aria-label={`Ver detalhe de ${r.name}`}>
+                        <AdThumbnail url={r.thumbnailUrl} isVideo={r.isVideo} />
+                      </button>
+                    </td>
+                  )}
                   <td className={td}>
-                    <span className="block max-w-[240px] truncate" title={r.name}>
-                      {r.name}
-                    </span>
+                    {hasCreatives ? (
+                      <button
+                        type="button"
+                        onClick={() => setDetailRow(r)}
+                        className="block max-w-[240px] truncate text-left hover:text-intel-text hover:underline underline-offset-2 transition-colors duration-150"
+                        title={r.name}
+                      >
+                        {r.name}
+                      </button>
+                    ) : (
+                      <span className="block max-w-[240px] truncate" title={r.name}>
+                        {r.name}
+                      </span>
+                    )}
                   </td>
                   {COLUMNS.map((col) => (
                     <td key={col.id} className={col.numeric ? tdNum : td}>
@@ -278,6 +408,7 @@ export default function RankedEntityTable({ title, nameLabel, rows, csvFilePrefi
           </table>
         </div>
       )}
+      {detailRow && <AdDetailModal row={detailRow} onClose={() => setDetailRow(null)} />}
     </div>
   );
 }

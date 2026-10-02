@@ -118,6 +118,81 @@ export function roas(totals: Pick<Totals, "spend" | "purchaseValue">): number | 
   return totals.purchaseValue / totals.spend;
 }
 
+// ---- Resultado principal por objetivo -----------------------------------
+// Every campaign optimizes for a different thing, so "Conversa iniciada"
+// isn't a universal yardstick — a lead-gen campaign has no conversations at
+// all, and showing it as "Não disponível" reads as broken rather than as
+// "wrong metric for this objective". Each objective maps to exactly one
+// result kind; a campaign set that mixes objectives must never collapse
+// their counts into one number (a lead and a conversation aren't the same
+// unit), which is why PRIMARY_RESULT_LABEL below is keyed by kind, not
+// shown as a single combined metric.
+export type PrimaryResultKind = "conversations" | "leads" | "linkClicks" | "reach" | "purchases" | "undefined";
+
+const OBJECTIVE_RESULT_KIND: Record<string, PrimaryResultKind> = {
+  OUTCOME_ENGAGEMENT: "conversations",
+  MESSAGES: "conversations",
+  POST_ENGAGEMENT: "conversations",
+  OUTCOME_LEADS: "leads",
+  LEAD_GENERATION: "leads",
+  OUTCOME_TRAFFIC: "linkClicks",
+  LINK_CLICKS: "linkClicks",
+  STORE_VISITS: "linkClicks",
+  OUTCOME_AWARENESS: "reach",
+  BRAND_AWARENESS: "reach",
+  REACH: "reach",
+  OUTCOME_SALES: "purchases",
+  CONVERSIONS: "purchases",
+  PRODUCT_CATALOG_SALES: "purchases",
+};
+
+/** Which result kind a campaign's objective maps to — "undefined" for an unset or unmapped objective (OUTCOME_APP_PROMOTION, VIDEO_VIEWS, APP_INSTALLS and anything Meta adds later that isn't one of the five buckets above), never guessed at. */
+export function primaryResultKind(objective: string | null): PrimaryResultKind {
+  if (!objective) return "undefined";
+  return OBJECTIVE_RESULT_KIND[objective] ?? "undefined";
+}
+
+export const PRIMARY_RESULT_LABEL: Record<PrimaryResultKind, string> = {
+  conversations: "Conversa iniciada",
+  leads: "Lead",
+  linkClicks: "Clique no link",
+  reach: "Alcance",
+  purchases: "Compra",
+  undefined: "Resultado não definido",
+};
+
+type ResultBearing = Pick<Totals, "spend" | "conversations" | "leads" | "linkClicks" | "reach" | "purchases">;
+
+/** The result count + cost-per-result for one kind, from either a single campaign row or a summed Totals — both share the same field shape. null value means "não disponível" (never 0) for that kind in this scope; "undefined" kind never has a cost-per-result, only a count-less label. */
+export function primaryResultFor(kind: PrimaryResultKind, totals: ResultBearing): { value: number | null; costPerResult: number | null } {
+  switch (kind) {
+    case "conversations":
+      return { value: totals.conversations, costPerResult: costPerConversation(totals) };
+    case "leads":
+      return {
+        value: totals.leads,
+        costPerResult: totals.leads !== null && totals.leads > 0 ? totals.spend / totals.leads : null,
+      };
+    case "linkClicks":
+      return {
+        value: totals.linkClicks,
+        costPerResult: totals.linkClicks > 0 ? totals.spend / totals.linkClicks : null,
+      };
+    case "reach":
+      return {
+        value: totals.reach,
+        costPerResult: totals.reach > 0 ? (totals.spend / totals.reach) * 1000 : null,
+      };
+    case "purchases":
+      return {
+        value: totals.purchases,
+        costPerResult: totals.purchases !== null && totals.purchases > 0 ? totals.spend / totals.purchases : null,
+      };
+    case "undefined":
+      return { value: null, costPerResult: null };
+  }
+}
+
 /** % change of current vs. previous. null when there's no previous value to compare against. */
 export function pctChange(current: number, previous: number): number | null {
   if (previous === 0) return current === 0 ? 0 : null;

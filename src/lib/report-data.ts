@@ -17,7 +17,7 @@ import { CAMPAIGN_COLUMN_OPTIONS, EMPTY_PERMISSIONS, type CampaignColumnId, type
 import type { ReportFilters } from "./report-templates-types";
 import { OBJECTIVE_NONE_KEY, resolveIdFilter, filterCampaignsByIds } from "./campaign-filters";
 import { computeNarrowedCampaignIdsByAccount } from "./reach-scope";
-import { objectiveLabel, statusLabel } from "./campaign-labels";
+import { objectiveLabel, statusLabel, buildDisplayNameMap } from "./campaign-labels";
 import { formatShortDate } from "./format";
 import { DATE_PRESETS } from "./meta-ads-types";
 import type { AllowedColumns } from "./pdf-report-core";
@@ -132,11 +132,59 @@ export type FilteredReportData = {
   adSetOptions: FilterOptionRow[];
   objectiveOptions: FilterOptionRow[];
   statusOptions: FilterOptionRow[];
+  /** The original, un-stripped Meta names behind each cleaned display name —
+   * only ever surfaced to a full admin's own unrestricted CSV export (see
+   * "Nome original" column in the CSV route); never read by the PDF
+   * builder, which only ever shows the cleaned name. */
+  rawNameById: { campaigns: Map<string, string>; adSets: Map<string, string>; ads: Map<string, string> };
 };
 
 /** Fetches the dashboard dataset already scoped to `recipient.accountIds` (never more than the caller is allowed to see) and narrows it by every other filter dimension — the exact same resolution the PDF builder and the live dashboard both use, so an export can never show a campaign/ad set that filter combination wouldn't show on screen. */
 export async function fetchFilteredReportData(effectiveFilters: ReportFilters, recipient: Recipient): Promise<FilteredReportData> {
-  const freshData = await getDashboardData(effectiveFilters.period, recipient.accountIds ?? undefined, { compare: effectiveFilters.compare });
+  const rawData = await getDashboardData(effectiveFilters.period, recipient.accountIds ?? undefined, { compare: effectiveFilters.compare });
+
+  // Client-facing display names: strips internal team tags ("[LGD - João]
+  // [ENGAJAMENTO]...") out of campaign/ad set/ad names before anything else
+  // below reads them — every export (PDF always, CSV for a client-scoped
+  // recipient) only ever sees the cleaned name from here on. The raw
+  // originals are kept in rawNameById purely for the admin CSV's optional
+  // second column, never passed to the PDF builder.
+  const campaignObjectiveById = new Map(rawData.campaigns.map((c) => [c.campaignId, c.objective]));
+  const accountNameById = new Map(rawData.accounts.map((a) => [a.id, a.name]));
+  const campaignNameMap = buildDisplayNameMap(
+    rawData.campaigns.map((c) => ({ id: c.campaignId, rawName: c.campaignName, objective: c.objective, accountName: c.accountName }))
+  );
+  const adSetNameMap = buildDisplayNameMap(
+    rawData.adSets.map((a) => ({
+      id: a.adSetId,
+      rawName: a.adSetName,
+      objective: campaignObjectiveById.get(a.campaignId) ?? null,
+      accountName: accountNameById.get(a.accountId) ?? "",
+    }))
+  );
+  const adNameMap = buildDisplayNameMap(
+    rawData.ads.map((a) => ({
+      id: a.adId,
+      rawName: a.adName,
+      objective: campaignObjectiveById.get(a.campaignId) ?? null,
+      accountName: accountNameById.get(a.accountId) ?? "",
+    }))
+  );
+  const rawNameById = {
+    campaigns: new Map(rawData.campaigns.map((c) => [c.campaignId, c.campaignName])),
+    adSets: new Map(rawData.adSets.map((a) => [a.adSetId, a.adSetName])),
+    ads: new Map(rawData.ads.map((a) => [a.adId, a.adName])),
+  };
+
+  const freshData: DashboardData = {
+    ...rawData,
+    campaigns: rawData.campaigns.map((c) => ({ ...c, campaignName: campaignNameMap.get(c.campaignId) ?? c.campaignName })),
+    adSets: rawData.adSets.map((a) => ({ ...a, adSetName: adSetNameMap.get(a.adSetId) ?? a.adSetName })),
+    ads: rawData.ads.map((a) => ({ ...a, adName: adNameMap.get(a.adId) ?? a.adName })),
+    comparison: rawData.comparison
+      ? { ...rawData.comparison, campaigns: rawData.comparison.campaigns.map((c) => ({ ...c, campaignName: campaignNameMap.get(c.campaignId) ?? c.campaignName })) }
+      : rawData.comparison,
+  };
 
   const resolvedAccountIds = resolveIdFilter(effectiveFilters.accountIds, freshData.accounts.map((a) => a.id));
   const resolvedCampaignIds = resolveIdFilter(effectiveFilters.campaignIds, freshData.campaigns.map((c) => c.campaignId));
@@ -201,6 +249,7 @@ export async function fetchFilteredReportData(effectiveFilters: ReportFilters, r
     adSetOptions,
     objectiveOptions,
     statusOptions,
+    rawNameById,
   };
 }
 

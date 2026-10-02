@@ -44,7 +44,20 @@ import {
   formatDateTimeTz,
   REFERENCE_TIME_ZONE,
 } from "./format";
-import { sumTotals, ctr, cpc, cpm, costPerConversation, roas, pctChange, aggregateDailyByDate, type Totals } from "./metrics";
+import {
+  sumTotals,
+  ctr,
+  cpc,
+  cpm,
+  costPerConversation,
+  roas,
+  pctChange,
+  aggregateDailyByDate,
+  primaryResultKind,
+  primaryResultFor,
+  PRIMARY_RESULT_LABEL,
+  type Totals,
+} from "./metrics";
 import { computeStrategicInsights } from "./strategic-insights";
 import { primaryKpiIds, type KpiId } from "./kpi-hierarchy";
 
@@ -962,20 +975,28 @@ function drawBreakdownTable(
   return (doc as any).lastAutoTable.finalY + 8;
 }
 
-function campaignInfoCardHeight(metricCount: number, hasBudget: boolean): number {
+function campaignInfoCardHeight(metricCount: number, hasBudget: boolean, hasResultLine: boolean): number {
   const budgetExtra = hasBudget ? 5 : 0;
-  if (metricCount === 0) return 17 + budgetExtra;
+  const resultExtra = hasResultLine ? 5 : 0;
+  if (metricCount === 0) return 17 + budgetExtra + resultExtra;
   const cols = Math.min(4, metricCount);
   const rows = Math.ceil(metricCount / cols);
-  return 15 + budgetExtra + rows * 9.5 + 4;
+  return 15 + budgetExtra + resultExtra + rows * 9.5 + 4;
 }
 
 /** Name, objective, status and every allowed consolidated metric for one campaign — always the campaign's OWN full totals (never derived from whatever ad-set subset is listed below it), so a reader can never mistake a partial ad-set detail for the campaign's real total. */
 function drawCampaignInfoCard(doc: jsPDF, ctx: Ctx, y: number, campaign: CampaignInsight, allowed: AllowedColumns): number {
   const top = y;
   const hasBudget = campaign.dailyBudget !== null || campaign.lifetimeBudget !== null;
+  const hasResultLine = allowed.has("primaryResult") || allowed.has("costPerResult");
   setColor(doc, "setFillColor", NAVY);
-  doc.rect(MARGIN_X, top, 1.3, campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length, hasBudget) - 3, "F");
+  doc.rect(
+    MARGIN_X,
+    top,
+    1.3,
+    campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length, hasBudget, hasResultLine) - 3,
+    "F"
+  );
 
   doc.setFont(ctx.fonts.body, "bold");
   doc.setFontSize(11.5);
@@ -1030,6 +1051,27 @@ function drawCampaignInfoCard(doc: jsPDF, ctx: Ctx, y: number, campaign: Campaig
     y += rows * 9.5 + 4;
   } else {
     y += 2;
+  }
+
+  if (allowed.has("primaryResult") || allowed.has("costPerResult")) {
+    const kind = primaryResultKind(campaign.objective);
+    const { value, costPerResult } = primaryResultFor(kind, campaign);
+    const parts: string[] = [];
+    if (allowed.has("primaryResult")) {
+      parts.push(
+        kind === "undefined"
+          ? "Resultado principal: não definido"
+          : `Resultado principal: ${value === null ? "não disponível" : `${formatInteger(value)} ${PRIMARY_RESULT_LABEL[kind].toLowerCase()}`}`
+      );
+    }
+    if (allowed.has("costPerResult") && kind !== "undefined") {
+      parts.push(`Custo por resultado: ${costPerResult === null ? "—" : formatCurrencyBRL(costPerResult)}`);
+    }
+    doc.setFont(ctx.fonts.body, "normal");
+    doc.setFontSize(7.4);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    doc.text(parts.join("   ·   "), MARGIN_X + 5, y);
+    y += 5;
   }
 
   setColor(doc, "setDrawColor", BORDER);
@@ -1102,7 +1144,11 @@ function drawCampaignHierarchy(
     y += 6;
 
     for (const campaign of [...accCampaigns].sort((a, b) => b.spend - a.spend)) {
-      const cardH = campaignInfoCardHeight(allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length, campaign.dailyBudget !== null || campaign.lifetimeBudget !== null);
+      const cardH = campaignInfoCardHeight(
+        allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).length,
+        campaign.dailyBudget !== null || campaign.lifetimeBudget !== null,
+        allowed.has("primaryResult") || allowed.has("costPerResult")
+      );
       y = ensureSpace(doc, ctx, y, cardH + 24);
       y = drawCampaignInfoCard(doc, ctx, y, campaign, allowed);
 

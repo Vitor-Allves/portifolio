@@ -3,10 +3,9 @@
 import { useState } from "react";
 import type { StrategicInsights, InsightItem } from "@/lib/strategic-insights";
 
-type TabId = "summary" | "changes" | "attention" | "opportunities" | "actions";
+type TabId = "changes" | "attention" | "opportunities" | "actions";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "summary", label: "Resumo executivo" },
   { id: "changes", label: "Principais mudanças" },
   { id: "attention", label: "Pontos de atenção" },
   { id: "opportunities", label: "Oportunidades" },
@@ -63,10 +62,9 @@ type StrategicInsightsPanelProps = {
 };
 
 export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaigns, isProcessing }: StrategicInsightsPanelProps) {
-  const [tab, setTab] = useState<TabId>("summary");
+  const [tab, setTab] = useState<TabId>("changes");
 
   const quickPrompts: { label: string; action: () => void }[] = [
-    { label: "Resuma os resultados deste período", action: () => setTab("summary") },
     {
       label: "Quais campanhas precisam de atenção?",
       action: () => {
@@ -95,7 +93,7 @@ export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaign
           </div>
         </div>
         <p className="text-[11.5px] text-intel-text-dim mb-1 ml-[34px]">
-          Origem: estatística (regras) — sem modelo de IA generativa configurado · {insights.periodLabel}
+          Leitura automática · {insights.periodLabel}
         </p>
         <p className="text-[11.5px] text-intel-text-dim/80 mb-4 ml-[34px] leading-relaxed">{insights.scopeNote}</p>
 
@@ -134,7 +132,6 @@ export default function StrategicInsightsPanel({ insights, onShowFlaggedCampaign
             <ProcessingSkeleton />
           ) : (
             <>
-              {tab === "summary" && <ItemList items={insights.summary} emptyLabel="Sem dados suficientes para um resumo." />}
               {tab === "changes" && (
                 <ItemList items={insights.changes} emptyLabel="Sem dados do período anterior para comparar." />
               )}

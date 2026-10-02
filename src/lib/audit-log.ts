@@ -20,7 +20,8 @@ export type AuditAction =
   | "auth.2fa_enroll"
   | "auth.2fa_disable"
   | "auth.2fa_reset_by_admin"
-  | "auth.login_failed";
+  | "auth.login_failed"
+  | "consultant.whatsapp_click";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

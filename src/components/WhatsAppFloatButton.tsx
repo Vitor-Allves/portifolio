@@ -5,7 +5,7 @@ import { CONTACT } from "@/lib/site-config";
 
 export default function WhatsAppFloatButton() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/analise")) return null;
+  if (pathname?.startsWith("/intelligence")) return null;
 
   const href = `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(
     CONTACT.whatsappMessage

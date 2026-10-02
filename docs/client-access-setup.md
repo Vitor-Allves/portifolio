@@ -1,4 +1,4 @@
-# Usuários e acessos (painel /analise/admin)
+# Usuários e acessos (painel /intelligence/admin)
 
 Login por **usuário e senha** — sem e-mail, sem convites, sem link de
 recuperação. Toda a criação e administração de contas (equipe Legado e

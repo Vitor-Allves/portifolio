@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { MetaAdAccount } from "@/lib/meta-ads-types";
 import type { ClientAccessSummary, ClientAccessUserSummary } from "@/lib/client-access-types";
 import { EMPTY_PERMISSIONS, type ClientPermissions } from "@/lib/client-permissions";
 import { USERNAME_RULES_HELP } from "@/lib/username";
+import { formatCurrencyBRL } from "@/lib/format";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 import PermissionsEditor, { permissionsSummary } from "./PermissionsEditor";
 import PasswordRevealBox from "./PasswordRevealBox";
@@ -321,14 +322,68 @@ function EditClientCompanyRow({
 }: {
   client: ClientAccessSummary;
   accounts: MetaAdAccount[];
-  onSave: (id: string, input: { label: string; accountIds: string[]; permissions: ClientPermissions }) => Promise<string | null>;
+  onSave: (
+    id: string,
+    input: {
+      label: string;
+      accountIds: string[];
+      permissions: ClientPermissions;
+      consultantName: string | null;
+      consultantWhatsapp: string | null;
+    }
+  ) => Promise<string | null>;
   onCancel: () => void;
 }) {
   const [label, setLabel] = useState(client.label);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set(client.accountIds));
   const [permissions, setPermissions] = useState<ClientPermissions>(client.permissions);
+  const [consultantName, setConsultantName] = useState(client.consultantName ?? "");
+  const [consultantWhatsapp, setConsultantWhatsapp] = useState(client.consultantWhatsapp ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [budget, setBudget] = useState<{ current: number | null; previous: number | null } | null>(null);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
+  const [budgetSaved, setBudgetSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/analise/admin/clients/${client.id}/budget/`);
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        setBudget({ current: body.current, previous: body.previous });
+        if (body.current !== null) setBudgetInput(String(body.current));
+      } catch {
+        // Budget field simply stays empty/uneditable until a reload — non-critical.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client.id]);
+
+  async function handleSaveBudget() {
+    const amount = Number(budgetInput.replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0) return;
+    setSavingBudget(true);
+    setBudgetSaved(false);
+    try {
+      const res = await fetch(`/api/analise/admin/clients/${client.id}/budget/`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      if (res.ok) {
+        setBudget((prev) => ({ current: amount, previous: prev?.previous ?? null }));
+        setBudgetSaved(true);
+      }
+    } finally {
+      setSavingBudget(false);
+    }
+  }
 
   function toggleAccount(id: string) {
     setSelectedAccountIds((prev) => {
@@ -351,7 +406,13 @@ function EditClientCompanyRow({
       return;
     }
     setSubmitting(true);
-    const err = await onSave(client.id, { label: label.trim(), accountIds: [...selectedAccountIds], permissions });
+    const err = await onSave(client.id, {
+      label: label.trim(),
+      accountIds: [...selectedAccountIds],
+      permissions,
+      consultantName: consultantName.trim() || null,
+      consultantWhatsapp: consultantWhatsapp.trim() || null,
+    });
     setSubmitting(false);
     if (err) setError(err);
   }
@@ -392,6 +453,61 @@ function EditClientCompanyRow({
               );
             })}
           </ul>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 max-w-xl">
+            <div>
+              <label className={INTEL_LABEL}>Nome do consultor (opcional)</label>
+              <input
+                value={consultantName}
+                onChange={(e) => setConsultantName(e.target.value)}
+                placeholder="Ex: Ana Souza"
+                className={`${INTEL_INPUT} mt-2 !py-2.5`}
+              />
+            </div>
+            <div>
+              <label className={INTEL_LABEL}>WhatsApp do consultor (opcional)</label>
+              <input
+                value={consultantWhatsapp}
+                onChange={(e) => setConsultantWhatsapp(e.target.value)}
+                placeholder="Ex: 15999998888"
+                className={`${INTEL_INPUT} mt-2 !py-2.5`}
+              />
+            </div>
+          </div>
+          <p className="mt-1.5 text-[11px] text-intel-text-dim/70 max-w-xl">
+            Se vazio, o botão &quot;Falar com meu consultor&quot; usa o WhatsApp geral da Legado.
+          </p>
+
+          <div className="mt-4 max-w-xs">
+            <label className={INTEL_LABEL}>Orçamento de mídia do mês (R$)</label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                inputMode="decimal"
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+                placeholder="0,00"
+                className={`${INTEL_INPUT} !py-2.5`}
+              />
+              <button
+                type="button"
+                onClick={handleSaveBudget}
+                disabled={savingBudget || !budgetInput.trim()}
+                className="shrink-0 text-[11.5px] tracking-[0.04em] px-3 py-2.5 rounded-lg bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50"
+              >
+                {savingBudget ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+            {budget?.previous !== null && budget?.previous !== undefined && (
+              <button
+                type="button"
+                onClick={() => setBudgetInput(String(budget.previous))}
+                className="mt-1.5 text-[11px] text-intel-text-dim hover:text-intel-text transition-colors duration-200"
+              >
+                Copiar do mês anterior ({formatCurrencyBRL(budget.previous)})
+              </button>
+            )}
+            {budgetSaved && <p className="mt-1.5 text-[11px] text-intel-green">Orçamento salvo.</p>}
+          </div>
 
           <details className="mt-4 group">
             <summary className="cursor-pointer text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
@@ -488,6 +604,8 @@ export default function AdminClientsPanel({ accounts, accountsError, initialClie
           permissions,
           createdAt: new Date().toISOString(),
           users: [],
+          consultantName: null,
+          consultantWhatsapp: null,
         },
         ...prev,
       ]);
@@ -588,7 +706,13 @@ export default function AdminClientsPanel({ accounts, accountsError, initialClie
 
   async function handleSaveClientEdit(
     clientId: string,
-    input: { label: string; accountIds: string[]; permissions: ClientPermissions }
+    input: {
+      label: string;
+      accountIds: string[];
+      permissions: ClientPermissions;
+      consultantName: string | null;
+      consultantWhatsapp: string | null;
+    }
   ): Promise<string | null> {
     try {
       const res = await fetch(`/api/analise/admin/clients/${clientId}/`, {
@@ -607,6 +731,8 @@ export default function AdminClientsPanel({ accounts, accountsError, initialClie
                 label: input.label,
                 accountIds: input.accountIds,
                 permissions: input.permissions,
+                consultantName: input.consultantName,
+                consultantWhatsapp: input.consultantWhatsapp,
                 // A person without their own override still inherits whatever the
                 // company's permissions are now — refresh their displayed summary too.
                 users: c.users.map((u) => (u.hasPermissionsOverride ? u : { ...u, permissions: input.permissions })),

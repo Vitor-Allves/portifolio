@@ -19,6 +19,8 @@ export type CampaignColumnId =
   | "account"
   | "status"
   | "objective"
+  | "primaryResult"
+  | "costPerResult"
   | "spend"
   | "impressions"
   | "clicks"
@@ -48,6 +50,8 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "account", label: "Conta" },
   { id: "status", label: "Status" },
   { id: "objective", label: "Objetivo" },
+  { id: "primaryResult", label: "Resultado principal" },
+  { id: "costPerResult", label: "Custo por resultado" },
   { id: "spend", label: "Investimento" },
   { id: "impressions", label: "Impressões" },
   { id: "clicks", label: "Cliques (todos)" },

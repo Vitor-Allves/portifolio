@@ -4,9 +4,21 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
 import type { AdSetInsight, CampaignInsight, DashboardData, Period } from "@/lib/meta-ads-types";
 import type { ClientPermissions } from "@/lib/client-permissions";
-import { objectiveLabel, statusLabel } from "@/lib/campaign-labels";
+import { objectiveLabel, statusLabel, buildDisplayNameMap } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate } from "@/lib/metrics";
+import {
+  sumTotals,
+  ctr,
+  cpc,
+  cpm,
+  costPerConversation,
+  pctChange,
+  aggregateDailyByDate,
+  primaryResultKind,
+  primaryResultFor,
+  PRIMARY_RESULT_LABEL,
+  type PrimaryResultKind,
+} from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
 import { OBJECTIVE_NONE_KEY, filterCampaignsByIds, resolveIdFilter, toSavedIdFilter } from "@/lib/campaign-filters";
 import { fetchDashboardData, fetchScopedReach, DashboardFetchError, type ScopedReachResult } from "@/lib/dashboard-fetch";
@@ -26,10 +38,13 @@ import TopHoursTable from "./TopHoursTable";
 import RankedEntityTable, { type RankedRow } from "./RankedEntityTable";
 import StrategicInsightsPanel from "./StrategicInsightsPanel";
 import StrategicInsightsCompact from "./StrategicInsightsCompact";
-import ExecutiveSummary from "./ExecutiveSummary";
+import IntelligenceBanner from "./IntelligenceBanner";
 import ReportsPanel from "./ReportsPanel";
 import IntegrationsPanel from "./IntegrationsPanel";
 import { MascotTabBanner, MascotState } from "./Mascot";
+import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
+import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
+import BudgetCard from "./BudgetCard";
 
 type DashboardProps = {
   initialData: DashboardData;
@@ -39,6 +54,8 @@ type DashboardProps = {
   clientLabel: string | null;
   clientPermissions: ClientPermissions | null;
   dbConfigured: boolean;
+  /** This viewer's named consultant contact, if their client has one configured — null falls back to Legado's general WhatsApp number. Always null for a staff/admin viewer (no single client bound to that session). */
+  consultant: ConsultantInfo | null;
 };
 
 const fadeUp: Variants = {
@@ -114,7 +131,7 @@ function sparklineFor(
   });
 }
 
-export default function Dashboard({ initialData, isAdmin, isInternal, clientLabel, clientPermissions, dbConfigured }: DashboardProps) {
+export default function Dashboard({ initialData, isAdmin, isInternal, clientLabel, clientPermissions, dbConfigured, consultant }: DashboardProps) {
   const hiddenFilterIds = useMemo(() => new Set<string>(clientPermissions?.hiddenFilters ?? []), [clientPermissions]);
   const hiddenColumnIds = useMemo(() => new Set<string>(clientPermissions?.hiddenColumns ?? []), [clientPermissions]);
   const hiddenSectionIds = useMemo(() => new Set<string>(clientPermissions?.hiddenSections ?? []), [clientPermissions]);
@@ -163,20 +180,31 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // sharing the same browser) is treated as absent instead of applied, so
   // it can never silently zero out every account/campaign on load.
   useEffect(() => {
+    // No saved choice at all (first-ever visit, or storage unreadable) —
+    // comparison defaults ON rather than inheriting the plain false the
+    // initial, comparison-less server fetch rendered with.
     let raw: string | null = null;
     try {
       raw = localStorage.getItem(FILTERS_STORAGE_KEY);
     } catch {
+      refetch(initialData.period, true);
       return;
     }
-    if (!raw) return;
+    if (!raw) {
+      refetch(initialData.period, true);
+      return;
+    }
     let saved: Partial<PersistedFilters> | null = null;
     try {
       saved = JSON.parse(raw) as Partial<PersistedFilters>;
     } catch {
+      refetch(initialData.period, true);
       return;
     }
-    if (!saved || typeof saved !== "object") return;
+    if (!saved || typeof saved !== "object") {
+      refetch(initialData.period, true);
+      return;
+    }
 
     const applyIfValid = (
       value: unknown,
@@ -227,19 +255,68 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     });
   }
 
+  // Client-facing display names: strips internal team tags out of
+  // campaign/ad set/ad names ("[LGD - João] [ENGAJAMENTO]...") everywhere a
+  // client sees them — tables, charts, filter lists, insight text. Staff
+  // (isInternal) keep seeing the original, unmodified names, same as
+  // before this existed; these view* arrays are then used in place of
+  // data.campaigns/adSets/ads for every name-bearing consumer below, but
+  // never change any id, so filtering/sorting by id is unaffected.
+  const campaignObjectiveById = useMemo(() => new Map(data.campaigns.map((c) => [c.campaignId, c.objective])), [data.campaigns]);
+  const accountNameByIdForDisplay = useMemo(() => new Map(data.accounts.map((a) => [a.id, a.name])), [data.accounts]);
+  const viewCampaigns = useMemo(() => {
+    if (isInternal) return data.campaigns;
+    const names = buildDisplayNameMap(
+      data.campaigns.map((c) => ({ id: c.campaignId, rawName: c.campaignName, objective: c.objective, accountName: c.accountName }))
+    );
+    return data.campaigns.map((c) => ({ ...c, campaignName: names.get(c.campaignId) ?? c.campaignName }));
+  }, [data.campaigns, isInternal]);
+  const viewAdSets = useMemo(() => {
+    if (isInternal) return data.adSets;
+    const names = buildDisplayNameMap(
+      data.adSets.map((a) => ({
+        id: a.adSetId,
+        rawName: a.adSetName,
+        objective: campaignObjectiveById.get(a.campaignId) ?? null,
+        accountName: accountNameByIdForDisplay.get(a.accountId) ?? "",
+      }))
+    );
+    return data.adSets.map((a) => ({ ...a, adSetName: names.get(a.adSetId) ?? a.adSetName }));
+  }, [data.adSets, campaignObjectiveById, accountNameByIdForDisplay, isInternal]);
+  const viewAds = useMemo(() => {
+    if (isInternal) return data.ads;
+    const names = buildDisplayNameMap(
+      data.ads.map((a) => ({
+        id: a.adId,
+        rawName: a.adName,
+        objective: campaignObjectiveById.get(a.campaignId) ?? null,
+        accountName: accountNameByIdForDisplay.get(a.accountId) ?? "",
+      }))
+    );
+    return data.ads.map((a) => ({ ...a, adName: names.get(a.adId) ?? a.adName }));
+  }, [data.ads, campaignObjectiveById, accountNameByIdForDisplay, isInternal]);
+  const viewComparisonCampaigns = useMemo(() => {
+    if (!data.comparison) return null;
+    if (isInternal) return data.comparison.campaigns;
+    const names = buildDisplayNameMap(
+      data.comparison.campaigns.map((c) => ({ id: c.campaignId, rawName: c.campaignName, objective: c.objective, accountName: c.accountName }))
+    );
+    return data.comparison.campaigns.map((c) => ({ ...c, campaignName: names.get(c.campaignId) ?? c.campaignName }));
+  }, [data.comparison, isInternal]);
+
   const accountOptions = useMemo(() => data.accounts.map((a) => ({ id: a.id, label: a.name })), [data.accounts]);
   const campaignOptions = useMemo(
-    () => uniqueOptions(data.campaigns, (c) => c.campaignId, (c) => c.campaignName),
-    [data.campaigns]
+    () => uniqueOptions(viewCampaigns, (c) => c.campaignId, (c) => c.campaignName),
+    [viewCampaigns]
   );
-  const adSetOptions = useMemo(() => uniqueAdSetOptions(data.adSets), [data.adSets]);
+  const adSetOptions = useMemo(() => uniqueAdSetOptions(viewAdSets), [viewAdSets]);
   const objectiveOptions = useMemo(
-    () => uniqueOptions(data.campaigns, (c) => c.objective ?? NONE_KEY, (c) => objectiveLabel(c.objective)),
-    [data.campaigns]
+    () => uniqueOptions(viewCampaigns, (c) => c.objective ?? NONE_KEY, (c) => objectiveLabel(c.objective)),
+    [viewCampaigns]
   );
   const statusOptions = useMemo(
-    () => uniqueOptions(data.campaigns, (c) => c.status, (c) => statusLabel(c.status)),
-    [data.campaigns]
+    () => uniqueOptions(viewCampaigns, (c) => c.status, (c) => statusLabel(c.status)),
+    [viewCampaigns]
   );
 
   // The actual Sets every filter/derived memo below consumes — re-resolved
@@ -263,8 +340,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   );
   const statusIds = useMemo(() => resolveIdFilter(statusFilter, statusOptions.map((o) => o.id)), [statusFilter, statusOptions]);
 
-  const campaignAccountById = useMemo(() => new Map(data.campaigns.map((c) => [c.campaignId, c.accountId])), [data.campaigns]);
-  const adSetAccountById = useMemo(() => new Map(data.adSets.map((a) => [a.adSetId, a.accountId])), [data.adSets]);
+  const campaignAccountById = useMemo(() => new Map(viewCampaigns.map((c) => [c.campaignId, c.accountId])), [viewCampaigns]);
+  const adSetAccountById = useMemo(() => new Map(viewAdSets.map((a) => [a.adSetId, a.accountId])), [viewAdSets]);
 
   function setCampaignIds(next: Set<string>) {
     setCampaignFilter(toSavedIdFilter(next, campaignOptions));
@@ -354,14 +431,14 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // matches what the same filters would show on screen — including the
   // Conjunto filter's "only narrows once actually narrowed" nuance.
   const filteredCampaigns = useMemo(
-    () => filterCampaignsByIds(data.campaigns, data.adSets, { accountIds, campaignIds, adSetIds, objectiveIds, statusIds }),
-    [data.campaigns, data.adSets, accountIds, campaignIds, adSetIds, objectiveIds, statusIds]
+    () => filterCampaignsByIds(viewCampaigns, viewAdSets, { accountIds, campaignIds, adSetIds, objectiveIds, statusIds }),
+    [viewCampaigns, viewAdSets, accountIds, campaignIds, adSetIds, objectiveIds, statusIds]
   );
 
   const filteredAdSets = useMemo(() => {
     const visibleCampaignIds = new Set(filteredCampaigns.map((c) => c.campaignId));
-    return data.adSets.filter((a) => adSetIds.has(a.adSetId) && visibleCampaignIds.has(a.campaignId));
-  }, [data.adSets, adSetIds, filteredCampaigns]);
+    return viewAdSets.filter((a) => adSetIds.has(a.adSetId) && visibleCampaignIds.has(a.campaignId));
+  }, [viewAdSets, adSetIds, filteredCampaigns]);
 
   // Same membership rule as filteredAdSets: an ad only shows if its own ad
   // set is selected AND its campaign is still visible after every other
@@ -369,8 +446,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // the filters have already hidden.
   const filteredAds = useMemo(() => {
     const visibleCampaignIds = new Set(filteredCampaigns.map((c) => c.campaignId));
-    return data.ads.filter((ad) => adSetIds.has(ad.adSetId) && visibleCampaignIds.has(ad.campaignId));
-  }, [data.ads, adSetIds, filteredCampaigns]);
+    return viewAds.filter((ad) => adSetIds.has(ad.adSetId) && visibleCampaignIds.has(ad.campaignId));
+  }, [viewAds, adSetIds, filteredCampaigns]);
 
   // Audience demographics are account-level only (Meta doesn't break them
   // down by campaign) — scoped by the account/client filter alone, same as
@@ -403,7 +480,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // "Melhores anúncios" sections — campaign/account names aren't on
   // AdSetInsight/AdInsight themselves, so they're joined in here once
   // rather than repeated per row inside RankedEntityTable.
-  const campaignNameById = useMemo(() => new Map(data.campaigns.map((c) => [c.campaignId, c.campaignName])), [data.campaigns]);
+  const campaignNameById = useMemo(() => new Map(viewCampaigns.map((c) => [c.campaignId, c.campaignName])), [viewCampaigns]);
   const accountNameById = useMemo(() => new Map(data.accounts.map((a) => [a.id, a.name])), [data.accounts]);
 
   const adSetRows: RankedRow[] = useMemo(
@@ -438,6 +515,11 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         linkClicks: ad.linkClicks,
         conversations: ad.conversations,
         reach: ad.reach,
+        thumbnailUrl: ad.thumbnailUrl,
+        isVideo: ad.videoViews !== null,
+        creativeTitle: ad.creativeTitle,
+        creativeBody: ad.creativeBody,
+        callToAction: ad.callToAction,
       })),
     [filteredAds, campaignNameById, accountNameById]
   );
@@ -449,8 +531,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // comparison set the same way would silently drop it from the "vs.
   // previous period" totals instead of correctly counting it.
   const comparisonCampaigns = useMemo(
-    () => (data.comparison ? data.comparison.campaigns.filter((c) => accountIds.has(c.accountId)) : null),
-    [data.comparison, accountIds]
+    () => (viewComparisonCampaigns ? viewComparisonCampaigns.filter((c) => accountIds.has(c.accountId)) : null),
+    [viewComparisonCampaigns, accountIds]
   );
   const comparisonByCampaignId = useMemo(
     () => (comparisonCampaigns ? new Map(comparisonCampaigns.map((c) => [c.campaignId, c])) : null),
@@ -505,8 +587,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   // template-based generation flow so both agree on exactly when the
   // whole-account reach number stops being valid.
   const narrowedCampaignIdsByAccount = useMemo(
-    () => computeNarrowedCampaignIdsByAccount(data.campaigns, filteredCampaigns, accountIds),
-    [data.campaigns, filteredCampaigns, accountIds]
+    () => computeNarrowedCampaignIdsByAccount(viewCampaigns, filteredCampaigns, accountIds),
+    [viewCampaigns, filteredCampaigns, accountIds]
   );
 
   const isReachNarrowed = Object.keys(narrowedCampaignIdsByAccount).length > 0;
@@ -611,6 +693,25 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
       }),
     [filteredCampaigns, comparisonCampaigns, dailyFiltered, data.resolvedRange, data.partialAccounts]
   );
+
+  // One card per result KIND actually present among the filtered campaigns
+  // (never one combined number) — a lead and a conversation aren't
+  // interchangeable units, so each kind sums only its own campaigns.
+  const resultsByObjective = useMemo(() => {
+    const byKind = new Map<PrimaryResultKind, CampaignInsight[]>();
+    for (const c of filteredCampaigns) {
+      const kind = primaryResultKind(c.objective);
+      if (kind === "undefined") continue;
+      const list = byKind.get(kind) ?? [];
+      list.push(c);
+      byKind.set(kind, list);
+    }
+    return [...byKind.entries()].map(([kind, campaigns]) => {
+      const kindTotals = sumTotals(campaigns);
+      const { value, costPerResult } = primaryResultFor(kind, kindTotals);
+      return { kind, label: PRIMARY_RESULT_LABEL[kind], value, costPerResult };
+    });
+  }, [filteredCampaigns]);
 
   function focusCampaign(campaignId: string | null) {
     setCampaignIds(campaignId ? new Set([campaignId]) : new Set(campaignOptions.map((o) => o.id)));
@@ -834,7 +935,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     data.accounts.length === 0 ? "down" : data.partialAccounts.length > 0 ? "partial" : "ok";
 
   return (
-    <div className="flex min-h-screen bg-intel-ambient bg-intel-grid overflow-x-hidden">
+    <div className="flex min-h-screen bg-intel-ambient bg-intel-grid bg-intel-sheen overflow-x-hidden">
       <IntelligenceSidebar
         active={section}
         onSelect={setSection}
@@ -844,6 +945,9 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
         hiddenSectionIds={hiddenSectionIds}
+        consultant={consultant}
+        clientLabel={clientLabel}
+        periodLabel={insights.periodLabel}
       />
 
       <div className="flex-1 min-w-0 flex flex-col">
@@ -854,6 +958,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           lastSyncIso={data.generatedAt}
           connectionState={connectionState}
           onOpenMobileMenu={() => setMobileNavOpen(true)}
+          consultant={consultant}
+          periodLabel={insights.periodLabel}
         />
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1500px] w-full mx-auto">
@@ -873,13 +979,21 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                 tone="error"
                 message={error}
                 action={
-                  <button
-                    type="button"
-                    onClick={() => refetch(period, compare)}
-                    className="text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
-                  >
-                    Tentar novamente
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => refetch(period, compare)}
+                      className="text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
+                    >
+                      Tentar novamente
+                    </button>
+                    <ConsultantWhatsAppButton
+                      consultant={consultant}
+                      clientLabel={clientLabel}
+                      periodLabel={insights.periodLabel}
+                      screen="erro ao carregar dados"
+                    />
+                  </div>
                 }
                 className="py-5"
               />
@@ -889,10 +1003,17 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           {data.accounts.length === 0 ? (
             <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-10 text-center max-w-xl mx-auto">
               <p className="font-sans text-lg font-semibold text-intel-text mb-2">Nenhuma conta de anúncios disponível</p>
-              <p className="text-sm text-intel-text-dim leading-relaxed">
+              <p className="text-sm text-intel-text-dim leading-relaxed mb-5">
                 Este acesso não está associado a nenhuma conta de anúncios ativa. Fale com o administrador para
                 verificar as contas liberadas no Business Manager.
               </p>
+              <ConsultantWhatsAppButton
+                consultant={consultant}
+                clientLabel={clientLabel}
+                periodLabel={insights.periodLabel}
+                screen="sem contas disponíveis"
+                className="mx-auto"
+              />
             </div>
           ) : (
             <>
@@ -952,21 +1073,13 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
               <div className={`transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}>
                 {section === "overview" && (
                   <div className="space-y-5">
-                    <MascotTabBanner
-                      pose="titan-boasvindas"
-                      alt="Titan, mascote da Legado, acenando em boas-vindas"
-                      title={clientLabel ? `Olá, ${clientLabel}!` : "Olá!"}
-                      description="Aqui estão os números do período."
-                    />
-                    <MascotTabBanner
-                      pose="titan-indicadores"
-                      alt="Titan, mascote da Legado, apontando para os indicadores"
-                      title="Visão geral"
-                      description="Os indicadores consolidados do período selecionado, atualizados a cada filtro."
-                    />
-                    {!hiddenSectionIds.has("insights") && (
-                      <m.div custom={0} initial="hidden" animate="visible" variants={fadeUp}>
-                        <ExecutiveSummary insights={insights} compare={compare} />
+                    <m.div custom={0} initial="hidden" animate="visible" variants={fadeUp}>
+                      <IntelligenceBanner />
+                    </m.div>
+
+                    {dbConfigured && (
+                      <m.div custom={0.5} initial="hidden" animate="visible" variants={fadeUp}>
+                        <BudgetCard accountIds={accountIds} isAdmin={isAdmin} />
                       </m.div>
                     )}
 
@@ -990,6 +1103,27 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                         ))}
                       </div>
                     </div>
+
+                    {resultsByObjective.length > 0 && (
+                      <m.div custom={6.5} initial="hidden" animate="visible" variants={fadeUp}>
+                        <p className="text-[10.5px] tracking-[0.12em] uppercase text-intel-text-dim mb-2.5">
+                          Resultados por objetivo
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                          {resultsByObjective.map((r) => (
+                            <div key={r.kind} className="rounded-xl border border-white/[0.07] bg-intel-surface-1 px-4 py-3.5">
+                              <p className="text-[10px] tracking-[0.08em] uppercase text-intel-text-dim mb-1.5">{r.label}</p>
+                              <p className="text-[18px] font-semibold text-intel-text tabular-nums">
+                                {r.value === null ? "Não disponível" : formatInteger(r.value)}
+                              </p>
+                              <p className="mt-0.5 text-[12px] text-intel-text-dim tabular-nums">
+                                {r.costPerResult === null ? "—" : `${formatCurrencyBRL(r.costPerResult)} cada`}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </m.div>
+                    )}
 
                     <div
                       className={

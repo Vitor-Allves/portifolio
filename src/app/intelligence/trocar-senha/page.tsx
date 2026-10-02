@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default async function TrocarSenhaPage() {
   const scope = await sessionScopeFromCookieStore();
-  if (!scope) redirect("/analise/login/");
+  if (!scope) redirect("/intelligence/login/");
 
   const forced = scope.mustChangePassword;
 

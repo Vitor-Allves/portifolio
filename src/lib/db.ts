@@ -39,7 +39,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -229,6 +229,25 @@ async function ensureSchema(): Promise<void> {
     )
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log (created_at DESC)`);
+
+  // Optional per-client consultant contact for the "Falar com meu
+  // consultor" WhatsApp button — null means fall back to the Legado's own
+  // general number (see consultant-whatsapp.ts).
+  await db.query(`ALTER TABLE client_access ADD COLUMN IF NOT EXISTS consultant_name TEXT`);
+  await db.query(`ALTER TABLE client_access ADD COLUMN IF NOT EXISTS consultant_whatsapp TEXT`);
+
+  // Monthly media budget per client (Visão geral's "Orçamento do mês"
+  // card) — one row per client/month, upserted from the admin panel.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS client_budgets (
+      client_access_id TEXT NOT NULL REFERENCES client_access (id) ON DELETE CASCADE,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      amount NUMERIC NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (client_access_id, year, month)
+    )
+  `);
 
   await db.query(
     `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`,

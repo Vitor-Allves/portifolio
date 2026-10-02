@@ -41,7 +41,7 @@ export default function ChangePasswordForm({ forced }: { forced: boolean }) {
         setLoading(false);
         return;
       }
-      router.push("/analise/");
+      router.push("/intelligence/");
       router.refresh();
     } catch {
       setError("Falha de conexão. Tente novamente.");

@@ -1,6 +1,6 @@
 # Configurando a integração com o Gerenciador de Anúncios da Meta
 
-A página `/analise` mostra dados de campanhas de todas as contas de anúncio
+A página `/intelligence` mostra dados de campanhas de todas as contas de anúncio
 que o Business Manager da Legado Enterprise gerencia (contas próprias e
 contas de clientes). Para isso funcionar, é preciso gerar um token de acesso
 com permissão de leitura na Meta e configurá-lo como variável de ambiente —
@@ -63,11 +63,11 @@ Environment Variables**), em **Production e Preview**:
 |---|---|
 | `META_SYSTEM_USER_TOKEN` | Token gerado no passo 3 |
 | `META_BUSINESS_ID` | ID obtido no passo 4 |
-| `ANALYTICS_DASHBOARD_PASSWORD` | Uma senha forte só para o time acessar `/analise` |
+| `ANALYTICS_DASHBOARD_PASSWORD` | Uma senha forte só para o time acessar `/intelligence` |
 | `ANALYTICS_SESSION_SECRET` | String aleatória longa — gere com `openssl rand -base64 32` |
 
 Depois de configurar, faça um novo deploy (ou redeploy) para que as
-variáveis entrem em vigor. Sem elas, `/analise` mostra uma mensagem de
+variáveis entrem em vigor. Sem elas, `/intelligence` mostra uma mensagem de
 "integração ainda não configurada" em vez de quebrar.
 
 ## 6. Conectando um segundo Business Manager (outra empresa, sem separação)
@@ -75,7 +75,7 @@ variáveis entrem em vigor. Sem elas, `/analise` mostra uma mensagem de
 Isso é diferente do passo seguinte (contas de clientes compartilhadas). Use
 esta seção quando quiser trazer os dados de **outra empresa inteira** — com
 Business Manager próprio, sem relação com o da Legado — para dentro do
-mesmo `/analise`, misturados com o resto (mesmos filtros, mesmos
+mesmo `/intelligence`, misturados com o resto (mesmos filtros, mesmos
 indicadores, mesma tabela — nada de tela separada por empresa).
 
 Como um token de usuário do sistema só enxerga a Empresa onde ele foi
@@ -92,7 +92,7 @@ configurar como um segundo par de variáveis, numerado a partir de `_2`:
 Depois de configurar e fazer o redeploy, as contas de anúncio dessa empresa
 passam a aparecer junto com as da Legado — no mesmo painel, no mesmo
 filtro de "Cliente", sem nenhuma indicação de que vieram de um Business
-Manager diferente (a única exceção prática é `/analise/admin`, onde a
+Manager diferente (a única exceção prática é `/intelligence/admin`, onde a
 lista de contas para criar acessos de clientes também inclui as duas
 empresas juntas).
 
@@ -119,7 +119,7 @@ compartilhar a conta — nenhuma mudança de código ou novo deploy é
 necessária, ela aparece no próximo carregamento do dashboard (o cache dura
 até 15 minutos).
 
-Para cada cliente cujas campanhas devem aparecer no `/analise`:
+Para cada cliente cujas campanhas devem aparecer no `/intelligence`:
 
 1. Entre no Business Manager **do cliente** em
    [business.facebook.com](https://business.facebook.com) (troque de

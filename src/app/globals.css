@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* Reuses the same Cinzel file already embedded for PDF generation
+   (public/fonts/Cinzel-Bold.ttf) so the Intelligence banner/logo title can
+   use the brand's display face without adding a second font loader. */
+@font-face {
+  font-family: "Cinzel Intel";
+  src: url("/fonts/Cinzel-Bold.ttf") format("truetype");
+  font-weight: 600 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme inline {
   /* Brand core — navy-950 through navy-800 sampled directly from the
      official logo's gradient (public/brand/logo-legado.png) and lightened
@@ -33,25 +44,29 @@
 
   /* Legado Intelligence — the dashboard's own dark design system, isolated
      under the intel-* prefix so it never touches the public site's navy/
-     silver/ice palette above. Values are the exact ones specified for the
-     "central de inteligência" redesign, not derived from the brand ramp. */
-  --color-intel-bg: #081527;
+     silver/ice palette above. Navy + silver/white, no cyan/violet "tech"
+     accent — every former intel-cyan/intel-violet consumer (buttons,
+     active states, chart lines, focus rings) now reads this same ice-blue/
+     slate-silver pair, so the whole dashboard repaints from one place. */
+  --color-intel-bg: #0b1526;
   --color-intel-surface-1: #101b2d;
   --color-intel-surface-2: #15243a;
   --color-intel-surface-3: #1c2f4a;
   --color-intel-brand: #1f3a63;
-  --color-intel-cyan: #38d9f5;
-  --color-intel-violet: #a78bfa;
+  --color-intel-cyan: #a9c1e8;
+  --color-intel-violet: #8692a0;
   --color-intel-text: #ffffff;
   /* Secondary text/legends/labels — the brand's own prata (#BFC3C9), used
      in place of a generic slate gray so filters, tooltips and captions stay
      legible against the dark surfaces instead of fading into them. */
   --color-intel-text-dim: #bfc3c9;
-  --color-intel-green: #34d399;
+  --color-intel-green: #8fd6b1;
+  --color-intel-amber: #e7b464;
   --color-intel-red: #f87171;
 
   --font-serif: var(--font-cormorant), "Cormorant Garamond", serif;
   --font-sans: var(--font-manrope), "Manrope", sans-serif;
+  --font-cinzel-intel: "Cinzel Intel", serif;
 
   --animate-fade-up: fade-up 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-marquee: marquee 40s linear infinite;
@@ -208,14 +223,15 @@ select:focus-visible {
     radial-gradient(ellipse 60% 40% at 100% 100%, rgba(31, 58, 99, 0.03), transparent 60%);
 }
 
-/* Legado Intelligence background: deep navy base with a single, understated
-   vignette (no colored glow blobs) and an almost imperceptible technical
-   grid — fixed so it doesn't repeat oddly as content scrolls past it.
-   Sophistication over shine: the brand's own navy carries the "premium"
-   read instead of cyan/violet bloom. */
+/* Legado Intelligence background: the brand's own navy-marinho gradient
+   with a soft ice-blue glow in the upper right — fixed so it doesn't
+   repeat oddly as content scrolls past it. Sophistication over shine: navy
+   + silver carries the "premium" read instead of cyan/violet bloom. */
 .bg-intel-ambient {
   background-color: var(--color-intel-bg);
-  background-image: radial-gradient(ellipse 70% 50% at 50% 115%, rgba(31, 58, 99, 0.22), transparent 60%);
+  background-image:
+    radial-gradient(ellipse 60% 45% at 92% 2%, rgba(169, 193, 232, 0.16), transparent 60%),
+    linear-gradient(160deg, #1f3a63 0%, #152b4f 45%, #0b1526 100%);
   background-attachment: fixed;
 }
 
@@ -224,6 +240,20 @@ select:focus-visible {
     linear-gradient(to right, rgba(241, 245, 249, 0.035) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(241, 245, 249, 0.035) 1px, transparent 1px);
   background-size: 48px 48px;
+}
+
+/* Very faint diagonal light lines across the dashboard's ambient
+   background — decorative texture only, never strong enough to compete
+   with content legibility. */
+.bg-intel-sheen {
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(191, 195, 201, 0.035) 0px,
+    rgba(191, 195, 201, 0.035) 1px,
+    transparent 1px,
+    transparent 15px
+  );
+  background-attachment: fixed;
 }
 
 /* Neutral loading-skeleton sheen — silver, not violet, since a loading
