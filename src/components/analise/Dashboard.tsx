@@ -514,6 +514,11 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         linkClicks: ad.linkClicks,
         conversations: ad.conversations,
         reach: ad.reach,
+        thumbnailUrl: ad.thumbnailUrl,
+        isVideo: ad.videoViews !== null,
+        creativeTitle: ad.creativeTitle,
+        creativeBody: ad.creativeBody,
+        callToAction: ad.callToAction,
       })),
     [filteredAds, campaignNameById, accountNameById]
   );
