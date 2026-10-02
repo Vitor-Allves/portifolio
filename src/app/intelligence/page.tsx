@@ -7,7 +7,7 @@ import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
 
 export const metadata: Metadata = {
-  title: "Análise de Campanhas",
+  title: "Intelligence · Legado",
   robots: { index: false, follow: false },
 };
 
@@ -31,10 +31,10 @@ export default async function AnalisePage() {
   // role/company/permission changes on every load.
   const scope = await sessionScopeFromCookieStore();
   if (!scope) {
-    redirect("/analise/login/");
+    redirect("/intelligence/login/");
   }
   if (scope.mustChangePassword) {
-    redirect("/analise/trocar-senha/");
+    redirect("/intelligence/trocar-senha/");
   }
 
   const allowedAccountIds = resolveAllowedAccountIds(scope) ?? undefined;

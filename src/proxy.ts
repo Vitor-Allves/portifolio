@@ -5,7 +5,7 @@ import { ANALISE_SESSION_COOKIE, verifySessionToken } from "@/lib/analise-sessio
 // username/password + 2FA login flow (all Node-runtime routes that must
 // stay reachable without an existing session).
 const PUBLIC_PATHS = new Set([
-  "/analise/login",
+  "/intelligence/login",
   "/api/analise/login",
   "/api/analise/login/totp",
   "/api/analise/2fa/enroll/start",
@@ -38,7 +38,7 @@ export async function proxy(req: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
-    const loginUrl = new URL("/analise/login/", req.url);
+    const loginUrl = new URL("/intelligence/login/", req.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
   }
@@ -47,5 +47,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/analise/:path*", "/api/analise/:path*", "/api/meta-ads/:path*"],
+  matcher: ["/intelligence/:path*", "/api/analise/:path*", "/api/meta-ads/:path*"],
 };

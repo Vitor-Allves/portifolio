@@ -52,7 +52,7 @@ export default function IntelligenceTopBar({
   async function handleLogout() {
     setLoggingOut(true);
     await fetch("/api/analise/logout/", { method: "POST" }).catch(() => {});
-    router.push("/analise/login/");
+    router.push("/intelligence/login/");
     router.refresh();
   }
 

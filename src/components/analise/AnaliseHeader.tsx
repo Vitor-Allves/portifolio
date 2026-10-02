@@ -17,7 +17,7 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
   async function handleLogout() {
     setLoggingOut(true);
     await fetch("/api/analise/logout/", { method: "POST" }).catch(() => {});
-    router.push("/analise/login/");
+    router.push("/intelligence/login/");
     router.refresh();
   }
 
@@ -38,7 +38,7 @@ export default function AnaliseHeader({ isAdmin, clientLabel }: AnaliseHeaderPro
         <div className="flex items-center gap-6">
           {isAdmin && (
             <Link
-              href="/analise/admin/"
+              href="/intelligence/admin/"
               className="text-[13px] tracking-[0.1em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200"
             >
               Usuários e acessos

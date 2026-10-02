@@ -90,7 +90,7 @@ export default function LoginForm({ onVisualEvent }: { onVisualEvent?: (event: L
   // on this legitimate domain, a classic post-login open-redirect phish.
   function safeDestination(from: string | null): string {
     if (!from || !from.startsWith("/") || from.startsWith("//") || from.startsWith("/\\")) {
-      return "/analise/";
+      return "/intelligence/";
     }
     return `${from.replace(/\/$/, "")}/`;
   }

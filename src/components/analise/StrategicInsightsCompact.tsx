@@ -10,10 +10,9 @@ type StrategicInsightsCompactProps = {
 };
 
 const QUICK_PROMPTS = [
-  "Resuma os resultados deste período",
+  "O que mudou em relação ao período anterior?",
   "Quais campanhas precisam de atenção?",
   "Como o investimento está distribuído?",
-  "O que mudou em relação ao período anterior?",
 ];
 
 function Shimmer({ width }: { width: string }) {
@@ -40,7 +39,7 @@ export default function StrategicInsightsCompact({
           </span>
           <h3 className="font-sans text-[14px] font-semibold text-intel-text">Análises estratégicas</h3>
         </div>
-        <p className="text-[10.5px] text-intel-text-dim/70 mb-3 ml-[34px]">Origem: estatística (regras), sem IA generativa</p>
+        <p className="text-[10.5px] text-intel-text-dim/70 mb-3 ml-[34px]">Leitura automática</p>
 
         <div className="flex-1">
           {isProcessing ? (

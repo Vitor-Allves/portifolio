@@ -19,9 +19,9 @@ export const metadata: Metadata = {
 
 export default async function AnaliseAdminPage() {
   const scope = await sessionScopeFromCookieStore();
-  if (!scope) redirect("/analise/login/");
-  if (scope.mustChangePassword) redirect("/analise/trocar-senha/");
-  if (!isFullAdmin(scope)) redirect("/analise/");
+  if (!scope) redirect("/intelligence/login/");
+  if (scope.mustChangePassword) redirect("/intelligence/trocar-senha/");
+  if (!isFullAdmin(scope)) redirect("/intelligence/");
 
   let accounts: Awaited<ReturnType<typeof listAdAccounts>> = [];
   let accountsError: string | null = null;
@@ -54,7 +54,7 @@ export default async function AnaliseAdminPage() {
       <AnaliseHeader isAdmin clientLabel={`${scope.userName} · ${STAFF_ROLE_LABELS[scope.role]}`} />
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10 py-8">
         <Link
-          href="/analise/"
+          href="/intelligence/"
           className="inline-flex items-center gap-1.5 text-[13px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200 mb-6"
         >
           <span aria-hidden="true">←</span> Voltar ao painel

@@ -67,12 +67,16 @@ export type StrategicInsights = {
   opportunities: InsightItem[];
   nextActions: InsightItem[];
   flaggedCampaignIds: string[];
-  /** Global methodology/disclaimer note — kept in addition to each item's own `limitation`, not instead of it. */
+  /** Global methodology/disclaimer note — kept in addition to each item's own `limitation`, not instead of it. Short by design (see SHORT_DISCLAIMER): the full methodology stays available to internal/admin viewers in IntegrationsPanel.tsx instead of repeating on every client screen. */
   limitations: string;
 };
 
-const METHODOLOGY =
-  "Análise estratégica gerada por um mecanismo de regras estatísticas sobre os dados exibidos no painel. Cada campanha é comparada apenas com campanhas do mesmo cliente e do mesmo grupo de objetivo; a análise nunca deduz vendas, receita, lucro ou retorno a partir de cliques ou conversas, e nunca usa metas ou benchmarks externos ao que está no painel. Trate os pontos abaixo como hipóteses a validar, não como conclusões definitivas — não considera sazonalidade, criativos, concorrência ou contexto de mercado.";
+/** The one line every client-facing screen shows, once, instead of the old
+ * long methodology paragraph. The full explanation still exists — see
+ * IntegrationsPanel.tsx's "IA generativa (Análises estratégicas)" card,
+ * admin/internal-only. */
+const SHORT_DISCLAIMER =
+  "Leitura automática feita a partir dos números do painel. Use como ponto de partida para a conversa com o seu consultor.";
 
 // Confidence gates — every comparison below must clear all of the ones that
 // apply to it before it's allowed to become a finding. These are
@@ -475,7 +479,7 @@ export function computeStrategicInsights(input: {
       opportunities: [],
       nextActions: [],
       flaggedCampaignIds: [],
-      limitations: METHODOLOGY,
+      limitations: SHORT_DISCLAIMER,
     };
   }
 
@@ -609,6 +613,6 @@ export function computeStrategicInsights(input: {
     opportunities: cappedOpportunities,
     nextActions,
     flaggedCampaignIds: [...flagged],
-    limitations: METHODOLOGY,
+    limitations: SHORT_DISCLAIMER,
   };
 }

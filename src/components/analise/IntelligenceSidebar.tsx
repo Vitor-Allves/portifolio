@@ -1,7 +1,7 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import Logo from "@/components/Logo";
 
 export type SectionId = "overview" | "campaigns" | "insights" | "reports" | "integrations";
 
@@ -55,32 +55,58 @@ function NavButton({
       onClick={onClick}
       aria-current={isActive ? "page" : undefined}
       title={collapsed ? section.label : undefined}
-      className={`group relative w-full flex items-center gap-3 rounded-lg py-2.5 text-[13px] tracking-[0.01em] transition-colors duration-200 ${
-        collapsed ? "justify-center px-0" : "px-3"
+      className={`group relative w-full flex items-center gap-3 rounded-full py-2.5 text-[13px] tracking-[0.01em] transition-colors duration-200 ${
+        collapsed ? "justify-center px-0" : "px-3.5"
       } ${
         isActive
-          ? "bg-white/[0.06] text-intel-text"
-          : "text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text"
+          ? "font-medium shadow-[0_8px_22px_-6px_rgba(0,0,0,0.28)]"
+          : "text-intel-text-dim hover:bg-white/[0.05] hover:text-intel-text"
       }`}
+      style={
+        isActive
+          ? { background: "linear-gradient(135deg, #FFFFFF 0%, #EEF1F5 38%, #D9DEE5 100%)", color: "#1F3A63" }
+          : undefined
+      }
     >
-      <span
-        aria-hidden="true"
-        className={`absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2.5px] rounded-full bg-intel-cyan transition-opacity duration-200 ${
-          isActive ? "opacity-100" : "opacity-0"
-        }`}
-      />
-      <svg
-        width="17"
-        height="17"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-        className={`shrink-0 transition-colors duration-200 ${isActive ? "text-intel-cyan" : ""}`}
-      >
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="shrink-0">
         {ICONS[section.id]}
       </svg>
       {!collapsed && <span>{section.label}</span>}
     </button>
+  );
+}
+
+const SIDEBAR_TIPS = [
+  "Combine contas e campanhas no filtro: eles somam, não se substituem.",
+  "Ative a comparação para ver o que mudou em relação ao período anterior.",
+  "O PDF sai exatamente com os filtros da tela.",
+];
+
+const TIP_AVATARS: { src: string; alt: string }[] = [
+  { src: "/mascots/titan-boasvindas.webp", alt: "Titan, mascote da Legado" },
+  { src: "/mascots/legacy-ola.webp", alt: "Legacy, mascote da Legado" },
+];
+
+/** Picked once per mount ("a cada abertura" — each time the sidebar opens, not a running rotation within one session) rather than on every render. */
+function SidebarTipCard() {
+  const [avatar] = useState(() => TIP_AVATARS[Math.floor(Math.random() * TIP_AVATARS.length)]);
+  const [tip] = useState(() => SIDEBAR_TIPS[Math.floor(Math.random() * SIDEBAR_TIPS.length)]);
+
+  return (
+    <div className="px-2.5 pb-2.5">
+      <div
+        className="flex items-center gap-2.5 rounded-xl border px-3 py-2.5"
+        style={{ borderColor: "rgba(191,195,201,0.24)", background: "rgba(255,255,255,0.04)" }}
+      >
+        <img
+          src={avatar.src}
+          alt={avatar.alt}
+          className="h-8 w-8 shrink-0 rounded-full object-cover border border-white/10"
+          style={{ objectPosition: "50% 15%" }}
+        />
+        <p className="text-[11px] leading-snug text-intel-text-dim">{tip}</p>
+      </div>
+    </div>
   );
 }
 
@@ -105,16 +131,15 @@ function SidebarContent({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className={`pt-7 pb-6 border-b border-white/[0.06] ${collapsed ? "px-3" : "px-5"}`}>
+      <div className={`pt-7 pb-6 border-b border-white/[0.08] flex justify-center ${collapsed ? "px-3" : "px-5"}`}>
         {collapsed ? (
-          <img src="/icon.png" alt="Legado" width={34} height={34} className="mx-auto" />
+          <img src="/icon.png" alt="Legado" width={34} height={34} />
         ) : (
-          <>
-            <Logo variant="onDark" size="sm" className="!h-11" />
-            <p className="mt-2.5 text-[10.5px] tracking-[0.2em] uppercase text-intel-text-dim">
-              Intelligence
-            </p>
-          </>
+          <img
+            src="/brand/logo-legado-intelligence-branco.png"
+            alt="Legado Intelligence"
+            className="h-[70px] w-auto object-contain"
+          />
         )}
       </div>
 
@@ -133,25 +158,12 @@ function SidebarContent({
         ))}
       </nav>
 
-      {!collapsed && (
-        <div className="px-3 pb-2 flex items-end justify-center gap-1 opacity-90">
-          <img
-            src="/login/titan-720.webp"
-            alt="Titan, mascote analista da Legado Enterprise"
-            className="h-40 w-auto object-contain object-bottom"
-          />
-          <img
-            src="/login/legacy-720.webp"
-            alt="Legacy, mascote analista da Legado Enterprise"
-            className="h-40 w-auto object-contain object-bottom"
-          />
-        </div>
-      )}
+      {!collapsed && <SidebarTipCard />}
 
       {isAdmin && (
         <div className="px-2.5 pb-2">
           <Link
-            href="/analise/admin/"
+            href="/intelligence/admin/"
             title={collapsed ? "Acessos de clientes" : undefined}
             className={`w-full flex items-center gap-3 rounded-lg py-2.5 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-200 ${
               collapsed ? "justify-center px-0" : "px-3"
@@ -209,9 +221,13 @@ export default function IntelligenceSidebar({
   return (
     <>
       <aside
-        className={`hidden lg:flex lg:shrink-0 lg:flex-col bg-intel-surface-1 border-r border-white/[0.06] sticky top-0 h-screen transition-[width] duration-200 ${
+        className={`hidden lg:flex lg:shrink-0 lg:flex-col backdrop-blur-md border-r sticky top-0 h-screen transition-[width] duration-200 ${
           collapsed ? "lg:w-[76px]" : "lg:w-60"
         }`}
+        style={{
+          background: "linear-gradient(180deg, rgba(8,16,32,0.55) 0%, rgba(8,16,32,0.35) 100%)",
+          borderColor: "rgba(191,195,201,0.24)",
+        }}
       >
         <SidebarContent
           active={active}
@@ -233,7 +249,13 @@ export default function IntelligenceSidebar({
             onClick={onCloseMobile}
             className="absolute inset-0 bg-black/60"
           />
-          <aside className="absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-intel-surface-1 border-r border-white/[0.06] shadow-2xl">
+          <aside
+            className="absolute inset-y-0 left-0 w-72 max-w-[80vw] backdrop-blur-md border-r shadow-2xl"
+            style={{
+              background: "linear-gradient(180deg, rgba(8,16,32,0.9) 0%, rgba(8,16,32,0.8) 100%)",
+              borderColor: "rgba(191,195,201,0.24)",
+            }}
+          >
             <SidebarContent
               active={active}
               onSelect={onSelect}

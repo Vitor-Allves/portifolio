@@ -64,10 +64,13 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
+// Colored by what the change MEANS, not by its direction: a metric going
+// the "wrong" way is flagged as something to pay attention to (amber), not
+// as an alarm (red stays reserved for genuine errors elsewhere).
 function deltaColor(delta: number | null | undefined, polarity: DeltaPolarity): string {
   if (delta === undefined || delta === null || delta === 0 || polarity === "neutral") return "text-intel-text-dim";
   const isGood = polarity === "higher-better" ? delta > 0 : delta < 0;
-  return isGood ? "text-intel-green" : "text-intel-red";
+  return isGood ? "text-intel-green" : "text-intel-amber";
 }
 
 export default function KpiCard({ label, value, unavailableReason, delta, deltaPolarity, sparkline, tooltip, size = "secondary" }: KpiCardProps) {

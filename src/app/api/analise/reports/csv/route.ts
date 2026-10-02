@@ -192,8 +192,10 @@ function isColumnPopulated(id: CampaignColumnId, rows: Totals[]): boolean {
   return rows.some((r) => structuralRawValue(id, r) !== null);
 }
 
-function buildCampaignsCsv(campaigns: CampaignInsight[], allowed: AllowedColumns): string {
+/** `originalNameById` is only ever passed for a full admin's own unrestricted export (never a client-scoped one) — see Recipient.isClientScoped at the call site — adding the one extra "Nome original" column admins get to cross-reference the cleaned display name against. */
+function buildCampaignsCsv(campaigns: CampaignInsight[], allowed: AllowedColumns, originalNameById: Map<string, string> | null): string {
   const header = ["Campanha"];
+  if (originalNameById) header.push("Nome original");
   if (isAllowed(allowed, "account")) header.push("Conta");
   if (isAllowed(allowed, "objective")) header.push("Objetivo");
   if (isAllowed(allowed, "status")) header.push("Status");
@@ -202,6 +204,7 @@ function buildCampaignsCsv(campaigns: CampaignInsight[], allowed: AllowedColumns
 
   const rows = campaigns.map((c) => {
     const row = [c.campaignName];
+    if (originalNameById) row.push(originalNameById.get(c.campaignId) ?? c.campaignName);
     if (isAllowed(allowed, "account")) row.push(c.accountName);
     if (isAllowed(allowed, "objective")) row.push(objectiveLabel(c.objective));
     if (isAllowed(allowed, "status")) row.push(statusLabel(c.status));
@@ -242,11 +245,18 @@ function buildAccountSummaryCsv(campaigns: CampaignInsight[], allowed: AllowedCo
 // conversations) go through the usual allowedColumns gate.
 const AD_METRIC_IDS: CampaignColumnId[] = ["spend", "impressions", "clicks", "linkClicks", "reach", "conversations"];
 
-function buildAdsCsv(ads: AdInsight[], campaigns: CampaignInsight[], adSets: AdSetInsight[], allowed: AllowedColumns): string {
+function buildAdsCsv(
+  ads: AdInsight[],
+  campaigns: CampaignInsight[],
+  adSets: AdSetInsight[],
+  allowed: AllowedColumns,
+  originalAdNameById: Map<string, string> | null
+): string {
   const campaignNameById = new Map(campaigns.map((c) => [c.campaignId, c.campaignName]));
   const adSetNameById = new Map(adSets.map((a) => [a.adSetId, a.adSetName]));
 
   const header = ["Campanha", "Conjunto", "Anúncio"];
+  if (originalAdNameById) header.push("Nome original");
   if (isAllowed(allowed, "status")) header.push("Status");
   const metricIds = AD_METRIC_IDS.filter((id) => isAllowed(allowed, id));
   for (const id of metricIds) header.push(METRIC_COLUMN_LABELS[id] ?? id);
@@ -262,6 +272,7 @@ function buildAdsCsv(ads: AdInsight[], campaigns: CampaignInsight[], adSets: AdS
 
   const rows = ads.map((ad) => {
     const row = [campaignNameById.get(ad.campaignId) ?? "—", adSetNameById.get(ad.adSetId) ?? "—", ad.adName];
+    if (originalAdNameById) row.push(originalAdNameById.get(ad.adId) ?? ad.adName);
     if (isAllowed(allowed, "status")) row.push(statusLabel(ad.status));
     for (const id of metricIds) row.push(metricCell(id, ad) ?? "—");
     row.push(
@@ -326,11 +337,16 @@ export async function POST(req: NextRequest) {
   const allowedColumns = buildAllowedColumns(recipient.permissions);
 
   try {
-    const { freshData, filteredCampaigns, scopedAdSets, selectedAdSetIds } = await fetchFilteredReportData(effectiveFilters, recipient);
+    const { freshData, filteredCampaigns, scopedAdSets, selectedAdSetIds, rawNameById } = await fetchFilteredReportData(effectiveFilters, recipient);
+    // Only a full admin's own unrestricted export ("Visão administrativa
+    // completa", never one scoped to a named client) gets the original,
+    // un-stripped Meta names alongside the cleaned display name.
+    const originalCampaignNameById = recipient.isClientScoped ? null : rawNameById.campaigns;
+    const originalAdNameById = recipient.isClientScoped ? null : rawNameById.ads;
     let csv: string;
     let kindSlug: string;
     if (kind === "campaigns") {
-      csv = buildCampaignsCsv(filteredCampaigns, allowedColumns);
+      csv = buildCampaignsCsv(filteredCampaigns, allowedColumns, originalCampaignNameById);
       kindSlug = "campanhas";
     } else if (kind === "account-summary") {
       csv = buildAccountSummaryCsv(filteredCampaigns, allowedColumns);
@@ -340,7 +356,7 @@ export async function POST(req: NextRequest) {
       const scopedAds = freshData.ads.filter(
         (a) => filteredCampaignIds.has(a.campaignId) && (selectedAdSetIds === null || selectedAdSetIds.has(a.adSetId))
       );
-      csv = buildAdsCsv(scopedAds, filteredCampaigns, scopedAdSets, allowedColumns);
+      csv = buildAdsCsv(scopedAds, filteredCampaigns, scopedAdSets, allowedColumns, originalAdNameById);
       kindSlug = "criativos-e-qualidade";
     }
 
