@@ -44,6 +44,7 @@ import IntegrationsPanel from "./IntegrationsPanel";
 import { MascotTabBanner, MascotState } from "./Mascot";
 import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
 import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
+import BudgetCard from "./BudgetCard";
 
 type DashboardProps = {
   initialData: DashboardData;
@@ -1075,6 +1076,12 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     <m.div custom={0} initial="hidden" animate="visible" variants={fadeUp}>
                       <IntelligenceBanner />
                     </m.div>
+
+                    {dbConfigured && (
+                      <m.div custom={0.5} initial="hidden" animate="visible" variants={fadeUp}>
+                        <BudgetCard accountIds={accountIds} isAdmin={isAdmin} />
+                      </m.div>
+                    )}
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       {primaryKpis.map((kpi, i) => (

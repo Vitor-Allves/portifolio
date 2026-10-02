@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { MetaAdAccount } from "@/lib/meta-ads-types";
 import type { ClientAccessSummary, ClientAccessUserSummary } from "@/lib/client-access-types";
 import { EMPTY_PERMISSIONS, type ClientPermissions } from "@/lib/client-permissions";
 import { USERNAME_RULES_HELP } from "@/lib/username";
+import { formatCurrencyBRL } from "@/lib/format";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 import PermissionsEditor, { permissionsSummary } from "./PermissionsEditor";
 import PasswordRevealBox from "./PasswordRevealBox";
@@ -340,6 +341,49 @@ function EditClientCompanyRow({
   const [consultantWhatsapp, setConsultantWhatsapp] = useState(client.consultantWhatsapp ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [budget, setBudget] = useState<{ current: number | null; previous: number | null } | null>(null);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
+  const [budgetSaved, setBudgetSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/analise/admin/clients/${client.id}/budget/`);
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        setBudget({ current: body.current, previous: body.previous });
+        if (body.current !== null) setBudgetInput(String(body.current));
+      } catch {
+        // Budget field simply stays empty/uneditable until a reload — non-critical.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client.id]);
+
+  async function handleSaveBudget() {
+    const amount = Number(budgetInput.replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0) return;
+    setSavingBudget(true);
+    setBudgetSaved(false);
+    try {
+      const res = await fetch(`/api/analise/admin/clients/${client.id}/budget/`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      if (res.ok) {
+        setBudget((prev) => ({ current: amount, previous: prev?.previous ?? null }));
+        setBudgetSaved(true);
+      }
+    } finally {
+      setSavingBudget(false);
+    }
+  }
 
   function toggleAccount(id: string) {
     setSelectedAccountIds((prev) => {
@@ -431,8 +475,39 @@ function EditClientCompanyRow({
             </div>
           </div>
           <p className="mt-1.5 text-[11px] text-intel-text-dim/70 max-w-xl">
-            Se vazio, o botão "Falar com meu consultor" usa o WhatsApp geral da Legado.
+            Se vazio, o botão &quot;Falar com meu consultor&quot; usa o WhatsApp geral da Legado.
           </p>
+
+          <div className="mt-4 max-w-xs">
+            <label className={INTEL_LABEL}>Orçamento de mídia do mês (R$)</label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                inputMode="decimal"
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+                placeholder="0,00"
+                className={`${INTEL_INPUT} !py-2.5`}
+              />
+              <button
+                type="button"
+                onClick={handleSaveBudget}
+                disabled={savingBudget || !budgetInput.trim()}
+                className="shrink-0 text-[11.5px] tracking-[0.04em] px-3 py-2.5 rounded-lg bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50"
+              >
+                {savingBudget ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+            {budget?.previous !== null && budget?.previous !== undefined && (
+              <button
+                type="button"
+                onClick={() => setBudgetInput(String(budget.previous))}
+                className="mt-1.5 text-[11px] text-intel-text-dim hover:text-intel-text transition-colors duration-200"
+              >
+                Copiar do mês anterior ({formatCurrencyBRL(budget.previous)})
+              </button>
+            )}
+            {budgetSaved && <p className="mt-1.5 text-[11px] text-intel-green">Orçamento salvo.</p>}
+          </div>
 
           <details className="mt-4 group">
             <summary className="cursor-pointer text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
