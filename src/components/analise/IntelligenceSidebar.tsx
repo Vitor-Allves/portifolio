@@ -259,12 +259,13 @@ export default function IntelligenceSidebar({
   return (
     <>
       <aside
-        className={`hidden lg:flex lg:shrink-0 lg:flex-col backdrop-blur-md border-r sticky top-0 h-screen transition-[width] duration-200 ${
+        className={`hidden lg:flex lg:shrink-0 lg:flex-col backdrop-blur-md border-r sticky top-0 h-screen overflow-y-auto transition-[width] duration-200 ${
           collapsed ? "lg:w-[76px]" : "lg:w-60"
         }`}
         style={{
           background: "linear-gradient(180deg, rgba(8,16,32,0.55) 0%, rgba(8,16,32,0.35) 100%)",
           borderColor: "rgba(191,195,201,0.24)",
+          height: "100dvh",
         }}
       >
         <SidebarContent

@@ -16,7 +16,7 @@ export default async function TrocarSenhaPage() {
   const forced = scope.mustChangePassword;
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-intel-ambient bg-intel-grid flex items-center justify-center px-6 py-16">
+    <main className="relative min-h-screen overflow-x-hidden bg-intel-ambient flex items-center justify-center px-6 py-16">
       <div className="w-full max-w-sm rounded-2xl border border-white/[0.12] bg-white/[0.05] p-7 shadow-[0_24px_70px_-24px_rgba(4,7,12,0.65)] backdrop-blur-md sm:p-9">
         <div className="flex justify-center mb-6">
           <Logo variant="onDark" size="sm" className="!h-10" />

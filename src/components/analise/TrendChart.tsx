@@ -54,7 +54,8 @@ function formatMetric(value: number, metric: TrendMetric): string {
   }
 }
 
-const LINE_COLOR = "var(--color-intel-cyan)";
+const LINE_COLOR = "var(--color-intel-text)";
+const AREA_FILL_COLOR = "var(--color-intel-cyan)";
 const COMPARISON_COLOR = "var(--color-intel-violet)";
 const WIDTH = 800;
 const HEIGHT = 280;
@@ -208,14 +209,14 @@ export default function TrendChart({ current, comparison, metric, onMetricChange
         >
           <defs>
             <linearGradient id="trend-area-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={LINE_COLOR} stopOpacity="0.22" />
-              <stop offset="100%" stopColor={LINE_COLOR} stopOpacity="0" />
+              <stop offset="0%" stopColor={AREA_FILL_COLOR} stopOpacity="0.35" />
+              <stop offset="100%" stopColor={AREA_FILL_COLOR} stopOpacity="0" />
             </linearGradient>
           </defs>
 
           {yTicks.map((tick) => (
             <g key={tick}>
-              <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={yFor(tick)} y2={yFor(tick)} stroke="rgba(241,245,249,0.06)" strokeWidth={1} />
+              <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={yFor(tick)} y2={yFor(tick)} stroke="rgba(191,195,201,0.18)" strokeWidth={1} />
               <text x={PAD_LEFT - 8} y={yFor(tick)} textAnchor="end" dominantBaseline="middle" fill="var(--color-intel-text-dim)" fontSize={11}>
                 {metric === "ctr" ? `${tick.toFixed(0)}%` : formatCompactNumber(tick)}
               </text>
@@ -233,7 +234,7 @@ export default function TrendChart({ current, comparison, metric, onMetricChange
           )}
 
           <path d={areaPath} fill="url(#trend-area-fill)" stroke="none" />
-          <path d={linePath} fill="none" stroke={LINE_COLOR} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          <path d={linePath} fill="none" stroke={LINE_COLOR} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
 
           {active && (
             <>

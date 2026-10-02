@@ -138,7 +138,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
 
   const [data, setData] = useState(initialData);
   const [period, setPeriod] = useState<Period>(initialData.period);
-  const [compare, setCompare] = useState(false);
+  const [compare, setCompare] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -935,7 +935,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     data.accounts.length === 0 ? "down" : data.partialAccounts.length > 0 ? "partial" : "ok";
 
   return (
-    <div className="flex min-h-screen bg-intel-ambient bg-intel-grid bg-intel-sheen overflow-x-hidden">
+    <div className="flex min-h-screen bg-intel-ambient">
       <IntelligenceSidebar
         active={section}
         onSelect={setSection}
@@ -950,7 +950,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         periodLabel={insights.periodLabel}
       />
 
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col overflow-x-hidden">
         <IntelligenceTopBar
           sectionLabel={sectionLabel}
           clientLabel={clientLabel}
@@ -1095,7 +1095,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                       <p className="text-[10.5px] tracking-[0.12em] uppercase text-intel-text-dim mb-2.5">
                         Outros indicadores
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {secondaryKpis.map((kpi, i) => (
                           <m.div key={kpi.label} custom={i + 4} initial="hidden" animate="visible" variants={fadeUp}>
                             <KpiCard {...kpi} size="secondary" />

@@ -7,7 +7,7 @@ type NotConfiguredProps = {
 
 export default function NotConfigured({ reason, detail, isInternal }: NotConfiguredProps) {
   return (
-    <div className="min-h-screen overflow-x-hidden bg-intel-ambient bg-intel-grid flex items-center justify-center px-6 py-16">
+    <div className="min-h-screen overflow-x-hidden bg-intel-ambient flex items-center justify-center px-6 py-16">
       <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-10 sm:p-14 text-center max-w-xl">
         <p className="font-sans text-2xl font-semibold text-intel-text mb-3">
           {isInternal
