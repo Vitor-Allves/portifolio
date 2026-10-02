@@ -5,7 +5,7 @@ import type { AdInsight, AdSetInsight, CampaignInsight, CampaignStatus } from "@
 import type { CampaignColumnId } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel, ctaLabel, qualityRankingLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent, formatSignedPercent } from "@/lib/format";
-import { ctr, cpc, cpm, costPerConversation, roas, pctChange } from "@/lib/metrics";
+import { ctr, cpc, cpm, costPerConversation, roas, pctChange, primaryResultKind, primaryResultFor, PRIMARY_RESULT_LABEL } from "@/lib/metrics";
 import { downloadCsv } from "@/lib/csv";
 import { INTEL_INPUT, INTEL_POPOVER } from "./intel-styles";
 import { MascotState } from "./Mascot";
@@ -41,6 +41,34 @@ const COLUMNS: Column[] = [
     defaultVisible: true,
     value: (c) => objectiveLabel(c.objective),
     render: (c) => objectiveLabel(c.objective),
+  },
+  {
+    id: "primaryResult",
+    label: "Resultado principal",
+    numeric: false,
+    defaultVisible: true,
+    value: (c) => {
+      const kind = primaryResultKind(c.objective);
+      const { value } = primaryResultFor(kind, c);
+      return value === null ? null : `${formatInteger(value)} ${PRIMARY_RESULT_LABEL[kind].toLowerCase()}`;
+    },
+    render: (c) => {
+      const kind = primaryResultKind(c.objective);
+      const { value } = primaryResultFor(kind, c);
+      if (kind === "undefined") return "Resultado não definido";
+      return value === null ? "Não disponível" : `${formatInteger(value)} ${PRIMARY_RESULT_LABEL[kind].toLowerCase()}`;
+    },
+  },
+  {
+    id: "costPerResult",
+    label: "Custo por resultado",
+    numeric: true,
+    defaultVisible: true,
+    value: (c) => primaryResultFor(primaryResultKind(c.objective), c).costPerResult,
+    render: (c) => {
+      const { costPerResult } = primaryResultFor(primaryResultKind(c.objective), c);
+      return costPerResult === null ? "—" : formatCurrencyBRL(costPerResult);
+    },
   },
   { id: "spend", label: "Investimento", numeric: true, defaultVisible: true, value: (c) => c.spend, render: (c) => formatCurrencyBRL(c.spend) },
   {

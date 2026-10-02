@@ -6,7 +6,19 @@ import type { AdSetInsight, CampaignInsight, DashboardData, Period } from "@/lib
 import type { ClientPermissions } from "@/lib/client-permissions";
 import { objectiveLabel, statusLabel, buildDisplayNameMap } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
-import { sumTotals, ctr, cpc, cpm, costPerConversation, pctChange, aggregateDailyByDate } from "@/lib/metrics";
+import {
+  sumTotals,
+  ctr,
+  cpc,
+  cpm,
+  costPerConversation,
+  pctChange,
+  aggregateDailyByDate,
+  primaryResultKind,
+  primaryResultFor,
+  PRIMARY_RESULT_LABEL,
+  type PrimaryResultKind,
+} from "@/lib/metrics";
 import { computeStrategicInsights } from "@/lib/strategic-insights";
 import { OBJECTIVE_NONE_KEY, filterCampaignsByIds, resolveIdFilter, toSavedIdFilter } from "@/lib/campaign-filters";
 import { fetchDashboardData, fetchScopedReach, DashboardFetchError, type ScopedReachResult } from "@/lib/dashboard-fetch";
@@ -672,6 +684,25 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     [filteredCampaigns, comparisonCampaigns, dailyFiltered, data.resolvedRange, data.partialAccounts]
   );
 
+  // One card per result KIND actually present among the filtered campaigns
+  // (never one combined number) — a lead and a conversation aren't
+  // interchangeable units, so each kind sums only its own campaigns.
+  const resultsByObjective = useMemo(() => {
+    const byKind = new Map<PrimaryResultKind, CampaignInsight[]>();
+    for (const c of filteredCampaigns) {
+      const kind = primaryResultKind(c.objective);
+      if (kind === "undefined") continue;
+      const list = byKind.get(kind) ?? [];
+      list.push(c);
+      byKind.set(kind, list);
+    }
+    return [...byKind.entries()].map(([kind, campaigns]) => {
+      const kindTotals = sumTotals(campaigns);
+      const { value, costPerResult } = primaryResultFor(kind, kindTotals);
+      return { kind, label: PRIMARY_RESULT_LABEL[kind], value, costPerResult };
+    });
+  }, [filteredCampaigns]);
+
   function focusCampaign(campaignId: string | null) {
     setCampaignIds(campaignId ? new Set([campaignId]) : new Set(campaignOptions.map((o) => o.id)));
   }
@@ -1036,6 +1067,27 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                         ))}
                       </div>
                     </div>
+
+                    {resultsByObjective.length > 0 && (
+                      <m.div custom={6.5} initial="hidden" animate="visible" variants={fadeUp}>
+                        <p className="text-[10.5px] tracking-[0.12em] uppercase text-intel-text-dim mb-2.5">
+                          Resultados por objetivo
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                          {resultsByObjective.map((r) => (
+                            <div key={r.kind} className="rounded-xl border border-white/[0.07] bg-intel-surface-1 px-4 py-3.5">
+                              <p className="text-[10px] tracking-[0.08em] uppercase text-intel-text-dim mb-1.5">{r.label}</p>
+                              <p className="text-[18px] font-semibold text-intel-text tabular-nums">
+                                {r.value === null ? "Não disponível" : formatInteger(r.value)}
+                              </p>
+                              <p className="mt-0.5 text-[12px] text-intel-text-dim tabular-nums">
+                                {r.costPerResult === null ? "—" : `${formatCurrencyBRL(r.costPerResult)} cada`}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </m.div>
+                    )}
 
                     <div
                       className={
