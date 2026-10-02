@@ -17,6 +17,8 @@ type IntelligenceTopBarProps = {
   onOpenMobileMenu: () => void;
   consultant: ConsultantInfo | null;
   periodLabel: string;
+  privacyMode: boolean;
+  onTogglePrivacyMode: () => void;
 };
 
 // Always horário de Brasília, regardless of the viewer's own device
@@ -51,6 +53,8 @@ export default function IntelligenceTopBar({
   onOpenMobileMenu,
   consultant,
   periodLabel,
+  privacyMode,
+  onTogglePrivacyMode,
 }: IntelligenceTopBarProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -104,6 +108,41 @@ export default function IntelligenceTopBar({
             variant="header"
             className="hidden sm:inline-flex"
           />
+
+          <button
+            type="button"
+            onClick={onTogglePrivacyMode}
+            aria-pressed={privacyMode}
+            title={privacyMode ? "Mostrar valores" : "Ocultar valores (modo privacidade)"}
+            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors duration-200 ${
+              privacyMode
+                ? "border-intel-cyan/40 bg-intel-cyan/[0.14] text-intel-cyan"
+                : "border-white/10 text-intel-text-dim hover:border-white/20 hover:text-intel-text"
+            }`}
+          >
+            <span className="sr-only">{privacyMode ? "Mostrar valores" : "Ocultar valores"}</span>
+            {privacyMode ? (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.24 4.24M6.6 6.6C4.4 8.1 2.9 10 2 12c1.6 3.6 5.5 7 10 7 1.7 0 3.3-.4 4.7-1.1M17.4 17.4C19.6 15.9 21.1 14 22 12c-1-2.2-2.7-4.4-4.9-5.9A11.7 11.7 0 0 0 12 5c-.6 0-1.2 0-1.8.1"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M2 12c1.6-3.6 5.5-7 10-7s8.4 3.4 10 7c-1.6 3.6-5.5 7-10 7s-8.4-3.4-10-7Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            )}
+          </button>
 
           <button
             type="button"

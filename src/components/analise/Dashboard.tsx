@@ -139,6 +139,7 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
   const [data, setData] = useState(initialData);
   const [period, setPeriod] = useState<Period>(initialData.period);
   const [compare, setCompare] = useState(true);
+  const [privacyMode, setPrivacyMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -960,9 +961,13 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           onOpenMobileMenu={() => setMobileNavOpen(true)}
           consultant={consultant}
           periodLabel={insights.periodLabel}
+          privacyMode={privacyMode}
+          onTogglePrivacyMode={() => setPrivacyMode((v) => !v)}
         />
 
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1500px] w-full mx-auto">
+        <main
+          className={`flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1500px] w-full mx-auto${privacyMode ? " intel-privacy" : ""}`}
+        >
           {data.partialAccounts.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-[13px] text-amber-300">
               {data.partialAccounts.length === 1 ? "1 conta não pôde" : `${data.partialAccounts.length} contas não puderam`}{" "}
