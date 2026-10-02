@@ -217,7 +217,15 @@ export default function TrendChart({ current, comparison, metric, onMetricChange
           {yTicks.map((tick) => (
             <g key={tick}>
               <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={yFor(tick)} y2={yFor(tick)} stroke="rgba(191,195,201,0.18)" strokeWidth={1} />
-              <text x={PAD_LEFT - 8} y={yFor(tick)} textAnchor="end" dominantBaseline="middle" fill="var(--color-intel-text-dim)" fontSize={11}>
+              <text
+                x={PAD_LEFT - 8}
+                y={yFor(tick)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fill="var(--color-intel-text-dim)"
+                fontSize={11}
+                className="tabular-nums"
+              >
                 {metric === "ctr" ? `${tick.toFixed(0)}%` : formatCompactNumber(tick)}
               </text>
             </g>

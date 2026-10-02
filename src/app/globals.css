@@ -251,6 +251,22 @@ select:focus-visible {
   background-attachment: fixed;
 }
 
+/* Privacy mode: blurs every numeric value on screen (KPIs, tables, charts,
+   budget) without touching labels, so the dashboard can be screen-shared
+   without exposing exact figures. Keyed off .tabular-nums — already applied
+   to virtually every number-bearing element across the dashboard — rather
+   than adding a bespoke class to each one. Hovering a value reveals it
+   temporarily (mouse only; the toggle itself is what touch devices use). */
+.intel-privacy .tabular-nums {
+  filter: blur(6px);
+  user-select: none;
+  transition: filter 150ms ease;
+}
+.intel-privacy .tabular-nums:hover,
+.intel-privacy .tabular-nums:focus-within {
+  filter: blur(0);
+}
+
 /* Neutral loading-skeleton sheen — silver, not violet, since a loading
    state shouldn't visually announce itself as "AI" before there's anything
    to show. */
