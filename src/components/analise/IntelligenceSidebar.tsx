@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
 import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
@@ -94,8 +94,19 @@ const TIP_AVATARS: { src: string; alt: string }[] = [
 
 /** Picked once per mount ("a cada abertura" — each time the sidebar opens, not a running rotation within one session) rather than on every render. */
 function SidebarTipCard() {
-  const [avatar] = useState(() => TIP_AVATARS[Math.floor(Math.random() * TIP_AVATARS.length)]);
-  const [tip] = useState(() => SIDEBAR_TIPS[Math.floor(Math.random() * SIDEBAR_TIPS.length)]);
+  // Picked client-side only, after mount: a random initializer would run
+  // once during the server render and again during client hydration, each
+  // time landing on a (likely different) pick — a hydration mismatch. The
+  // first index is a stable, identical SSR/client default; the effect then
+  // randomizes it exactly once, after hydration has already settled.
+  const [avatarIndex, setAvatarIndex] = useState(0);
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    setAvatarIndex(Math.floor(Math.random() * TIP_AVATARS.length));
+    setTipIndex(Math.floor(Math.random() * SIDEBAR_TIPS.length));
+  }, []);
+  const avatar = TIP_AVATARS[avatarIndex];
+  const tip = SIDEBAR_TIPS[tipIndex];
 
   return (
     <div className="px-2.5 pb-2.5">
