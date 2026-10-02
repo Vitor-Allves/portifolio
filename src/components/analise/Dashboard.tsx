@@ -42,6 +42,8 @@ import IntelligenceBanner from "./IntelligenceBanner";
 import ReportsPanel from "./ReportsPanel";
 import IntegrationsPanel from "./IntegrationsPanel";
 import { MascotTabBanner, MascotState } from "./Mascot";
+import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
+import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
 
 type DashboardProps = {
   initialData: DashboardData;
@@ -51,6 +53,8 @@ type DashboardProps = {
   clientLabel: string | null;
   clientPermissions: ClientPermissions | null;
   dbConfigured: boolean;
+  /** This viewer's named consultant contact, if their client has one configured — null falls back to Legado's general WhatsApp number. Always null for a staff/admin viewer (no single client bound to that session). */
+  consultant: ConsultantInfo | null;
 };
 
 const fadeUp: Variants = {
@@ -126,7 +130,7 @@ function sparklineFor(
   });
 }
 
-export default function Dashboard({ initialData, isAdmin, isInternal, clientLabel, clientPermissions, dbConfigured }: DashboardProps) {
+export default function Dashboard({ initialData, isAdmin, isInternal, clientLabel, clientPermissions, dbConfigured, consultant }: DashboardProps) {
   const hiddenFilterIds = useMemo(() => new Set<string>(clientPermissions?.hiddenFilters ?? []), [clientPermissions]);
   const hiddenColumnIds = useMemo(() => new Set<string>(clientPermissions?.hiddenColumns ?? []), [clientPermissions]);
   const hiddenSectionIds = useMemo(() => new Set<string>(clientPermissions?.hiddenSections ?? []), [clientPermissions]);
@@ -935,6 +939,9 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
         hiddenSectionIds={hiddenSectionIds}
+        consultant={consultant}
+        clientLabel={clientLabel}
+        periodLabel={insights.periodLabel}
       />
 
       <div className="flex-1 min-w-0 flex flex-col">
@@ -945,6 +952,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           lastSyncIso={data.generatedAt}
           connectionState={connectionState}
           onOpenMobileMenu={() => setMobileNavOpen(true)}
+          consultant={consultant}
+          periodLabel={insights.periodLabel}
         />
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1500px] w-full mx-auto">
@@ -964,13 +973,21 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                 tone="error"
                 message={error}
                 action={
-                  <button
-                    type="button"
-                    onClick={() => refetch(period, compare)}
-                    className="text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
-                  >
-                    Tentar novamente
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => refetch(period, compare)}
+                      className="text-[12px] tracking-[0.06em] uppercase text-intel-red hover:brightness-125 transition-[filter] duration-200"
+                    >
+                      Tentar novamente
+                    </button>
+                    <ConsultantWhatsAppButton
+                      consultant={consultant}
+                      clientLabel={clientLabel}
+                      periodLabel={insights.periodLabel}
+                      screen="erro ao carregar dados"
+                    />
+                  </div>
                 }
                 className="py-5"
               />
@@ -980,10 +997,17 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
           {data.accounts.length === 0 ? (
             <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-10 text-center max-w-xl mx-auto">
               <p className="font-sans text-lg font-semibold text-intel-text mb-2">Nenhuma conta de anúncios disponível</p>
-              <p className="text-sm text-intel-text-dim leading-relaxed">
+              <p className="text-sm text-intel-text-dim leading-relaxed mb-5">
                 Este acesso não está associado a nenhuma conta de anúncios ativa. Fale com o administrador para
                 verificar as contas liberadas no Business Manager.
               </p>
+              <ConsultantWhatsAppButton
+                consultant={consultant}
+                clientLabel={clientLabel}
+                periodLabel={insights.periodLabel}
+                screen="sem contas disponíveis"
+                className="mx-auto"
+              />
             </div>
           ) : (
             <>

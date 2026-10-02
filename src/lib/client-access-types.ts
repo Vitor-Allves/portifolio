@@ -24,4 +24,7 @@ export type ClientAccessSummary = {
   permissions: ClientPermissions;
   createdAt: string;
   users: ClientAccessUserSummary[];
+  /** Optional named contact for the "Falar com meu consultor" button — null falls back to Legado's own general WhatsApp number. */
+  consultantName: string | null;
+  consultantWhatsapp: string | null;
 };

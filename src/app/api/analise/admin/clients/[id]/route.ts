@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const { id } = await params;
 
-  let body: { label?: unknown; accountIds?: unknown; permissions?: unknown };
+  let body: { label?: unknown; accountIds?: unknown; permissions?: unknown; consultantName?: unknown; consultantWhatsapp?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -33,9 +33,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     ? (Array.isArray(body.accountIds) ? body.accountIds.filter((v): v is string => typeof v === "string") : [])
     : undefined;
   const permissions = body.permissions !== undefined ? sanitizePermissions(body.permissions) : undefined;
+  const consultantName =
+    body.consultantName !== undefined ? (typeof body.consultantName === "string" ? body.consultantName : null) : undefined;
+  const consultantWhatsapp =
+    body.consultantWhatsapp !== undefined ? (typeof body.consultantWhatsapp === "string" ? body.consultantWhatsapp : null) : undefined;
 
   try {
-    await updateClientAccess(id, { label, accountIds, permissions });
+    await updateClientAccess(id, { label, accountIds, permissions, consultantName, consultantWhatsapp });
   } catch (err) {
     if (err instanceof DbConfigError) {
       return NextResponse.json({ error: "Banco de dados não configurado." }, { status: 503 });

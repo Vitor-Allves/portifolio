@@ -321,12 +321,23 @@ function EditClientCompanyRow({
 }: {
   client: ClientAccessSummary;
   accounts: MetaAdAccount[];
-  onSave: (id: string, input: { label: string; accountIds: string[]; permissions: ClientPermissions }) => Promise<string | null>;
+  onSave: (
+    id: string,
+    input: {
+      label: string;
+      accountIds: string[];
+      permissions: ClientPermissions;
+      consultantName: string | null;
+      consultantWhatsapp: string | null;
+    }
+  ) => Promise<string | null>;
   onCancel: () => void;
 }) {
   const [label, setLabel] = useState(client.label);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set(client.accountIds));
   const [permissions, setPermissions] = useState<ClientPermissions>(client.permissions);
+  const [consultantName, setConsultantName] = useState(client.consultantName ?? "");
+  const [consultantWhatsapp, setConsultantWhatsapp] = useState(client.consultantWhatsapp ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -351,7 +362,13 @@ function EditClientCompanyRow({
       return;
     }
     setSubmitting(true);
-    const err = await onSave(client.id, { label: label.trim(), accountIds: [...selectedAccountIds], permissions });
+    const err = await onSave(client.id, {
+      label: label.trim(),
+      accountIds: [...selectedAccountIds],
+      permissions,
+      consultantName: consultantName.trim() || null,
+      consultantWhatsapp: consultantWhatsapp.trim() || null,
+    });
     setSubmitting(false);
     if (err) setError(err);
   }
@@ -392,6 +409,30 @@ function EditClientCompanyRow({
               );
             })}
           </ul>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 max-w-xl">
+            <div>
+              <label className={INTEL_LABEL}>Nome do consultor (opcional)</label>
+              <input
+                value={consultantName}
+                onChange={(e) => setConsultantName(e.target.value)}
+                placeholder="Ex: Ana Souza"
+                className={`${INTEL_INPUT} mt-2 !py-2.5`}
+              />
+            </div>
+            <div>
+              <label className={INTEL_LABEL}>WhatsApp do consultor (opcional)</label>
+              <input
+                value={consultantWhatsapp}
+                onChange={(e) => setConsultantWhatsapp(e.target.value)}
+                placeholder="Ex: 15999998888"
+                className={`${INTEL_INPUT} mt-2 !py-2.5`}
+              />
+            </div>
+          </div>
+          <p className="mt-1.5 text-[11px] text-intel-text-dim/70 max-w-xl">
+            Se vazio, o botão "Falar com meu consultor" usa o WhatsApp geral da Legado.
+          </p>
 
           <details className="mt-4 group">
             <summary className="cursor-pointer text-[12px] tracking-[0.06em] uppercase text-intel-text-dim hover:text-intel-text transition-colors duration-200">
@@ -488,6 +529,8 @@ export default function AdminClientsPanel({ accounts, accountsError, initialClie
           permissions,
           createdAt: new Date().toISOString(),
           users: [],
+          consultantName: null,
+          consultantWhatsapp: null,
         },
         ...prev,
       ]);
@@ -588,7 +631,13 @@ export default function AdminClientsPanel({ accounts, accountsError, initialClie
 
   async function handleSaveClientEdit(
     clientId: string,
-    input: { label: string; accountIds: string[]; permissions: ClientPermissions }
+    input: {
+      label: string;
+      accountIds: string[];
+      permissions: ClientPermissions;
+      consultantName: string | null;
+      consultantWhatsapp: string | null;
+    }
   ): Promise<string | null> {
     try {
       const res = await fetch(`/api/analise/admin/clients/${clientId}/`, {
@@ -607,6 +656,8 @@ export default function AdminClientsPanel({ accounts, accountsError, initialClie
                 label: input.label,
                 accountIds: input.accountIds,
                 permissions: input.permissions,
+                consultantName: input.consultantName,
+                consultantWhatsapp: input.consultantWhatsapp,
                 // A person without their own override still inherits whatever the
                 // company's permissions are now — refresh their displayed summary too.
                 users: c.users.map((u) => (u.hasPermissionsOverride ? u : { ...u, permissions: input.permissions })),

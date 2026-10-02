@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { REFERENCE_TIME_ZONE } from "@/lib/format";
+import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
+import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
 
 type ConnectionState = "ok" | "partial" | "down";
 
@@ -13,6 +15,8 @@ type IntelligenceTopBarProps = {
   lastSyncIso: string;
   connectionState: ConnectionState;
   onOpenMobileMenu: () => void;
+  consultant: ConsultantInfo | null;
+  periodLabel: string;
 };
 
 // Always horário de Brasília, regardless of the viewer's own device
@@ -45,6 +49,8 @@ export default function IntelligenceTopBar({
   lastSyncIso,
   connectionState,
   onOpenMobileMenu,
+  consultant,
+  periodLabel,
 }: IntelligenceTopBarProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -89,6 +95,15 @@ export default function IntelligenceTopBar({
             <span className="text-white/15">·</span>
             <span title="Horário de Brasília (America/Sao_Paulo)">Atualizado {formatSyncTime(lastSyncIso)} (BRT)</span>
           </div>
+
+          <ConsultantWhatsAppButton
+            consultant={consultant}
+            clientLabel={clientLabel}
+            periodLabel={periodLabel}
+            screen="cabeçalho"
+            variant="header"
+            className="hidden sm:inline-flex"
+          />
 
           <button
             type="button"

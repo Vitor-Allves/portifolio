@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
+import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
 
 export type SectionId = "overview" | "campaigns" | "insights" | "reports" | "integrations";
 
@@ -36,6 +38,9 @@ type IntelligenceSidebarProps = {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   hiddenSectionIds: Set<string>;
+  consultant: ConsultantInfo | null;
+  clientLabel: string | null;
+  periodLabel: string;
 };
 
 function NavButton({
@@ -119,6 +124,9 @@ function SidebarContent({
   onToggleCollapsed,
   showCollapseToggle,
   visibleSections,
+  consultant,
+  clientLabel,
+  periodLabel,
 }: {
   active: SectionId;
   onSelect: (section: SectionId) => void;
@@ -128,6 +136,9 @@ function SidebarContent({
   onToggleCollapsed: () => void;
   showCollapseToggle: boolean;
   visibleSections: typeof SECTIONS;
+  consultant: ConsultantInfo | null;
+  clientLabel: string | null;
+  periodLabel: string;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -157,6 +168,19 @@ function SidebarContent({
           />
         ))}
       </nav>
+
+      {!collapsed && (
+        <div className="px-2.5 pb-2.5">
+          <ConsultantWhatsAppButton
+            consultant={consultant}
+            clientLabel={clientLabel}
+            periodLabel={periodLabel}
+            screen="barra lateral"
+            variant="sidebar"
+            className="w-full"
+          />
+        </div>
+      )}
 
       {!collapsed && <SidebarTipCard />}
 
@@ -214,6 +238,9 @@ export default function IntelligenceSidebar({
   collapsed,
   onToggleCollapsed,
   hiddenSectionIds,
+  consultant,
+  clientLabel,
+  periodLabel,
 }: IntelligenceSidebarProps) {
   // "overview" is never hideable — always somewhere for a client to land.
   const visibleSections = SECTIONS.filter((s) => s.id === "overview" || !hiddenSectionIds.has(s.id));
@@ -238,6 +265,9 @@ export default function IntelligenceSidebar({
           onToggleCollapsed={onToggleCollapsed}
           showCollapseToggle
           visibleSections={visibleSections}
+          consultant={consultant}
+          clientLabel={clientLabel}
+          periodLabel={periodLabel}
         />
       </aside>
 
@@ -265,6 +295,9 @@ export default function IntelligenceSidebar({
               onToggleCollapsed={onToggleCollapsed}
               showCollapseToggle={false}
               visibleSections={visibleSections}
+              consultant={consultant}
+              clientLabel={clientLabel}
+              periodLabel={periodLabel}
             />
           </aside>
         </div>

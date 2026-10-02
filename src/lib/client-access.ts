@@ -59,8 +59,10 @@ export async function listClientAccess(): Promise<ClientAccessSummary[]> {
     account_ids: string[];
     permissions: unknown;
     created_at: string;
+    consultant_name: string | null;
+    consultant_whatsapp: string | null;
   }>(
-    `SELECT id, slug, label, account_ids, permissions, created_at
+    `SELECT id, slug, label, account_ids, permissions, created_at, consultant_name, consultant_whatsapp
      FROM client_access
      WHERE revoked_at IS NULL
      ORDER BY created_at DESC`
@@ -106,6 +108,8 @@ export async function listClientAccess(): Promise<ClientAccessSummary[]> {
     permissions: sanitizePermissions(r.permissions),
     createdAt: r.created_at,
     users: usersByClient.get(r.id) ?? [],
+    consultantName: r.consultant_name,
+    consultantWhatsapp: r.consultant_whatsapp,
   }));
 }
 
@@ -136,6 +140,9 @@ export type UpdateClientAccessInput = {
   label?: string;
   accountIds?: string[];
   permissions?: ClientPermissions;
+  /** undefined = leave unchanged; null = clear (fall back to the general Legado number); string = set. */
+  consultantName?: string | null;
+  consultantWhatsapp?: string | null;
 };
 
 export async function updateClientAccess(id: string, input: UpdateClientAccessInput): Promise<void> {
@@ -155,6 +162,27 @@ export async function updateClientAccess(id: string, input: UpdateClientAccessIn
       id,
     ]);
   }
+  if (input.consultantName !== undefined) {
+    const clean = input.consultantName === null ? null : input.consultantName.trim() || null;
+    await db.query(`UPDATE client_access SET consultant_name = $1 WHERE id = $2`, [clean, id]);
+  }
+  if (input.consultantWhatsapp !== undefined) {
+    const clean = input.consultantWhatsapp === null ? null : input.consultantWhatsapp.trim() || null;
+    await db.query(`UPDATE client_access SET consultant_whatsapp = $1 WHERE id = $2`, [clean, id]);
+  }
+}
+
+/** Lightweight lookup for the "Falar com meu consultor" button — avoids pulling every client + their users just to read two columns. null consultantName/consultantWhatsapp means fall back to Legado's own general number. */
+export async function getClientConsultantInfo(
+  clientAccessId: string
+): Promise<{ consultantName: string | null; consultantWhatsapp: string | null } | null> {
+  const db = await getDb();
+  const { rows } = await db.query<{ consultant_name: string | null; consultant_whatsapp: string | null }>(
+    `SELECT consultant_name, consultant_whatsapp FROM client_access WHERE id = $1`,
+    [clientAccessId]
+  );
+  if (rows.length === 0) return null;
+  return { consultantName: rows[0].consultant_name, consultantWhatsapp: rows[0].consultant_whatsapp };
 }
 
 /** Revokes the company — every person under it immediately loses access (auth-context.ts rejects on client_access.revoked_at), without needing to touch each person's row. History is preserved. */
