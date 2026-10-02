@@ -51,18 +51,12 @@ export default function IntelligenceBanner() {
           </ul>
         </div>
 
-        <div className="hidden sm:flex items-end gap-0 shrink-0 self-end h-full max-h-[260px] -mb-7 sm:-mb-8">
+        <div className="hidden sm:flex items-end shrink-0 self-end h-full max-h-[260px] -mb-7 sm:-mb-8">
           <img
-            src="/login/Titan.png"
+            src="/mascots/dupla_pose_capa.png"
             alt=""
             aria-hidden="true"
-            className="h-[170px] lg:h-[230px] w-auto object-contain object-bottom -mr-6"
-          />
-          <img
-            src="/login/Legacy.png"
-            alt=""
-            aria-hidden="true"
-            className="h-[170px] lg:h-[230px] w-auto object-contain object-bottom"
+            className="h-[190px] lg:h-[250px] w-auto object-contain object-bottom"
           />
         </div>
       </div>
