@@ -92,7 +92,6 @@ export default function MatchPoint() {
         <div className="lg-cs-head">
           <span className="lg-eyebrow">Não acreditamos em fórmulas. Criamos um método.</span>
           <h2>Match Point</h2>
-          <p>Ponto a ponto, como no tênis: cada etapa prepara a próxima.</p>
         </div>
         <div className="lg-clay-scroll">
           <div className="lg-clayscene">
