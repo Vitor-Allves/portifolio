@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import LegadoLogoMark from "./LegadoLogoMark";
 import LoginForm, { type LoginVisualEvent } from "./LoginForm";
 import styles from "./LoginScene.module.css";
+import { SITE_URL, WA_MESSAGES, waLink } from "@/lib/site-config";
 
 type Pose = "ola" | "olhos" | "duvida" | "conquista";
 
@@ -156,6 +157,29 @@ export default function LoginScene() {
         </div>
 
         <div className={styles.groundShadow} aria-hidden="true" />
+      </div>
+
+      <div className="lg-pre">
+        <div>
+          <h3>Ainda não é parceiro da Legado?</h3>
+          <p>
+            O Legado Intelligence é a área exclusiva de quem trabalha com a Legado. Se você
+            quer acompanhar os números da sua empresa assim, o primeiro passo é uma conversa.
+          </p>
+        </div>
+        <div className="lg-btns">
+          <a
+            className="lg-btn lg-btn-metal"
+            href={waLink(WA_MESSAGES.loginPreamble)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Falar com a Legado
+          </a>
+          <a className="lg-btn lg-btn-ghost" href={SITE_URL}>
+            Conhecer a Legado
+          </a>
+        </div>
       </div>
     </div>
   );

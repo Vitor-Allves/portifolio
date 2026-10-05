@@ -1,122 +1,90 @@
-"use client";
-
-import { useState } from "react";
-import { m } from "framer-motion";
-import Reveal from "./Reveal";
-
-const solutions = [
+const COLUMNS = [
   {
-    title: "Estratégia e Planejamento",
-    description:
-      "Leitura do negócio, do mercado e dos objetivos antes de qualquer execução.",
+    icon: "/site/home/icone-entender.webp",
+    title: "Entender",
+    sub: "Antes de qualquer execução",
+    items: [
+      {
+        b: "Estratégia e Planejamento",
+        span: "Leitura do negócio, do mercado e dos objetivos antes de qualquer execução.",
+      },
+      {
+        b: "Análise de Mercado",
+        span: "Leitura de concorrência, comportamento e oportunidades reais.",
+      },
+      {
+        b: "Posicionamento de Marca",
+        span: "Clareza sobre o que a empresa representa e para quem ela realmente fala.",
+      },
+    ],
   },
   {
-    title: "Posicionamento de Marca",
-    description:
-      "Clareza sobre o que a empresa representa e para quem ela realmente fala.",
+    icon: "/site/home/icone-atrair.webp",
+    title: "Atrair",
+    sub: "Captação ligada a metas comerciais",
+    items: [
+      {
+        b: "Aquisição de Clientes",
+        span: "Estruturas de captação conectadas diretamente a metas comerciais.",
+      },
+      {
+        b: "Tráfego e Performance",
+        span: "Canais pagos orientados por indicadores, não por volume de investimento.",
+      },
+      { b: "Geração de Demanda", span: "Interesse e autoridade antes da decisão de compra." },
+      {
+        b: "Conteúdo e Comunicação",
+        span: "Mensagens consistentes com a estratégia em todos os canais.",
+      },
+    ],
   },
   {
-    title: "Aquisição de Clientes",
-    description:
-      "Estruturas de captação conectadas diretamente a metas comerciais.",
-  },
-  {
-    title: "Tráfego e Performance",
-    description:
-      "Canais pagos orientados por indicadores, não por volume de investimento.",
-  },
-  {
-    title: "Geração de Demanda",
-    description:
-      "Criação de interesse e autoridade antes da decisão de compra.",
-  },
-  {
-    title: "Inteligência de Dados",
-    description:
-      "Indicadores tratados como ferramenta de decisão, não apenas relatório.",
-  },
-  {
-    title: "Análise de Mercado",
-    description:
-      "Leitura de concorrência, comportamento e oportunidades reais.",
-  },
-  {
-    title: "Conteúdo e Comunicação",
-    description: "Mensagens consistentes com a estratégia em todos os canais.",
-  },
-  {
-    title: "E-mail Marketing",
-    description:
-      "Relacionamento e conversão trabalhados como parte do funil de aquisição.",
+    icon: "/site/home/icone-medir.webp",
+    title: "Medir e evoluir",
+    sub: "Dados como ferramenta de decisão",
+    items: [
+      {
+        b: "Inteligência de Dados",
+        span: "Indicadores tratados como ferramenta de decisão, não apenas relatório.",
+      },
+      {
+        b: "E-mail Marketing",
+        span: "Relacionamento e conversão como parte do funil de aquisição.",
+      },
+    ],
   },
 ];
 
 export default function Solutions() {
-  const [active, setActive] = useState<number | null>(null);
-
   return (
-    <section id="solucoes" className="relative bg-ice-50 py-28 sm:py-36">
-      <div className="mx-auto max-w-[1400px] px-6 lg:px-10">
-        <div className="max-w-2xl mb-16">
-          <Reveal>
-            <p className="text-[12px] tracking-[0.3em] uppercase text-navy-500 mb-5">
-              Soluções
-            </p>
-            <h2 className="font-serif text-balance text-4xl sm:text-5xl lg:text-6xl leading-[1.1] text-navy-950">
-              Uma estratégia.
-              <span className="block text-navy-600">Diversos movimentos.</span>
-            </h2>
-          </Reveal>
+    <section className="lg-section" id="solucoes" data-score="1">
+      <div className="lg-in">
+        <div className="lg-head">
+          <span className="lg-eyebrow">Soluções</span>
+          <h2 className="lg-h2">Uma estratégia. Diversos movimentos.</h2>
         </div>
-
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-navy-950/10 rounded-2xl overflow-hidden">
-          {solutions.map((solution, i) => (
-            <m.button
-              key={solution.title}
-              type="button"
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-              onFocus={() => setActive(i)}
-              onBlur={() => setActive(null)}
-              onClick={() => setActive(active === i ? null : i)}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-10% 0px" }}
-              transition={{ duration: 0.6, delay: (i % 3) * 0.08 }}
-              className="group relative bg-ice-50 p-8 text-left min-h-[190px] flex flex-col justify-between overflow-hidden"
-            >
-              <span className="text-[11px] tracking-[0.2em] text-navy-400">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <div>
-                <h3 className="font-serif text-xl sm:text-2xl text-navy-950 mt-8 group-hover:text-navy-700 transition-colors">
-                  {solution.title}
-                </h3>
-                <m.p
-                  initial={false}
-                  animate={{
-                    height: active === i ? "auto" : 0,
-                    opacity: active === i ? 1 : 0,
-                  }}
-                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                  className="mt-3 text-sm text-navy-700/80 font-light leading-relaxed overflow-hidden"
-                >
-                  {solution.description}
-                </m.p>
+        <div className="lg-sol">
+          {COLUMNS.map((col) => (
+            <div key={col.title} className="lg-sol-col lg-card-look">
+              <div className="lg-top">
+                <img src={col.icon} alt="" width={64} height={64} loading="lazy" />
+                <div>
+                  <h3>{col.title}</h3>
+                  <span className="lg-sub">{col.sub}</span>
+                </div>
               </div>
-              <span
-                className="pointer-events-none absolute bottom-0 left-0 h-0.5 w-0 bg-navy-700 transition-all duration-500 group-hover:w-full"
-                aria-hidden="true"
-              />
-            </m.button>
+              <ul>
+                {col.items.map((item) => (
+                  <li key={item.b}>
+                    <b>{item.b}</b>
+                    <span>{item.span}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </div>
-
-        <Reveal delay={0.1}>
-          <p className="mt-14 text-center font-serif text-xl sm:text-2xl text-navy-800">
-            A ferramenta nunca vem antes da estratégia.
-          </p>
-        </Reveal>
+        <p className="lg-motto">A ferramenta nunca vem antes da estratégia.</p>
       </div>
     </section>
   );

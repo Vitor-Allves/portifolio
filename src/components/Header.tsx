@@ -1,19 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import Logo from "./Logo";
-import { NAV_ITEMS } from "@/lib/site-config";
+import ScoreBoard from "./ScoreBoard";
+import { NAV_ITEMS, ROUTES } from "@/lib/site-config";
 
 export default function Header() {
-  const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  const pathname = usePathname();
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
@@ -23,100 +19,86 @@ export default function Header() {
   }, [menuOpen]);
 
   return (
-    <>
-    <header
-      className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
-        scrolled
-          ? "bg-navy-950/80 backdrop-blur-xl border-b border-white/5 py-3"
-          : "bg-transparent py-6"
-      }`}
-    >
-      <div className="mx-auto max-w-[1400px] px-6 lg:px-10 flex items-center justify-between">
-        <a href="#inicio" className="shrink-0" aria-label="Legado Enterprise — início">
-          <Logo variant="light" />
-        </a>
+    <header className="lg-hd">
+      <div className="lg-in-wide">
+        <Link href="/" className="lg-hd-logo" aria-label="Legado Enterprise, início">
+          <Logo variant="navy" />
+        </Link>
 
-        <nav
-          className="hidden lg:flex items-center gap-9"
-          aria-label="Navegação principal"
-        >
+        <nav className="lg-hd-nav" aria-label="Menu">
           {NAV_ITEMS.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
-              className="text-[13px] tracking-[0.14em] uppercase text-silver-300 hover:text-white transition-colors duration-300 relative after:absolute after:-bottom-1.5 after:left-0 after:h-px after:w-0 after:bg-silver-400 after:transition-all after:duration-300 hover:after:w-full"
+              className={pathname === item.href ? "lg-cur" : ""}
             >
               {item.label}
-            </a>
+            </Link>
           ))}
         </nav>
 
-        <a
-          href="#contato"
-          className="group hidden lg:inline-flex items-center gap-2 bg-white text-navy-700 text-[13px] font-medium tracking-[0.12em] uppercase px-5 py-2.5 rounded-full hover:bg-silver-200 active:bg-silver-300 transition-colors duration-300"
-        >
+        <ScoreBoard />
+
+        <Link href={ROUTES.intelligenceLogin} className="lg-hd-enter">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+            <rect x="3" y="7" width="10" height="7" rx="1.5" />
+            <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+          </svg>
+          <span>Entrar no Intelligence</span>
+        </Link>
+
+        <Link href="/#contato" className="lg-btn lg-btn-metal lg-hd-talk">
           Vamos conversar
-          <span
-            className="inline-block transition-transform duration-300 group-hover:translate-x-1"
-            aria-hidden="true"
-          >
-            →
-          </span>
-        </a>
+        </Link>
 
         <button
           type="button"
-          className="lg:hidden text-silver-200 p-2"
-          aria-label={menuOpen ? "Fechar menu" : "Abrir menu"}
+          className="lg-burger"
           aria-expanded={menuOpen}
+          aria-controls="lg-drawer"
+          aria-label={menuOpen ? "Fechar menu" : "Abrir menu"}
           onClick={() => setMenuOpen((v) => !v)}
         >
-          <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
             {menuOpen ? (
-              <path
-                d="M6 6L20 20M20 6L6 20"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
+              <path d="M1 1l16 12M17 1L1 13" strokeLinecap="round" />
             ) : (
-              <>
-                <path d="M4 8H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <path d="M4 13H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <path d="M4 18H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </>
+              <path d="M1 1h16M1 7h16M1 13h16" strokeLinecap="round" />
             )}
           </svg>
         </button>
+
+        {menuOpen && (
+          <div id="lg-drawer" className="lg-drawer">
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="lg-drawer-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                {item.label}
+              </Link>
+            ))}
+            <div className="lg-btns">
+              <Link
+                href={ROUTES.intelligenceLogin}
+                onClick={() => setMenuOpen(false)}
+                className="lg-btn lg-btn-line"
+              >
+                Entrar no Intelligence
+              </Link>
+              <Link
+                href="/#contato"
+                onClick={() => setMenuOpen(false)}
+                className="lg-btn lg-btn-navy"
+              >
+                Vamos conversar
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </header>
-
-    {/* Rendered as a sibling of <header>, not a child: the header gets
-        backdrop-blur once scrolled, and a backdrop-filter on an ancestor
-        creates a new containing block for fixed-position descendants —
-        that silently shrank this panel to the header's own height instead
-        of the viewport whenever it was opened past the top of the page. */}
-    {menuOpen && (
-      <div className="lg:hidden fixed inset-0 top-[64px] z-50 bg-navy-950 px-6 py-10 flex flex-col gap-1 overflow-y-auto">
-        {NAV_ITEMS.map((item) => (
-          <a
-            key={item.href}
-            href={item.href}
-            onClick={() => setMenuOpen(false)}
-            className="text-2xl font-serif text-silver-100 py-4 border-b border-white/5"
-          >
-            {item.label}
-          </a>
-        ))}
-        <a
-          href="#contato"
-          onClick={() => setMenuOpen(false)}
-          className="mt-8 text-center bg-white text-navy-700 font-medium text-sm tracking-[0.12em] uppercase px-5 py-4 rounded-full active:bg-silver-300 transition-colors duration-300"
-        >
-          Vamos conversar
-        </a>
-      </div>
-    )}
-    </>
   );
 }

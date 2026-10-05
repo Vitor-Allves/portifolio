@@ -43,6 +43,8 @@ export const FOUNDERS = {
     initials: "JG",
     imageBase: "joao-guilherme",
     imageObjectPosition: "50% 15%",
+    quote:
+      "Eu acredito que grandes conquistas começam com pessoas, boas escolhas e constância. Busco evoluir todos os dias, tanto como profissional quanto como pessoa, construindo algo que gere valor hoje e que faça sentido lembrar amanhã.",
     bio: [
       "Formado em Administração de Empresas, com atuação relacionada a marketing digital e gestão de tráfego.",
       "Sua perspectiva combina administração, marketing, aquisição, performance, gestão e visão empresarial.",
@@ -59,6 +61,8 @@ export const FOUNDERS = {
     initials: "VS",
     imageBase: "vitor-santos",
     imageObjectPosition: "50% 10%",
+    quote:
+      "Eu acredito que crescer é uma consequência de fazer as coisas com propósito, disciplina e verdade. Gosto de transformar ideias em movimento, construir relações de confiança e saber que, de alguma forma, o meu trabalho contribuiu para a história de alguém.",
     bio: [
       "Trajetória profissional que combina liderança, gestão operacional, estratégia, análise de dados, performance e gestão de pessoas.",
       "Passou por diferentes níveis de operação e gestão, construindo uma visão orientada a processos, indicadores, pessoas, estratégia e resultado.",
@@ -67,12 +71,32 @@ export const FOUNDERS = {
   },
 };
 
+// Rotas do site v2 (Parte 1 do briefing). O painel /intelligence é uma
+// aplicação separada que não muda — só a tela de login ganha um bloco novo.
+export const ROUTES = {
+  home: "/",
+  metodo: "/metodo",
+  duo: "/titan-e-legacy",
+  privacy: "/privacidade",
+  intelligenceLogin: "/intelligence/login",
+};
+
 export const NAV_ITEMS = [
-  { label: "Início", href: "#inicio" },
-  { label: "Legado", href: "#legado" },
-  { label: "Match Point", href: "#match-point" },
-  { label: "Soluções", href: "#solucoes" },
-  { label: "Resultados", href: "#resultados" },
-  { label: "Sócios", href: "#socios" },
-  { label: "Contato", href: "#contato" },
+  { label: "Método", href: ROUTES.metodo },
+  { label: "Soluções", href: "/#solucoes" },
+  { label: "Intelligence", href: "/#intelligence" },
+  { label: "Titan & Legacy", href: ROUTES.duo },
+  { label: "Sobre", href: "/#sobre" },
+  { label: "Contato", href: "/#contato" },
 ];
+
+// wa.me links nunca mostram o número como texto visível (Parte 8) — só em
+// atributos href, atrás de ícones.
+export function waLink(message: string) {
+  return `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(message)}`;
+}
+
+export const WA_MESSAGES = {
+  contactForm: "Olá! Vim pelo site e quero conversar sobre minha empresa.",
+  loginPreamble: "Olá! Vim pela página do Legado Intelligence e quero conhecer a Legado.",
+};

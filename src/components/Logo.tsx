@@ -1,56 +1,33 @@
 import { BRAND } from "@/lib/site-config";
 
 type LogoProps = {
-  /** "light" = on a dark surface (header, footer, hero): the mark gets a
-   * light plate behind it, since the file itself is drawn in dark ink.
-   * "dark" = already on a light surface: render the file directly.
-   * "onDark" = a dark surface where a plate would be wrong (e.g. the
-   * Legado Intelligence dashboard's near-black background) — renders the
-   * pre-made white-ink export directly, no plate. */
-  variant?: "light" | "dark" | "onDark";
-  /** "sm" = compact header lockup. "lg" = larger institutional placement,
-   * e.g. the hero's first fold. */
+  /** "navy" = ink-blue mark (logo-legado-azul.svg), for light/silver
+   * surfaces — e.g. the v2 header. "white" = white mark
+   * (logo-legado-branco.svg), for dark surfaces — e.g. footer, hero, login.
+   * Both render the real SVG directly, full width/height, never boxed in a
+   * plate (Parte 2 do briefing proíbe explicitamente a logo numa placa
+   * branca). "onDark" is kept as-is for the existing Legado Intelligence
+   * panel (Parte 10: o painel não muda) — do not repoint its asset. */
+  variant?: "navy" | "white" | "onDark";
   size?: "sm" | "lg";
   className?: string;
 };
 
 const IMAGE_SIZE = {
-  sm: "h-12 sm:h-14",
+  sm: "h-10 sm:h-12",
   lg: "h-16 sm:h-20 lg:h-24",
 };
 
-const PLATE_PADDING = {
-  sm: "px-2 py-1.5",
-  lg: "px-4 py-3 sm:px-5 sm:py-3.5",
-};
-
-// This mark is never displayed past ~96px tall (the "lg" ceiling), so it's
-// served from small pre-sized WebP variants instead of the 1024px master
-// (195KB) that used to ship on every page load regardless of display size.
-const DISPLAY_SIZES = {
-  sm: "56px",
-  lg: "96px",
+const ASSET = {
+  navy: "/site/geral/logo-legado-azul.svg",
+  white: "/site/geral/logo-legado-branco.svg",
 };
 
 export default function Logo({
-  variant = "light",
+  variant = "navy",
   size = "sm",
   className = "",
 }: LogoProps) {
-  const image = (
-    <picture>
-      <img
-        src={BRAND.logoSmall320}
-        srcSet={`${BRAND.logoSmall160} 160w, ${BRAND.logoSmall320} 320w`}
-        sizes={DISPLAY_SIZES[size]}
-        alt="Legado Enterprise"
-        width={320}
-        height={320}
-        className={`${IMAGE_SIZE[size]} w-auto object-contain`}
-      />
-    </picture>
-  );
-
   if (variant === "onDark") {
     return (
       <img
@@ -63,15 +40,13 @@ export default function Logo({
     );
   }
 
-  if (variant === "dark") {
-    return <span className={className}>{image}</span>;
-  }
-
   return (
-    <span
-      className={`inline-flex items-center rounded-xl bg-white shadow-[0_2px_10px_-2px_rgba(4,7,12,0.35)] ${PLATE_PADDING[size]} ${className}`}
-    >
-      {image}
-    </span>
+    <img
+      src={ASSET[variant]}
+      alt="Legado Enterprise"
+      width={320}
+      height={320}
+      className={`${IMAGE_SIZE[size]} w-auto object-contain ${className}`}
+    />
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CONTACT } from "@/lib/site-config";
+import Link from "next/link";
+import { ROUTES, WA_MESSAGES, waLink } from "@/lib/site-config";
 
 const revenueOptions = [
   "Até R$ 50 mil/mês",
@@ -20,10 +21,6 @@ const objectiveOptions = [
   "Outro",
 ];
 
-const fieldClass =
-  "w-full rounded-lg border border-navy-700/20 bg-white px-4 py-3.5 text-sm text-navy-950 placeholder:text-navy-400 focus:border-navy-600 focus:outline-none transition-colors";
-const labelClass = "block text-[11px] tracking-[0.14em] uppercase text-navy-600 mb-2";
-
 function fallback(value: FormDataEntryValue | null) {
   const text = typeof value === "string" ? value.trim() : "";
   return text.length > 0 ? text : "Não informado";
@@ -41,22 +38,13 @@ function buildWhatsAppMessage(data: FormData) {
     "",
     `Nome: ${fallback(data.get("nome"))}`,
     "",
-    `Empresa: ${fallback(data.get("empresa"))}`,
-    "",
-    `Cargo: ${fallback(data.get("cargo"))}`,
-    "",
-    `E-mail: ${fallback(data.get("email"))}`,
-    "",
     `WhatsApp: ${fallback(data.get("whatsapp"))}`,
     "",
-    `Site / Instagram: ${fallback(data.get("site"))}`,
+    `Empresa: ${fallback(data.get("empresa"))}`,
     "",
     `Faturamento aproximado: ${fallback(data.get("faturamento"))}`,
     "",
     `Principal objetivo: ${fallback(data.get("objetivo"))}`,
-    "",
-    "Mensagem:",
-    fallback(data.get("mensagem")),
     "",
     "Origem:",
     "www.legadoenterprise.com.br",
@@ -76,20 +64,18 @@ export default function ContactForm() {
     const data = new FormData(form);
 
     const nome = String(data.get("nome") || "").trim();
-    const empresa = String(data.get("empresa") || "").trim();
-    const email = String(data.get("email") || "").trim();
     const whatsapp = String(data.get("whatsapp") || "").trim();
+    const empresa = String(data.get("empresa") || "").trim();
 
-    if (!nome || !empresa || !email || !whatsapp) {
-      setErrorMessage("Preencha nome, empresa, e-mail e WhatsApp antes de enviar.");
+    if (!nome || !whatsapp || !empresa) {
+      setErrorMessage("Preencha nome, WhatsApp e empresa antes de enviar.");
       return;
     }
 
     setErrorMessage(null);
 
     const message = buildWhatsAppMessage(data);
-    const url = `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(message)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.open(waLink(message), "_blank", "noopener,noreferrer");
 
     setSubmitted(true);
     form.reset();
@@ -97,70 +83,57 @@ export default function ContactForm() {
 
   if (submitted) {
     return (
-      <div className="rounded-2xl border border-navy-700/15 bg-white p-10 sm:p-14 text-center">
-        <p className="font-serif text-2xl sm:text-3xl text-navy-950">
-          Agradecemos seu interesse e entraremos em contato.
-        </p>
-        <p className="mt-3 text-navy-700/80 font-light">
-          Seu WhatsApp deve abrir com a mensagem pronta para envio — se isso não
-          acontecer, escreva diretamente para{" "}
-          <a
-            href={`https://wa.me/${CONTACT.whatsapp}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
+      <div className="lg-ok lg-card-look">
+        <div className="lg-pair">
+          <img
+            src="/site/home/form-enviado-titan.webp"
+            alt="Titan comemorando"
+            loading="lazy"
+          />
+          <img
+            src="/site/home/form-enviado-legacy.webp"
+            alt="Legacy comemorando"
+            loading="lazy"
+          />
+        </div>
+        <div>
+          <h3>Recebemos. Agora é com a gente.</h3>
+          <p>A equipe da Legado vai entrar em contato pelo WhatsApp informado.</p>
+          <button
+            type="button"
+            className="lg-btn lg-btn-line mt-4"
+            onClick={() => setSubmitted(false)}
           >
-            +55 15 99192-8585
-          </a>
-          .
-        </p>
+            Voltar ao formulário
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 gap-5" noValidate>
-      <div className="sm:col-span-1">
-        <label htmlFor="nome" className={labelClass}>
-          Nome
-        </label>
-        <input id="nome" name="nome" type="text" required className={fieldClass} />
+    <form onSubmit={handleSubmit} className="lg-form lg-card-look" noValidate>
+      <div className="lg-fld">
+        <label htmlFor="nome">Nome</label>
+        <input id="nome" name="nome" type="text" autoComplete="name" placeholder="Seu nome" />
       </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="empresa" className={labelClass}>
-          Empresa
-        </label>
-        <input id="empresa" name="empresa" type="text" required className={fieldClass} />
+      <div className="lg-fld">
+        <label htmlFor="whatsapp">WhatsApp</label>
+        <input
+          id="whatsapp"
+          name="whatsapp"
+          type="tel"
+          inputMode="tel"
+          placeholder="(15) 99999-9999"
+        />
       </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="cargo" className={labelClass}>
-          Cargo
-        </label>
-        <input id="cargo" name="cargo" type="text" className={fieldClass} />
+      <div className="lg-fld lg-fld-full">
+        <label htmlFor="empresa">Empresa</label>
+        <input id="empresa" name="empresa" type="text" placeholder="Nome da empresa" />
       </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="email" className={labelClass}>
-          E-mail
-        </label>
-        <input id="email" name="email" type="email" required className={fieldClass} />
-      </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="whatsapp" className={labelClass}>
-          WhatsApp
-        </label>
-        <input id="whatsapp" name="whatsapp" type="tel" required className={fieldClass} />
-      </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="site" className={labelClass}>
-          Site / Instagram da empresa
-        </label>
-        <input id="site" name="site" type="text" className={fieldClass} />
-      </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="faturamento" className={labelClass}>
-          Faturamento aproximado
-        </label>
-        <select id="faturamento" name="faturamento" className={fieldClass} defaultValue="">
+      <div className="lg-fld">
+        <label htmlFor="faturamento">Faturamento aproximado</label>
+        <select id="faturamento" name="faturamento" defaultValue="">
           <option value="" disabled>
             Selecione uma faixa
           </option>
@@ -171,11 +144,9 @@ export default function ContactForm() {
           ))}
         </select>
       </div>
-      <div className="sm:col-span-1">
-        <label htmlFor="objetivo" className={labelClass}>
-          Principal objetivo
-        </label>
-        <select id="objetivo" name="objetivo" className={fieldClass} defaultValue="">
+      <div className="lg-fld">
+        <label htmlFor="objetivo">Principal objetivo</label>
+        <select id="objetivo" name="objetivo" defaultValue="">
           <option value="" disabled>
             Selecione um objetivo
           </option>
@@ -186,32 +157,32 @@ export default function ContactForm() {
           ))}
         </select>
       </div>
-      <div className="sm:col-span-2">
-        <label htmlFor="mensagem" className={labelClass}>
-          Mensagem
-        </label>
-        <textarea
-          id="mensagem"
-          name="mensagem"
-          rows={4}
-          className={fieldClass}
-          placeholder="Conte um pouco sobre o momento atual da sua empresa."
-        />
-      </div>
+
+      <p className="lg-consent">
+        Ao enviar, você concorda com a{" "}
+        <Link href={ROUTES.privacy}>Política de privacidade</Link>.
+      </p>
 
       {errorMessage && (
-        <div className="sm:col-span-2">
-          <p className="text-sm text-red-700">{errorMessage}</p>
-        </div>
+        <p className="lg-fld-full text-sm text-red-700">{errorMessage}</p>
       )}
 
-      <div className="sm:col-span-2 mt-2">
-        <button
-          type="submit"
-          className="w-full sm:w-auto inline-flex items-center justify-center bg-navy-950 text-white text-sm tracking-[0.12em] uppercase font-medium px-10 py-4 rounded-full hover:bg-navy-800 transition-colors duration-300"
-        >
+      <div className="lg-send">
+        <button type="submit" className="lg-btn lg-btn-navy">
           Quero conversar sobre minha empresa
         </button>
+        <a
+          className="lg-wa-ico"
+          href={waLink(WA_MESSAGES.contactForm)}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Falar no WhatsApp"
+          title="Falar no WhatsApp"
+        >
+          <svg viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true">
+            <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3a.5.5 0 0 0 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.3 2.3 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z" />
+          </svg>
+        </a>
       </div>
     </form>
   );

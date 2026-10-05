@@ -1,37 +1,63 @@
-"use client";
-
-import Reveal from "./Reveal";
 import FounderCard from "./FounderCard";
 import { FOUNDERS } from "@/lib/site-config";
 
+const PRINCIPLES = [
+  {
+    title: "Verdade nos números",
+    text: "Mostramos o que aconteceu, inclusive o que não funcionou. Nenhum número sem contexto.",
+  },
+  {
+    title: "O negócio do cliente primeiro",
+    text: "Estratégia antes de ferramenta, sempre. Cada plano nasce da realidade de quem contrata.",
+  },
+  {
+    title: "Construir para durar",
+    text: "O nome é Legado: crescimento que fica, e não um pico de campanha.",
+  },
+  {
+    title: "Pessoas antes de processos",
+    text: "Por trás de cada estratégia existem pessoas, as do cliente e as nossas.",
+  },
+  {
+    title: "A palavra",
+    text: "Sinceridade e compromisso com o cliente. Falamos a verdade, mesmo quando ela não é a mais confortável, e cumprimos o que combinamos.",
+    isNew: true,
+  },
+];
+
 export default function Founders() {
   return (
-    <section id="socios" className="relative bg-ice-50 py-28 sm:py-36 overflow-hidden">
-      <div className="absolute inset-0 bg-marble-ice" aria-hidden="true" />
-      <div className="relative mx-auto max-w-[1400px] px-6 lg:px-10">
-        <div className="text-center max-w-2xl mx-auto mb-20">
-          <Reveal>
-            <p className="text-[12px] tracking-[0.3em] uppercase text-navy-500 mb-5">
-              Sócios
-            </p>
-            <h2 className="font-serif text-balance text-4xl sm:text-5xl lg:text-6xl leading-[1.1] text-navy-950">
-              Por trás da estratégia existem pessoas.
-            </h2>
-            <p className="mt-4 font-serif text-2xl sm:text-3xl text-navy-600 italic">
-              Duas perspectivas. Uma direção.
-            </p>
-          </Reveal>
+    <section className="lg-section" id="sobre" data-score="2">
+      <div className="lg-in">
+        <div className="lg-head">
+          <span className="lg-eyebrow">Princípios</span>
+          <h2 className="lg-h2">O que a Legado não deixa de fora</h2>
         </div>
-
-        <div className="grid sm:grid-cols-2 gap-16 sm:gap-10 items-start relative">
-          <FounderCard {...FOUNDERS.joao} name={FOUNDERS.joao.shortName} align="right" />
-          <FounderCard {...FOUNDERS.vitor} name={FOUNDERS.vitor.shortName} align="left" />
+        <div className="lg-prs">
+          {PRINCIPLES.map((p) => (
+            <div key={p.title} className={`lg-pr lg-card-look${p.isNew ? " lg-pr-new" : ""}`}>
+              <h3>{p.title}</h3>
+              <p>{p.text}</p>
+            </div>
+          ))}
         </div>
-
-        <div className="mt-14 flex justify-center">
-          <span className="rounded-full border border-navy-700/25 bg-white px-5 py-2.5 text-[11px] tracking-[0.16em] uppercase text-navy-600 whitespace-nowrap">
-            Estratégia + Execução
-          </span>
+        <div className="lg-founders">
+          <FounderCard
+            name={FOUNDERS.vitor.shortName}
+            role={FOUNDERS.vitor.role}
+            quote={FOUNDERS.vitor.quote}
+            initials={FOUNDERS.vitor.initials}
+            imageBase={FOUNDERS.vitor.imageBase}
+            imageObjectPosition={FOUNDERS.vitor.imageObjectPosition}
+          />
+          <FounderCard
+            name={FOUNDERS.joao.shortName}
+            role={FOUNDERS.joao.role}
+            quote={FOUNDERS.joao.quote}
+            initials={FOUNDERS.joao.initials}
+            imageBase={FOUNDERS.joao.imageBase}
+            imageObjectPosition={FOUNDERS.joao.imageObjectPosition}
+          />
         </div>
       </div>
     </section>

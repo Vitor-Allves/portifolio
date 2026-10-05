@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Manrope } from "next/font/google";
+import { Cinzel, Cormorant_Garamond, Manrope, Montserrat } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+import "./legado-v2.css";
 import { SITE_URL } from "@/lib/site-config";
 import MotionProvider from "@/components/MotionProvider";
 import WhatsAppFloatButton from "@/components/WhatsAppFloatButton";
 
+// Cormorant/Manrope stay loaded for the existing Legado Intelligence panel
+// (Part 10 of the v2 spec: the panel itself does not change). The public
+// marketing site below uses Cinzel/Montserrat exclusively.
 const cormorant = Cormorant_Garamond({
   variable: "--font-cormorant",
   subsets: ["latin"],
@@ -17,6 +21,20 @@ const manrope = Manrope({
   variable: "--font-manrope",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700", "800"],
+  display: "swap",
+});
+
+const cinzel = Cinzel({
+  variable: "--font-cinzel",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  display: "swap",
+});
+
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
   display: "swap",
 });
 
@@ -109,9 +127,9 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${cormorant.variable} ${manrope.variable} h-full antialiased`}
+      className={`${cormorant.variable} ${manrope.variable} ${cinzel.variable} ${montserrat.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-ice-50 text-navy-950">
+      <body className="min-h-full flex flex-col bg-paper text-ink font-body">
         <MotionProvider>{children}</MotionProvider>
         <WhatsAppFloatButton />
         <Script
