@@ -1,0 +1,394 @@
+﻿PROMPT ÚNICO — NOVO SITE DA LEGADO ENTERPRISE (www.legadoenterprise.com.br)
+(cole este texto inteiro e anexe a pasta "Pacote para o site")
+
+════════════════════════════════════════════════════════════
+ANEXOS (pasta "Pacote para o site")
+════════════════════════════════════════════════════════════
+- referencia/simulacao-site-legado (MODELO OFICIAL).html
+  Abra no navegador. A barra branca "SIMULAÇÃO", no topo, só serve para trocar de tela (Página inicial, Match Point, Titan & Legacy e Entrar no Intelligence). Ela NÃO faz parte do site. Todo o CSS, os textos e as animações estão dentro desse arquivo.
+- referencia/print-01-pagina-inicial.jpg, print-02-pagina-metodo.jpg, print-03-pagina-titan-e-legacy.jpg e print-04-login-intelligence.jpg (computador, 1440 px).
+- imagens/ (58 arquivos webp/svg), nas subpastas geral, home, metodo e titan-e-legacy (com titan/ e legacy/ dentro).
+  Salve em public/site/ mantendo exatamente as subpastas e os nomes.
+
+════════════════════════════════════════════════════════════
+REGRA DE OURO
+════════════════════════════════════════════════════════════
+- A simulação é a fonte da verdade do visual, dos textos, da ordem dos blocos e das animações. Abra-a, compare e reproduza. Se este texto e a simulação divergirem, vale este texto.
+- O Legado Intelligence (painel, dados, permissões e relatórios) NÃO muda. Só a tela de login dele ganha o bloco da Parte 7.
+- Não mude o destino dos envios do formulário de contato, o domínio, nem pixels e analytics que já existem.
+- Trabalhe na ordem das partes. Ao final, devolva a LISTA DE CONFERÊNCIA preenchida.
+
+════════════════════════════════════════════════════════════
+PARTE 1 — ESTRUTURA, ROTAS E MENU
+════════════════════════════════════════════════════════════
+Hoje o site é uma página única com âncoras. Passa a ter:
+
+ROTAS
+- /: página inicial, de rolagem, com os blocos da Parte 4.
+- /metodo: página do Match Point (Parte 5).
+- /titan-e-legacy: página da dupla (Parte 6).
+- /privacidade: política de privacidade (Parte 8). Hoje o link aponta para "#".
+- /intelligence: continua sendo o painel, com login em /intelligence/login.
+
+MENU (barra do topo)
+- Itens: Método (/metodo) · Soluções (/#solucoes) · Intelligence (/#intelligence) · Titan & Legacy (/titan-e-legacy) · Sobre (/#sobre) · Contato (/#contato).
+- Botões:
+  • "Entrar no Intelligence", com ícone de cadeado → /intelligence;
+  • "Vamos conversar" → /#contato.
+
+RODAPÉ
+- Logo branco e a frase "Seu negócio, nosso compromisso. / Seu legado, nossa missão."
+- Os mesmos itens do menu, numa linha.
+- Botão "Vamos conversar".
+- Ícones redondos de Instagram, LinkedIn e WhatsApp (só ícones).
+- Linha final: "© 2026 Legado Enterprise. Todos os direitos reservados." · "Entrar no Intelligence" · "Política de privacidade".
+- NÃO agrupe "Contato" debaixo de um título "Clientes": o contato é para quem ainda não é cliente.
+
+TÍTULO E DESCRIÇÃO DE CADA PÁGINA (SEO)
+- /: "Legado Enterprise | Estratégia, Inteligência e Crescimento Empresarial" (mantenha a descrição atual).
+- /metodo: "Match Point | O método da Legado Enterprise" — "Fundação, Validação, Otimização e Evolução: o método da Legado para conduzir empresas ponto a ponto até um crescimento contínuo."
+- /titan-e-legacy: "Titan & Legacy | A dupla da Legado" — "Conheça Titan e Legacy, os mascotes que representam o jeito Legado de trabalhar: estratégia e execução lado a lado."
+- /privacidade: "Política de privacidade | Legado Enterprise".
+
+════════════════════════════════════════════════════════════
+PARTE 2 — IDENTIDADE VISUAL (vale para o site inteiro)
+════════════════════════════════════════════════════════════
+FONTES
+- Cinzel (600/700) nos títulos e nos números do placar; Montserrat (400 a 800) nos textos.
+- Remova Cormorant Garamond e Manrope.
+
+CORES (use estes tokens)
+--navy #1F3A63; --navy-2 #152B4F; --deep #0B1526; --ink #13223D; --ice #A9C1E8; --silver #BFC3C9; --paper #F5F7FA; --line #DCE2EA; --muted #56657B
+--metal: linear-gradient(135deg, #FFFFFF 0%, #EEF1F5 38%, #D9DEE5 62%, #F7F8FA 100%)
+--brand-bg: radial-gradient(55% 60% at 82% 0%, rgba(169,193,232,.24), transparent 60%), repeating-linear-gradient(115deg, transparent 0 64px, rgba(191,195,201,.04) 64px 65px), linear-gradient(160deg, #1F3A63 0%, #152B4F 48%, #0B1526 100%)
+
+PRATA DA MARCA (tem que aparecer bastante)
+- Títulos das faixas escuras com degradê prateado.
+- Fundos claros com degradê prata, de #F7F8FA a #EAEDF1.
+- Um filete prateado de 26 px antes de cada subtítulo pequeno (eyebrow).
+- Borda metálica no topo do rodapé e no topo dos cartões de princípios.
+- Botões principais em prata metálico sobre fundo escuro e em azul-marinho sobre fundo claro.
+
+LOGO
+- Use imagens/geral/logo-legado-azul.svg na barra prateada e logo-legado-branco.svg nos fundos escuros.
+- Nunca coloque o logo dentro de um quadrado branco, como acontece hoje.
+
+NÚMEROS E TEXTOS
+- Números em Montserrat, com algarismos alinhados (font-variant-numeric: tabular-nums).
+- Todo texto em português. Hoje existe um "CLICKS" que deve virar "Cliques".
+
+════════════════════════════════════════════════════════════
+PARTE 3 — BARRA DO TOPO (fixa, prata escovada)
+════════════════════════════════════════════════════════════
+VISUAL
+- Fundo: linear-gradient(180deg, #FBFCFD 0%, #EEF1F5 46%, #DCE1E8 100%).
+- Borda inferior #C3C9D2, sombra 0 8px 24px rgba(11,21,38,.22) e brilho interno branco no topo.
+- Logo azul.
+- Itens do menu em azul-marinho, letras maiúsculas e espaçadas.
+- Botão "Entrar no Intelligence": contorno azul com cadeado. Botão "Vamos conversar": azul-marinho.
+
+PLACAR 15 · 30 · 40 · GAME (assinatura do site)
+- Quatro casas pequenas ao lado dos botões.
+- Cada seção da página tem um valor de 0 a 3. A casa da seção cujo topo passou de 45% da altura da tela fica acesa (azul com número branco), e as casas anteriores ficam marcadas. No fim da página, fica GAME.
+- Valores por página:
+  • Início: abertura e Quem é = 15; Match Point e Soluções = 30; Intelligence, Resultados, Manifesto, Princípios, Dupla e Para quem = 40; Contato = GAME.
+  • /metodo: abertura, "Por que" e etapa 15 = 15; etapa 30 = 30; etapa 40 = 40; etapa GAME, ciclo e final = GAME.
+  • /titan-e-legacy: abertura = 15; Titan = 30; Legacy e "Por que lobos" = 40; Dupla de tênis = GAME.
+
+TELAS MENORES
+- Até 1340 px: esconda "Vamos conversar" da barra.
+- Até 1100 px: o menu vira um botão de três linhas, que abre uma gaveta prateada logo abaixo da barra, com os links e os dois botões.
+- Até 640 px: "Entrar no Intelligence" vira só o ícone de cadeado.
+
+════════════════════════════════════════════════════════════
+PARTE 4 — PÁGINA INICIAL (blocos na ordem; textos exatos estão na simulação)
+════════════════════════════════════════════════════════════
+1) ABERTURA (fundo --brand-bg com linhas de quadra sutis)
+   - À esquerda:
+     • eyebrow "Estratégia · Inteligência · Crescimento";
+     • H1 "Empresas não precisam de mais ações. Precisam saber onde agir.", com a segunda frase em prata;
+     • o texto curto da simulação;
+     • botões "Vamos conversar" (→ #contato) e "Conhecer o método" (→ bloco Match Point).
+   - À direita:
+     • logo grande branco que se monta ao carregar: as barras sobem uma a uma e a seta entra na diagonal, cerca de 1,7 s no total, igual à simulação;
+     • ABAIXO do logo, Titan (esquerda, home/titan-apontando-logo.webp) e Legacy (direita, home/legacy-apontando-logo.webp) apontando para cima, para o logo.
+   - ATENÇÃO: os mascotes nunca encostam no logo nem ficam por cima dele. Eles acompanham o mouse de leve (parallax).
+   - Faixa inferior: "Estratégia + Inteligência + Execução = Evolução". No celular ela quebra linha, sem cortar texto.
+
+2) QUEM É A LEGADO
+   - Citação "Nós não começamos pelas ferramentas. Começamos pelo negócio." e "Crescer não é fazer mais. É escolher o próximo movimento certo."
+   - Dois parágrafos e os 6 pilares em grade.
+
+3) MATCH POINT NA QUADRA DE SAIBRO (destaque do site)
+   Título, sobre o fundo azul, acima da imagem:
+   - eyebrow "Não acreditamos em fórmulas. Criamos um método.";
+   - "MATCH POINT" grande, em Cinzel, com degradê prateado;
+   - "Ponto a ponto, como no tênis: cada etapa prepara a próxima."
+
+   Imagem:
+   - home/match-point-quadra-saibro.webp, com Titan e Legacy apertando as mãos na rede de uma quadra de saibro ao entardecer.
+   - Ocupa toda a largura, com proporção 1916:720, object-fit: cover e object-position: center bottom. Isso corta parte do céu e mantém a quadra inteira.
+   - ATENÇÃO: o TÍTULO e a QUADRA precisam aparecer JUNTOS na mesma tela em 1366×768 e em 1440×900, com a seção alinhada no topo logo abaixo da barra. Um nunca aparece sem o outro: se precisar, corte mais céu, nunca o saibro.
+
+   Etiquetas sobre o saibro:
+   - Quatro etiquetas prateadas, com o placar e o nome da etapa e SEM descrição, cada uma com uma pequena haste até um ponto de luz no saibro.
+   - Posições, em % da área da imagem recortada:
+     • 15 Fundação Estratégica: left 23%, top 90.9%;
+     • 30 Validação de Mercado: left 76%, top 77.9%;
+     • 40 Otimização Contínua: left 30%, top 65.8%;
+     • GAME Evolução Estratégica: left 68%, top 63.5%.
+
+   Animação:
+   - A bola (geral/bola-tenis.webp) sai do canto inferior esquerdo e quica em 15 → 30 → 40 → GAME, em arco, com cerca de 0,9 s de voo e 0,7 s de pausa em cada etapa.
+   - Quando a bola chega, a etiqueta acende com contorno amarelo-claro e o ponto de luz brilha.
+   - No fim, há uma pausa de 1,9 s, tudo apaga e o ciclo recomeça.
+
+   Abaixo da imagem:
+   - a frase "Cada movimento gera informação. Cada informação melhora a próxima decisão.";
+   - o botão "Ver o método completo" → /metodo.
+
+   Celular:
+   - O título fica acima.
+   - A imagem fica com 900 px de largura, dentro de uma faixa que desliza para o lado com o dedo.
+   - Abaixo da faixa, o aviso "Deslize para acompanhar o ponto →".
+
+4) SOLUÇÕES EM 3 FRENTES
+   - Entender (home/icone-entender.webp), Atrair (icone-atrair.webp) e Medir e evoluir (icone-medir.webp), com os 9 serviços e as descrições SEMPRE visíveis. Hoje a descrição só aparece ao passar o mouse.
+   - Frase final: "A ferramenta nunca vem antes da estratégia."
+
+5) LEGADO INTELLIGENCE (faixa azul)
+   - Texto "Seus números, em um só lugar." e três itens com ícones 3D:
+     • Indicadores (icone-indicadores.webp);
+     • Filtros (icone-filtros.webp);
+     • Relatórios (icone-relatorios.webp), com o texto "Relatório em PDF, pronto para baixar." Não cite versão simplificada nem técnica.
+   - Botões "Entrar no Intelligence" (→ /intelligence) e "Quero ter acesso" (→ #contato).
+   - À direita:
+     • cartão de painel com a etiqueta "DADOS DE EXEMPLO" e números fictícios, como na simulação;
+     • ao lado, a dupla home/intelligence-dupla.webp.
+   - A dupla nunca cobre números.
+
+6) RESULTADOS
+   - Números já prontos no HTML. Hoje eles começam em "R$ 0,00" e "0" e só sobem com a animação, e o Google lê os zeros.
+   - Título do caso: "R$ 1.154,59 investidos. R$ 65.694,12 em vendas." e "Para cada R$ 1 investido, voltaram R$ 56,90 em vendas (ROAS de 56,9x)."
+   - Métricas: 21 compras; R$ 54,98 de custo por compra; 164.646 impressões; 70.329 pessoas alcançadas; 1.710 cliques.
+   - Crie os campos "Segmento" e "Período" do caso. Enquanto estiverem vazios, NÃO mostre as etiquetas.
+   - Mantenha o aviso "Resultados de campanhas anteriores…".
+
+7) MANIFESTO (faixa azul)
+   As três frases "Mais campanha…", "Mais ferramenta…" e "Mais investimento…", e "Clareza muda o jogo." em prata.
+
+8) PRINCÍPIOS E SÓCIOS (id "sobre")
+   Título: "O que a Legado não deixa de fora". Cinco cartões, cada um com filete prateado no topo:
+   - Verdade nos números: "Mostramos o que aconteceu, inclusive o que não funcionou. Nenhum número sem contexto."
+   - O negócio do cliente primeiro: "Estratégia antes de ferramenta, sempre. Cada plano nasce da realidade de quem contrata."
+   - Construir para durar: "O nome é Legado: crescimento que fica, e não um pico de campanha."
+   - Pessoas antes de processos: "Por trás de cada estratégia existem pessoas, as do cliente e as nossas."
+   - A palavra: "Sinceridade e compromisso com o cliente. Falamos a verdade, mesmo quando ela não é a mais confortável, e cumprimos o que combinamos."
+
+   Sócios: use as FOTOS ATUAIS do site, nome, cargo e estas frases, exatamente:
+   - Vitor Santos — Sócio-fundador & CGO — "Eu acredito que crescer é uma consequência de fazer as coisas com propósito, disciplina e verdade. Gosto de transformar ideias em movimento, construir relações de confiança e saber que, de alguma forma, o meu trabalho contribuiu para a história de alguém."
+   - João Guilherme — Sócio-fundador & CEO — "Eu acredito que grandes conquistas começam com pessoas, boas escolhas e constância. Busco evoluir todos os dias, tanto como profissional quanto como pessoa, construindo algo que gere valor hoje e que faça sentido lembrar amanhã."
+
+9) A DUPLA DA LEGADO (faixa azul)
+   - Texto curto e o botão "Conhecer a dupla" → /titan-e-legacy.
+   - Titan e Legacy com a raquete no ombro: home/dupla-titan-capitao.webp e home/dupla-legacy-capitao.webp.
+
+10) PARA QUEM É + CHAMADA FINAL
+   - A lista de 6 itens com marcadores.
+   - Cartão azul "Qual é o próximo movimento da sua empresa?", com o Legacy apontando para quem lê (home/legacy-apontando-voce.webp).
+
+11) CONTATO
+   - Título "Antes da estratégia, precisamos entender o cenário."
+   - Formulário com 5 campos: Nome, WhatsApp, Empresa, Faturamento aproximado e Principal objetivo. Os dois últimos mantêm as opções de hoje.
+   - Os campos que saíram da tela (Cargo, E-mail, Site/Instagram e Mensagem) não podem quebrar o envio atual. Se o destino exigir algum deles, mantenha-o opcional.
+   - Texto "Ao enviar, você concorda com a Política de privacidade" (link para /privacidade).
+   - Botão "Quero conversar sobre minha empresa" e, ao lado, um ícone redondo do WhatsApp, sem número.
+   - Depois do envio: "Recebemos. Agora é com a gente.", com Titan e Legacy comemorando (home/form-enviado-titan.webp e form-enviado-legacy.webp).
+
+════════════════════════════════════════════════════════════
+PARTE 5 — PÁGINA /metodo (Match Point)
+════════════════════════════════════════════════════════════
+A) ABERTURA
+   - Fundo metodo/abertura-estadio-noite.webp cobrindo a seção (altura mínima de 560 px no computador), com escurecimento azul em cima e embaixo.
+   - Textos: eyebrow "O método da Legado"; "MATCH POINT" enorme, em prata; e o texto da simulação.
+   - Placar clicável, em estilo placar (azul com moldura prata): 15 Fundação · 30 Validação · 40 Otimização · GAME Evolução. Cada casa rola até a etapa correspondente.
+
+B) FAIXA DE REDE
+   Logo abaixo da abertura:
+   - altura de 46 px, com malha em diagonal sobre azul-escuro;
+   - fita branca de 7 px no topo;
+   - postes prateados nas duas pontas.
+
+C) POR QUE O PLACAR DO TÊNIS? (fundo claro prateado)
+   - Título "Ninguém fecha um game com um golpe só." e o placar físico (metodo/placar-tenis.webp).
+   - Três cartões:
+     • bola (geral/bola-tenis.webp), "Ponto a ponto";
+     • raquete (metodo/raquete-tenis.webp), "Cada ponto prepara o próximo";
+     • troféu (metodo/trofeu.webp), "Depois do GAME, um novo game".
+
+D) AS 4 ETAPAS, CADA UMA COMO UMA CENA DE CINEMA
+   Cada etapa ocupa praticamente uma tela (cerca de 780 px no computador), com:
+   - imagem de fundo própria cobrindo a seção, escurecida do lado do texto;
+   - texto de um lado e mascote GRANDE do outro (cerca de 82% da altura da seção), alternando os lados;
+   - número gigante translúcido, com contorno prateado, atrás do mascote;
+   - ATENÇÃO: dentro do bloco de texto, logo acima do nome da etapa, o PLACAR DA ETAPA (15, 30, 40 ou GAME) grande e bem visível, em prata (64 a 96 px). O cliente precisa enxergar o número;
+   - texto, nesta ordem: eyebrow ("Etapa 01 · Fundação"…), placar, nome, objetivo, parágrafo, itens em pílulas, quadro "Por que somos diferentes" (vidro com borda prata) e quadro "O que você decide aqui";
+   - ao rolar, fundo, número e mascote se movem em velocidades levemente diferentes (parallax suave).
+
+   As quatro etapas (imagens em imagens/metodo/):
+   • 15 · FUNDAÇÃO
+     – Imagens: fundo etapa-15-fundacao.webp; mascote etapa-15-titan-capitao.webp, à direita.
+     – Objetivo: "Entender o jogo antes de executar."
+     – Parágrafo: "Antes de qualquer anúncio, a Legado lê o negócio: o mercado, quem é o cliente ideal, o que a empresa oferece e como ela se posiciona. Dessa leitura sai o plano de aquisição."
+     – Itens: Diagnóstico · Mercado · ICP · Oferta · Posicionamento · Plano de aquisição.
+     – Diferente: "Estratégia personalizada: nenhuma empresa recebe uma estratégia simplesmente replicada de outro negócio."
+     – Decide: "Para quem vender, o que oferecer e por onde começar."
+   • 30 · VALIDAÇÃO
+     – Imagens: fundo etapa-30-validacao.webp; mascote etapa-30-legacy-voleio.webp, à esquerda.
+     – Objetivo: "Colocar hipóteses em contato com o mercado."
+     – Parágrafo: "O plano vai para a quadra. Campanhas e testes mostram o que o mercado responde de verdade, e o que não funciona é ajustado rápido."
+     – Itens: Implementação · Testes · Campanhas · Leitura de mercado · Validação · Otimizações.
+     – Diferente: "Evolução contínua: testar, aprender, ajustar e evoluir, em vez de apostar tudo de uma vez."
+     – Decide: "O que funciona no seu mercado e o que precisa mudar."
+   • 40 · OTIMIZAÇÃO
+     – Imagens: fundo etapa-40-otimizacao.webp; mascote etapa-40-titan-tablet.webp, à direita e mais encostado na borda, para não esconder o desenho da quadra.
+     – Objetivo: "Usar dados para melhorar decisões."
+     – Parágrafo: "Com números reais na mesa, cada real investido passa a ser acompanhado. Os indicadores mostram onde vale colocar mais esforço e onde cortar."
+     – Itens: Performance · Inteligência de dados · Análise de indicadores · Otimização · Plano de evolução.
+     – Diferente: "Decisões orientadas por dados, com transparência: o cliente acompanha os indicadores no Legado Intelligence" (com link para /intelligence).
+     – Decide: "Onde colocar mais esforço e investimento."
+   • GAME · EVOLUÇÃO
+     – Imagens: fundo etapa-game-evolucao.webp; mascote etapa-game-legacy-comemorando.webp, à esquerda, menor e na borda, para o troféu aparecer.
+     – Objetivo: "Transformar aprendizados em novos movimentos de crescimento."
+     – Parágrafo: "O que foi aprendido vira estratégia: novas oportunidades, expansão e revisões periódicas do plano. Um game fechado é o começo do próximo."
+     – Itens: Gestão estratégica · Crescimento · Novas oportunidades · Expansão · Revisões estratégicas.
+     – Diferente: "Método próprio: o Match Point conduz a estratégia por etapas claras, e cada game fechado abre o próximo."
+     – Decide: "Quais são os próximos movimentos de crescimento."
+
+E) CICLO
+   - "Evolução contínua": "Cada movimento gera informação. Cada informação melhora a próxima decisão."
+   - Diagrama circular 15 → 30 → 40 → GAME → 15, com setas prateadas e o troféu (metodo/trofeu.webp) no centro.
+
+F) FINAL
+   - Fundo do estádio (abertura-estadio-noite.webp).
+   - Titan (etapa-15-titan-capitao) à esquerda e Legacy (etapa-game-legacy-comemorando) à direita, grandes.
+   - No centro, "Em que ponto está a sua empresa?" e o botão "Vamos conversar" → /#contato.
+
+CELULAR
+- Cada cena vira um bloco: texto em cima e mascote embaixo, com cerca de 380 px de altura.
+- O número gigante fica menor, no canto.
+- O placar da etapa continua visível acima do nome.
+
+════════════════════════════════════════════════════════════
+PARTE 6 — PÁGINA /titan-e-legacy
+════════════════════════════════════════════════════════════
+A) ABERTURA (fundo azul)
+   - "A dupla da Legado" e "TITAN & LEGACY" enorme.
+   - Texto: "Dois lobos, uma alcateia…"
+   - Lado a lado, as versões mais elegantes:
+     • Titan de smoking (titan-e-legacy/abertura-titan-smoking.webp), com a placa "TITAN · O estrategista";
+     • Legacy de sobretudo (abertura-legacy-sobretudo.webp), com a placa "LEGACY · O construtor de legado".
+   - Parallax leve com o mouse.
+
+B) TITAN (fundo claro)
+   - Carrossel automático com as 14 versões da pasta titan/, em ordem numérica, cada uma com legenda.
+   - Legendas, na ordem: No saque · Capitão do time · De gola alta · No palco · De smoking, com o troféu · No quadro de estratégia · Com o tablet · Na poltrona · No dia a dia · Apontando o caminho · Ao telefone · Pensando o jogo · De smoking · Na selfie.
+   - Comportamento: troca a cada 2,6 s; pausa com o mouse em cima; setas e pontinhos para navegar.
+   - Ao lado: "Titan · lobo preto", "O estrategista", o texto, as qualidades (Visão de dono, Decisão com dados, Firmeza) e a linha do Match Point.
+
+C) LEGACY (faixa azul)
+   - Mesmo carrossel, com as 12 versões da pasta legacy/.
+   - Legendas, na ordem: Comemorando o ponto · Capitão do time · Apontando para você · No microfone · No notebook · A caminho · No megafone · Com as pastas · Aplaudindo · Comemorando · Pensativo · No celular.
+   - Texto "O construtor de legado", qualidades (Relacionamento, Constância, Execução) e a frase "De terno, de gola alta, de jeans ou de roupa de tênis: a dupla muda de roupa, nunca de caráter."
+
+D) "POR QUE LOBOS?"
+   Três cartões: Cada um tem um papel · Junto com o cliente · Lealdade à alcateia.
+
+E) "UMA DUPLA DE TÊNIS"
+   - Texto e os 4 cartões "Onde você encontra a dupla".
+   - Botão "Quero jogar com a dupla" → /#contato.
+
+════════════════════════════════════════════════════════════
+PARTE 7 — TELA DE LOGIN DO INTELLIGENCE (/intelligence/login)
+════════════════════════════════════════════════════════════
+- Mantenha a tela como está hoje: logo, mascotes, formulário e o texto "Primeiro acesso ou sem permissão…".
+- ACRESCENTE, logo abaixo do formulário, um bloco de vidro com borda prata:
+  • Título: "Ainda não é parceiro da Legado?"
+  • Texto: "O Legado Intelligence é a área exclusiva de quem trabalha com a Legado. Se você quer acompanhar os números da sua empresa assim, o primeiro passo é uma conversa."
+  • Botão "Falar com a Legado" → https://wa.me/5515991928585?text=Ol%C3%A1!%20Vim%20pela%20p%C3%A1gina%20do%20Legado%20Intelligence%20e%20quero%20conhecer%20a%20Legado.
+  • Botão "Conhecer a Legado" → https://www.legadoenterprise.com.br/
+- No celular, o bloco fica abaixo do formulário.
+
+════════════════════════════════════════════════════════════
+PARTE 8 — WHATSAPP, PRIVACIDADE E CORREÇÕES DO SITE ATUAL
+════════════════════════════════════════════════════════════
+WHATSAPP
+- O número NUNCA aparece escrito na tela. Só ícones:
+  • botão flutuante redondo verde, no canto inferior direito;
+  • ícone ao lado do botão de enviar do formulário;
+  • ícone no rodapé.
+- Links:
+  • site: https://wa.me/5515991928585?text=Ol%C3%A1!%20Vim%20pelo%20site%20e%20quero%20conversar%20sobre%20minha%20empresa.
+  • login: o link da Parte 7.
+- O botão flutuante some quando a seção de contato está visível e também na página de login. No celular, ele não pode cobrir nenhum botão.
+
+/privacidade
+- Crie a página com uma política clara, de acordo com a LGPD:
+  • quais dados o formulário coleta (nome, WhatsApp, empresa, faturamento e objetivo);
+  • para que servem;
+  • com quem são compartilhados;
+  • por quanto tempo ficam guardados;
+  • os direitos do titular;
+  • como pedir a exclusão.
+- Mostre o texto para a Legado aprovar ANTES de publicar.
+
+CORREÇÕES QUE PRECISAM SAIR NESTA VERSÃO
+- Link "Política de privacidade" funcionando (hoje aponta para "#").
+- Números dos resultados visíveis no HTML, sem começar do zero.
+- "Clicks" → "Cliques".
+- Logo do topo sem o quadrado branco.
+- Descrições das soluções sempre visíveis.
+
+════════════════════════════════════════════════════════════
+PARTE 9 — ANIMAÇÃO, DESEMPENHO E ACESSIBILIDADE
+════════════════════════════════════════════════════════════
+- Respeite prefers-reduced-motion. Nesse caso:
+  • logo já montado;
+  • etiquetas do Match Point todas acesas e sem a bola;
+  • sem parallax;
+  • carrosséis parados, mas com setas.
+- Use as imagens webp do pacote, com largura e altura definidas, para a página não pular durante o carregamento.
+- Imagens abaixo da primeira tela com loading="lazy".
+- Prioridade (eager) para a abertura da página inicial, a quadra de saibro e a abertura do método.
+- Use os textos alternativos (alt) da simulação. Foco visível em botões e links.
+- Fontes com display: swap.
+- O site não pode rolar para o lado em nenhuma largura. A única exceção é a faixa da quadra de saibro no celular, que rola sozinha.
+
+════════════════════════════════════════════════════════════
+PARTE 10 — O QUE NÃO PODE MUDAR
+════════════════════════════════════════════════════════════
+- O Legado Intelligence (só o login recebe o bloco da Parte 7).
+- O destino dos envios do formulário, o domínio, os pixels e o analytics.
+- As fotos atuais dos sócios.
+
+════════════════════════════════════════════════════════════
+LISTA DE CONFERÊNCIA (responda cada item com "ok" ou com o problema)
+════════════════════════════════════════════════════════════
+[ ] As rotas /, /metodo, /titan-e-legacy e /privacidade abrem. Os itens do menu e do rodapé levam ao lugar certo, inclusive "Entrar no Intelligence" → /intelligence.
+[ ] Fontes: Cinzel e Montserrat. Nenhum texto em Cormorant ou Manrope.
+[ ] A barra do topo é prateada, com logo azul, e o placar 15·30·40·GAME acompanha a rolagem nas três páginas.
+[ ] Abertura: o logo se monta e os mascotes ficam abaixo dele, sem encostar.
+[ ] Match Point (início): em 1366×768 e em 1440×900, o título "MATCH POINT" e a quadra de saibro aparecem juntos na mesma tela.
+[ ] Match Point (início): as 4 etiquetas ficam sobre o saibro, sem descrição; a bola percorre 15→30→40→GAME e cada etiqueta acende.
+[ ] Match Point (celular): a faixa desliza para o lado, sem fazer a página inteira rolar para o lado.
+[ ] /metodo: as 4 cenas têm imagens diferentes, mascotes grandes e o placar da etapa (15, 30, 40, GAME) bem visível acima de cada nome.
+[ ] /titan-e-legacy: os dois carrosséis giram sozinhos, pausam com o mouse e mostram todas as versões com legenda.
+[ ] Login: o bloco "Ainda não é parceiro da Legado?" aparece e os dois botões funcionam.
+[ ] Buscando "99192" no texto visível de todas as páginas, não aparece nada: o número do WhatsApp não está escrito em lugar nenhum.
+[ ] O formulário com 5 campos envia para o mesmo destino de hoje e mostra a mensagem com os mascotes.
+[ ] Os números dos resultados aparecem prontos no HTML, e está escrito "Cliques".
+[ ] O link de /privacidade funciona e o texto foi aprovado pela Legado.
+[ ] Em 375 px de largura, nenhuma página rola para o lado.
+[ ] Com prefers-reduced-motion ativado, nada fica escondido.
+[ ] O Legado Intelligence (painel) continua funcionando igual.
+[ ] Conferido na URL de PRODUÇÃO (www.legadoenterprise.com.br), não só na prévia.
