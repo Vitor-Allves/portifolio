@@ -3,7 +3,7 @@ import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { isFullAdmin, type SessionScope } from "@/lib/session-scope";
 import { isActionAllowed } from "@/lib/client-permissions";
 import { createReportTemplate, listReportTemplates } from "@/lib/report-templates";
-import { sanitizeReportFilters } from "@/lib/report-templates-types";
+import { sanitizeReportFilters, sanitizeReportType, sanitizeTemplateIndicators } from "@/lib/report-templates-types";
 import { DbConfigError } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
   }
 
-  let body: { name?: unknown; filters?: unknown };
+  let body: { name?: unknown; filters?: unknown; reportType?: unknown; indicators?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -55,6 +55,8 @@ export async function POST(req: NextRequest) {
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const filters = sanitizeReportFilters(body.filters);
+  const reportType = sanitizeReportType(body.reportType);
+  const indicators = sanitizeTemplateIndicators(body.indicators);
 
   if (!name) {
     return NextResponse.json({ error: "Informe o nome do modelo." }, { status: 400 });
@@ -64,8 +66,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { id } = await createReportTemplate(name, filters);
-    return NextResponse.json({ id, name, filters });
+    const { id } = await createReportTemplate(name, filters, reportType, indicators);
+    return NextResponse.json({ id, name, filters, reportType, indicators });
   } catch (err) {
     if (err instanceof DbConfigError) {
       return NextResponse.json({ error: DB_NOT_CONFIGURED_MESSAGE }, { status: 503 });

@@ -4,6 +4,7 @@
 // pulling in the server-only module itself.
 
 import { isValidDatePreset, isValidDateRange, type Period } from "./meta-ads-types";
+import { sanitizeIndicatorIds, type ReportIndicatorId, type ReportType } from "./report-indicators";
 
 /** What a saved report template applies. `null` on any id list means "no restriction" — resolved against whatever's available at generation time, never a frozen snapshot of today's ids. */
 export type ReportFilters = {
@@ -20,6 +21,9 @@ export type ReportTemplateSummary = {
   id: string;
   name: string;
   filters: ReportFilters;
+  reportType: ReportType;
+  /** null = saved before indicator selection existed — resolves to the generating viewer's own default selection, same as before this field existed. */
+  indicators: ReportIndicatorId[] | null;
   createdAt: string;
 };
 
@@ -63,4 +67,14 @@ export function sanitizeReportFilters(input: unknown): ReportFilters | null {
     objectiveIds: sanitizeIdList(obj.objectiveIds),
     statusIds: sanitizeIdList(obj.statusIds),
   };
+}
+
+export function sanitizeReportType(input: unknown): ReportType {
+  return input === "simplificado" ? "simplificado" : "tecnico";
+}
+
+/** null stays null (template saved before this existed) — anything else sanitizes to a (possibly empty) valid id list. */
+export function sanitizeTemplateIndicators(input: unknown): ReportIndicatorId[] | null {
+  if (input === null || input === undefined) return null;
+  return sanitizeIndicatorIds(input);
 }

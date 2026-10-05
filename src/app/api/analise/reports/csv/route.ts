@@ -4,13 +4,14 @@ import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { isFullAdmin } from "@/lib/session-scope";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
 import { resolveRecipient, isRecipientError, buildAllowedColumns, applyHiddenFilters, fetchFilteredReportData } from "@/lib/report-data";
+import { resolveReportClients } from "@/lib/client-access";
 import { objectiveLabel, statusLabel, ctaLabel, qualityRankingLabel } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import { ctr, cpc, cpm, costPerConversation, roas, sumTotals, type Totals } from "@/lib/metrics";
 import { rowsToCsv } from "@/lib/csv";
 import type { AdInsight, AdSetInsight, CampaignInsight } from "@/lib/meta-ads-types";
 import type { AllowedColumns } from "@/lib/pdf-report-core";
-import { isActionAllowed, type CampaignColumnId } from "@/lib/client-permissions";
+import { isActionAllowed, resolveReportSettings, type CampaignColumnId, type ReportSettingsRoleKind } from "@/lib/client-permissions";
 import { writeAudit } from "@/lib/audit-log";
 
 export const runtime = "nodejs";
@@ -35,6 +36,11 @@ type RequestBody = {
 
 function isAllowed(allowed: AllowedColumns, id: CampaignColumnId): boolean {
   return allowed.has(id);
+}
+
+function roleKindFor(scope: { kind: "staff" | "client"; role?: string }): ReportSettingsRoleKind {
+  if (scope.kind === "client") return "client";
+  return (scope.role as ReportSettingsRoleKind) ?? "analista";
 }
 
 function metricCell(id: CampaignColumnId, totals: Totals): string | null {
@@ -337,12 +343,29 @@ export async function POST(req: NextRequest) {
   const allowedColumns = buildAllowedColumns(recipient.permissions);
 
   try {
-    const { freshData, filteredCampaigns, scopedAdSets, selectedAdSetIds, rawNameById } = await fetchFilteredReportData(effectiveFilters, recipient);
+    const { freshData, filteredCampaigns, scopedAdSets, selectedAdSetIds, resolvedAccountIds, rawNameById } = await fetchFilteredReportData(
+      effectiveFilters,
+      recipient
+    );
     // Only a full admin's own unrestricted export ("Visão administrativa
     // completa", never one scoped to a named client) gets the original,
     // un-stripped Meta names alongside the cleaned display name.
     const originalCampaignNameById = recipient.isClientScoped ? null : rawNameById.campaigns;
     const originalAdNameById = recipient.isClientScoped ? null : rawNameById.ads;
+
+    // Same client-name rule as the PDF route (Parte 2): the file is named
+    // after the business the export actually covers, never the viewer's own
+    // identity nor a bare "mais de um cliente" fallback label.
+    const reportSettings = resolveReportSettings(scope.permissions, roleKindFor(scope));
+    const clientResolution = await resolveReportClients(resolvedAccountIds);
+    if (clientResolution.kind === "multiple" && !reportSettings.canMultiClient) {
+      return NextResponse.json(
+        { error: "Seu usuário não pode gerar exportações com mais de um cliente (múltiplas contas). Restrinja o filtro de contas a um único cliente." },
+        { status: 403 }
+      );
+    }
+    const resolvedClientLabel = clientResolution.kind === "single" ? clientResolution.client.label : null;
+    const isMultiClient = clientResolution.kind === "multiple";
     let csv: string;
     let kindSlug: string;
     if (kind === "campaigns") {
@@ -360,7 +383,7 @@ export async function POST(req: NextRequest) {
       kindSlug = "criativos-e-qualidade";
     }
 
-    const recipientSlug = slugify(recipient.label ?? "consolidado");
+    const recipientSlug = isMultiClient ? "multiplas-contas" : slugify(resolvedClientLabel ?? "consolidado");
     const fileName = `${kindSlug}_${recipientSlug}_${effectiveFilters.period.kind === "custom" ? `${effectiveFilters.period.range.since}_a_${effectiveFilters.period.range.until}` : effectiveFilters.period.preset}.csv`;
 
     await writeAudit({
@@ -369,7 +392,7 @@ export async function POST(req: NextRequest) {
       actorKind: scope.kind === "staff" ? "admin" : "client",
       action: "report.generate",
       targetType: "report",
-      targetLabel: recipient.label ?? "Interno",
+      targetLabel: isMultiClient ? "Múltiplas contas" : resolvedClientLabel ?? "Interno",
       metadata: { format: "csv", kind, recipientClientId },
     });
 

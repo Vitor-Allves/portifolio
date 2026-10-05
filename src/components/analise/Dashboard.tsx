@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { m, type Variants } from "framer-motion";
 import type { AdSetInsight, CampaignInsight, DashboardData, Period } from "@/lib/meta-ads-types";
-import type { ClientPermissions } from "@/lib/client-permissions";
+import type { ClientPermissions, ResolvedReportSettings } from "@/lib/client-permissions";
+import type { ReportIndicatorId } from "@/lib/report-indicators";
 import { objectiveLabel, statusLabel, buildDisplayNameMap } from "@/lib/campaign-labels";
 import { formatCurrencyBRL, formatInteger, formatPercent } from "@/lib/format";
 import {
@@ -56,6 +57,10 @@ type DashboardProps = {
   dbConfigured: boolean;
   /** This viewer's named consultant contact, if their client has one configured — null falls back to Legado's general WhatsApp number. Always null for a staff/admin viewer (no single client bound to that session). */
   consultant: ConsultantInfo | null;
+  /** This viewer's resolved report permissions (types allowed, can build/include internal/multi-client, default indicators) — see client-permissions.ts's resolveReportSettings, computed server-side from the session's own role/permissions. */
+  reportSettings: ResolvedReportSettings;
+  /** The global "uso interno" flag list (admin-set, see internal-indicators.ts) — which indicator ids the Montar relatório drawer must show locked/with a warning. */
+  internalIndicatorIds: ReportIndicatorId[];
 };
 
 const fadeUp: Variants = {
@@ -131,7 +136,17 @@ function sparklineFor(
   });
 }
 
-export default function Dashboard({ initialData, isAdmin, isInternal, clientLabel, clientPermissions, dbConfigured, consultant }: DashboardProps) {
+export default function Dashboard({
+  initialData,
+  isAdmin,
+  isInternal,
+  clientLabel,
+  clientPermissions,
+  dbConfigured,
+  consultant,
+  reportSettings,
+  internalIndicatorIds,
+}: DashboardProps) {
   const hiddenFilterIds = useMemo(() => new Set<string>(clientPermissions?.hiddenFilters ?? []), [clientPermissions]);
   const hiddenColumnIds = useMemo(() => new Set<string>(clientPermissions?.hiddenColumns ?? []), [clientPermissions]);
   const hiddenSectionIds = useMemo(() => new Set<string>(clientPermissions?.hiddenSections ?? []), [clientPermissions]);
@@ -330,6 +345,43 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
     () => resolveIdFilter(accountFilter, accountOptions.map((o) => o.id)),
     [accountFilter, accountOptions]
   );
+
+  // Who every "Falar com meu consultor" button and the report filename
+  // preview should say this is ABOUT, for the current account-filter
+  // selection — never the viewer's own display identity. A client session
+  // always resolves to exactly its own company (no fetch needed — clientLabel
+  // is already that). A staff session resolves server-side from the Meta
+  // account ids actually in view, mirroring BudgetCard's own
+  // fetch-on-accountIds-change pattern.
+  const [reportClientLabel, setReportClientLabel] = useState<string | null>(clientLabel);
+  const [reportIsMultiClient, setReportIsMultiClient] = useState(false);
+  useEffect(() => {
+    // clientLabel is already correct and never changes for a client
+    // session — only a staff session needs this reactive, server-resolved
+    // fetch as its account filter changes.
+    if (!isInternal) return;
+    let cancelled = false;
+    const qs = accountIds.size > 0 ? `?accountIds=${[...accountIds].map(encodeURIComponent).join(",")}` : "";
+    (async () => {
+      try {
+        const res = await fetch(`/api/analise/report-client-label/${qs}`);
+        if (!res.ok) throw new Error("failed");
+        const body = (await res.json()) as { label: string | null; isMultiClient: boolean };
+        if (!cancelled) {
+          setReportClientLabel(body.label);
+          setReportIsMultiClient(body.isMultiClient);
+        }
+      } catch {
+        if (!cancelled) {
+          setReportClientLabel(null);
+          setReportIsMultiClient(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountIds, isInternal, clientLabel]);
   const campaignIds = useMemo(
     () => resolveIdFilter(campaignFilter, campaignOptions.map((o) => o.id)),
     [campaignFilter, campaignOptions]
@@ -947,14 +999,16 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
         hiddenSectionIds={hiddenSectionIds}
         consultant={consultant}
-        clientLabel={clientLabel}
+        clientLabel={reportClientLabel}
+        isMultiClient={reportIsMultiClient}
         periodLabel={insights.periodLabel}
       />
 
       <div className="flex-1 min-w-0 flex flex-col overflow-x-hidden">
         <IntelligenceTopBar
           sectionLabel={sectionLabel}
-          clientLabel={clientLabel}
+          clientLabel={reportClientLabel}
+          isMultiClient={reportIsMultiClient}
           accountsCount={data.accounts.length}
           lastSyncIso={data.generatedAt}
           connectionState={connectionState}
@@ -994,7 +1048,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     </button>
                     <ConsultantWhatsAppButton
                       consultant={consultant}
-                      clientLabel={clientLabel}
+                      clientLabel={reportClientLabel}
+                      isMultiClient={reportIsMultiClient}
                       periodLabel={insights.periodLabel}
                       screen="erro ao carregar dados"
                     />
@@ -1014,7 +1069,8 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
               </p>
               <ConsultantWhatsAppButton
                 consultant={consultant}
-                clientLabel={clientLabel}
+                clientLabel={reportClientLabel}
+                isMultiClient={reportIsMultiClient}
                 periodLabel={insights.periodLabel}
                 screen="sem contas disponíveis"
                 className="mx-auto"
@@ -1276,11 +1332,16 @@ export default function Dashboard({ initialData, isAdmin, isInternal, clientLabe
                     <ReportsPanel
                       campaigns={filteredCampaigns}
                       periodLabel={insights.periodLabel}
-                      clientLabel={clientLabel}
+                      clientLabel={reportClientLabel}
+                      isMultiClient={reportIsMultiClient}
                       isAdmin={isAdmin}
                       dbConfigured={dbConfigured}
+                      reportSettings={reportSettings}
+                      internalIndicatorIds={internalIndicatorIds}
+                      hiddenIndicatorIds={new Set<ReportIndicatorId>(clientPermissions?.hiddenColumns ?? [])}
                       period={period}
                       resolvedRange={data.resolvedRange}
+                      comparisonRange={data.comparison?.period ?? null}
                       compare={compare}
                       reachPending={reachPending}
                       accountIds={accountIds}

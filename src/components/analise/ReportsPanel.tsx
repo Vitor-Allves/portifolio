@@ -8,9 +8,12 @@ import { toSavedIdFilter } from "@/lib/campaign-filters";
 import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-templates-types";
 import type { PdfReportType } from "@/lib/pdf-report-core";
 import type { ClientAccessSummary } from "@/lib/client-access-types";
+import type { ResolvedReportSettings, ReportType } from "@/lib/client-permissions";
+import { ALL_INDICATOR_IDS, type ReportIndicatorId } from "@/lib/report-indicators";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 import { MascotState } from "./Mascot";
+import ReportBuilderDrawer from "./ReportBuilderDrawer";
 
 class ExportError extends Error {}
 
@@ -26,9 +29,10 @@ function slugify(value: string): string {
   );
 }
 
-function previewFileNameFor(clientLabel: string | null, resolvedRange: DateRange): string {
-  const scope = slugify(clientLabel ?? "consolidado");
-  return `legado-intelligence_${scope}_${resolvedRange.since}_a_${resolvedRange.until}.pdf`;
+function previewFileNameFor(clientLabel: string | null, isMultiClient: boolean, resolvedRange: DateRange, reportVersion: ReportType): string {
+  const scope = isMultiClient ? "multiplas-contas" : slugify(clientLabel ?? "consolidado");
+  const suffix = reportVersion === "tecnico" ? "_tecnico" : "";
+  return `legado-intelligence_${scope}${suffix}_${resolvedRange.since}_a_${resolvedRange.until}.pdf`;
 }
 
 /** Extracts a server-sent filename from Content-Disposition, falling back to the local preview name if the header is missing or unparsable. */
@@ -63,10 +67,17 @@ async function downloadFromServer(url: string, body: unknown, fallbackFileName: 
   }
 }
 
-async function downloadPdfFromServer(
-  body: { title: string; filters: ReportFilters; reportType?: PdfReportType; recipientClientId?: string | null },
-  fallbackFileName: string
-): Promise<void> {
+type PdfRequestBody = {
+  title: string;
+  filters: ReportFilters;
+  reportType?: PdfReportType;
+  reportVersion: ReportType;
+  indicators: ReportIndicatorId[];
+  rememberSelection?: boolean;
+  recipientClientId?: string | null;
+};
+
+async function downloadPdfFromServer(body: PdfRequestBody, fallbackFileName: string): Promise<void> {
   return downloadFromServer("/api/analise/reports/pdf/", body, fallbackFileName, "Não foi possível gerar o PDF. Tente novamente.");
 }
 
@@ -82,9 +93,36 @@ async function downloadCsvFromServer(
 // one full PDF). These vary what's actually drawn/exported, always against
 // whatever filters are active on screen right now, so there's no separate
 // scope to configure.
-type PredefinedPdfReport = { id: PdfReportType; format: "pdf"; label: string; description: string };
+type PredefinedPdfReport = { id: PdfReportType; format: "pdf"; label: string; description: string; indicators: ReportIndicatorId[] };
 type PredefinedCsvReport = { id: "creative" | "raw"; format: "csv"; csvKind: "ads" | "campaigns"; label: string; description: string };
 type PredefinedReport = PredefinedPdfReport | PredefinedCsvReport;
+
+const AUDIENCE_INDICATORS: ReportIndicatorId[] = [
+  "audienceAge",
+  "audienceGender",
+  "audienceRegion",
+  "platformDistribution",
+  "deviceDistribution",
+  "topHours",
+];
+
+const EXECUTIVE_INDICATORS: ReportIndicatorId[] = [
+  "spend",
+  "impressions",
+  "clicks",
+  "linkClicks",
+  "conversations",
+  "costPerConversation",
+  "ctr",
+  "cpc",
+  "cpm",
+  "reach",
+  "trendChart",
+  "compare",
+  "strategicInsights",
+  "resultsByObjective",
+  "budgetPacing",
+];
 
 const PREDEFINED_REPORTS: PredefinedReport[] = [
   {
@@ -92,18 +130,21 @@ const PREDEFINED_REPORTS: PredefinedReport[] = [
     format: "pdf",
     label: "Executivo",
     description: "Uma página com os KPIs principais, resumo executivo e evolução — para decisão rápida, sem detalhe campanha a campanha.",
+    indicators: EXECUTIVE_INDICATORS,
   },
   {
     id: "detailed",
     format: "pdf",
     label: "Performance por campanha",
     description: "O relatório completo: KPIs, evolução, distribuição, hierarquia campanha → conjunto → anúncio e análise estratégica.",
+    indicators: ALL_INDICATOR_IDS,
   },
   {
     id: "audience",
     format: "pdf",
     label: "Público e distribuição",
     description: "Só os breakdowns de público e entrega: idade/gênero, região, plataforma, posicionamento, dispositivo, país e horário.",
+    indicators: AUDIENCE_INDICATORS,
   },
   {
     id: "creative",
@@ -125,11 +166,16 @@ type ReportsPanelProps = {
   campaigns: CampaignInsight[];
   periodLabel: string;
   clientLabel: string | null;
+  isMultiClient: boolean;
   isAdmin: boolean;
   dbConfigured: boolean;
+  reportSettings: ResolvedReportSettings;
+  internalIndicatorIds: ReportIndicatorId[];
+  hiddenIndicatorIds: Set<ReportIndicatorId>;
 
   period: Period;
   resolvedRange: DateRange;
+  comparisonRange: DateRange | null;
   compare: boolean;
   /** True while the scoped reach recalculation triggered by a campaign/ad set/objective/status filter is still in flight — the ad-hoc PDF is held back rather than fired while this screen's own filters are still settling (the server recomputes reach itself from the submitted filters, never from anything held in the browser). */
   reachPending: boolean;
@@ -182,14 +228,27 @@ function templateSummary(
   return parts.join(" · ");
 }
 
+type DrawerContext = {
+  title: string;
+  filters: ReportFilters;
+  initialIndicatorSet: ReportIndicatorId[] | null;
+  periodLabel: string;
+  comparisonLabel: string | null;
+};
+
 export default function ReportsPanel({
   campaigns,
   periodLabel,
   clientLabel,
+  isMultiClient,
   isAdmin,
   dbConfigured,
+  reportSettings,
+  internalIndicatorIds,
+  hiddenIndicatorIds,
   period,
   resolvedRange,
+  comparisonRange,
   compare,
   reachPending,
   accountIds,
@@ -207,9 +266,6 @@ export default function ReportsPanel({
 
   const [templates, setTemplates] = useState<ReportTemplateSummary[] | null>(null);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
-  const [generatingId, setGeneratingId] = useState<string | null>(null);
-  const [generatingCurrent, setGeneratingCurrent] = useState(false);
-  const [currentError, setCurrentError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -219,10 +275,6 @@ export default function ReportsPanel({
     const t = setTimeout(() => setSuccessMessage(null), 5000);
     return () => clearTimeout(t);
   }, [successMessage]);
-
-  const [newTemplateName, setNewTemplateName] = useState("");
-  const [savingTemplate, setSavingTemplate] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Admin-only: which client this PDF should be generated FOR — "" means the
   // administrator's own unrestricted, all-metrics export, never silently
@@ -237,6 +289,10 @@ export default function ReportsPanel({
 
   const [predefinedLoading, setPredefinedLoading] = useState<PredefinedReport["id"] | null>(null);
   const [predefinedError, setPredefinedError] = useState<{ id: PredefinedReport["id"]; message: string } | null>(null);
+
+  const [drawerContext, setDrawerContext] = useState<DrawerContext | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dbConfigured) return;
@@ -295,37 +351,106 @@ export default function ReportsPanel({
     };
   }
 
-  async function downloadPredefined(report: PredefinedReport) {
-    if (predefinedLoading) return;
-    if (report.format === "pdf" && reachPending) {
+  const currentComparisonLabel =
+    compare && comparisonRange ? `comparando com ${formatShortDate(comparisonRange.since)} a ${formatShortDate(comparisonRange.until)}` : null;
+
+  function openDrawerForCurrent() {
+    if (reachPending) {
+      setDownloadError("Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF.");
+      return;
+    }
+    setDownloadError(null);
+    setDrawerContext({
+      title: "Relatório de campanhas",
+      filters: currentFiltersForExport(),
+      initialIndicatorSet: null,
+      periodLabel,
+      comparisonLabel: currentComparisonLabel,
+    });
+  }
+
+  function openDrawerForPredefined(report: PredefinedPdfReport) {
+    if (reachPending) {
       setPredefinedError({ id: report.id, message: "Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF." });
       return;
     }
+    setDownloadError(null);
+    setDrawerContext({
+      title: `Relatório ${report.label.toLowerCase()}`,
+      filters: currentFiltersForExport(),
+      initialIndicatorSet: report.indicators,
+      periodLabel,
+      comparisonLabel: currentComparisonLabel,
+    });
+  }
+
+  function openDrawerForTemplate(template: ReportTemplateSummary) {
+    setRowError(null);
+    setDownloadError(null);
+    setDrawerContext({
+      title: template.name,
+      filters: template.filters,
+      initialIndicatorSet: template.indicators,
+      periodLabel: periodSummary(template.filters.period),
+      comparisonLabel: template.filters.compare ? "comparando com o período anterior" : null,
+    });
+  }
+
+  async function downloadPredefinedCsv(report: PredefinedCsvReport) {
+    if (predefinedLoading) return;
     setPredefinedLoading(report.id);
     setPredefinedError(null);
     try {
-      const filters = currentFiltersForExport();
-      if (report.format === "pdf") {
-        await downloadPdfFromServer(
-          { title: `Relatório ${report.label.toLowerCase()}`, filters, reportType: report.id, recipientClientId: recipientClientId || null },
-          previewFileNameFor(clientLabel, resolvedRange)
-        );
-        setSuccessMessage("Relatório gerado!");
-      } else {
-        await downloadCsvFromServer(
-          { kind: report.csvKind, filters, recipientClientId: recipientClientId || null },
-          `${report.id === "creative" ? "criativos-e-qualidade" : "exportacao-completa"}-${today}.csv`
-        );
-        setSuccessMessage("Arquivo gerado!");
-      }
+      await downloadCsvFromServer(
+        { kind: report.csvKind, filters: currentFiltersForExport(), recipientClientId: recipientClientId || null },
+        `${report.id === "creative" ? "criativos-e-qualidade" : "exportacao-completa"}-${today}.csv`
+      );
+      setSuccessMessage("Arquivo gerado!");
     } catch (err) {
-      setPredefinedError({
-        id: report.id,
-        message: err instanceof ExportError ? err.message : `Não foi possível gerar. Tente novamente.`,
-      });
+      setPredefinedError({ id: report.id, message: err instanceof ExportError ? err.message : "Não foi possível gerar. Tente novamente." });
     } finally {
       setPredefinedLoading(null);
     }
+  }
+
+  async function handleDrawerDownload(opts: { reportType: ReportType; indicators: ReportIndicatorId[]; rememberSelection: boolean }) {
+    if (!drawerContext || downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadPdfFromServer(
+        {
+          title: drawerContext.title,
+          filters: drawerContext.filters,
+          reportVersion: opts.reportType,
+          indicators: opts.indicators,
+          rememberSelection: opts.rememberSelection,
+          recipientClientId: recipientClientId || null,
+        },
+        previewFileNameFor(clientLabel, isMultiClient, resolvedRange, opts.reportType)
+      );
+      setSuccessMessage("Relatório gerado!");
+      setDrawerContext(null);
+    } catch (err) {
+      setDownloadError(err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleSaveAsTemplate(opts: { reportType: ReportType; indicators: ReportIndicatorId[]; name: string }) {
+    if (!drawerContext) return;
+    const res = await fetch("/api/analise/report-templates/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: opts.name, filters: drawerContext.filters, reportType: opts.reportType, indicators: opts.indicators }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body?.error ?? "Não foi possível criar o modelo.");
+    setTemplates((prev) => [
+      { id: body.id, name: body.name, filters: body.filters, reportType: body.reportType, indicators: body.indicators, createdAt: new Date().toISOString() },
+      ...(prev ?? []),
+    ]);
   }
 
   async function exportCampaigns() {
@@ -362,105 +487,6 @@ export default function ReportsPanel({
     }
   }
 
-  async function downloadCurrentPdf() {
-    if (generatingCurrent) return;
-    // The campaign filter has narrowed the scope and the correctly
-    // deduplicated reach for that exact selection may still be settling on
-    // screen — the server recomputes reach itself from the filters below,
-    // so this is purely to avoid firing a request while this screen's own
-    // filters are still in flux.
-    if (reachPending) {
-      setCurrentError("Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF.");
-      return;
-    }
-    setGeneratingCurrent(true);
-    setCurrentError(null);
-    try {
-      const filters: ReportFilters = {
-        period,
-        compare,
-        accountIds: toSavedIdFilter(accountIds, accountOptions),
-        campaignIds: toSavedIdFilter(campaignIds, campaignOptions),
-        adSetIds: toSavedIdFilter(adSetIds, adSetOptions),
-        objectiveIds: toSavedIdFilter(objectiveIds, objectiveOptions),
-        statusIds: toSavedIdFilter(statusIds, statusOptions),
-      };
-      await downloadPdfFromServer(
-        { title: "Relatório de campanhas", filters, recipientClientId: recipientClientId || null },
-        previewFileNameFor(clientLabel, resolvedRange)
-      );
-      setSuccessMessage("Relatório gerado!");
-    } catch (err) {
-      setCurrentError(err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente.");
-    } finally {
-      setGeneratingCurrent(false);
-    }
-  }
-
-  async function saveCurrentAsTemplate(e: React.FormEvent) {
-    e.preventDefault();
-    setSaveError(null);
-    if (!newTemplateName.trim()) {
-      setSaveError("Informe o nome do modelo.");
-      return;
-    }
-
-    const filters: ReportFilters = {
-      period,
-      compare,
-      accountIds: toSavedIdFilter(accountIds, accountOptions),
-      campaignIds: toSavedIdFilter(campaignIds, campaignOptions),
-      adSetIds: toSavedIdFilter(adSetIds, adSetOptions),
-      objectiveIds: toSavedIdFilter(objectiveIds, objectiveOptions),
-      statusIds: toSavedIdFilter(statusIds, statusOptions),
-    };
-
-    setSavingTemplate(true);
-    try {
-      const res = await fetch("/api/analise/report-templates/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newTemplateName.trim(), filters }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setSaveError(body?.error ?? "Não foi possível criar o modelo.");
-        return;
-      }
-      setTemplates((prev) => [{ id: body.id, name: body.name, filters: body.filters, createdAt: new Date().toISOString() }, ...(prev ?? [])]);
-      setNewTemplateName("");
-    } catch {
-      setSaveError("Falha de conexão. Tente novamente.");
-    } finally {
-      setSavingTemplate(false);
-    }
-  }
-
-  async function applyTemplateAndDownload(template: ReportTemplateSummary) {
-    if (generatingId) return;
-    setRowError(null);
-    setGeneratingId(template.id);
-    try {
-      // The template only ever stored filter preferences (see
-      // report-templates-types.ts) — never indicators or access. The server
-      // re-resolves this session's (or the chosen recipient's) CURRENT
-      // permissions on every generation, so a template saved before a
-      // permission change can never reuse the older, wider access.
-      await downloadPdfFromServer(
-        { title: template.name, filters: template.filters, recipientClientId: recipientClientId || null },
-        previewFileNameFor(clientLabel, resolvedRange)
-      );
-      setSuccessMessage("Relatório gerado!");
-    } catch (err) {
-      setRowError({
-        id: template.id,
-        message: err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente.",
-      });
-    } finally {
-      setGeneratingId(null);
-    }
-  }
-
   async function handleDeleteTemplate(id: string) {
     if (confirmingDelete !== id) {
       setConfirmingDelete(id);
@@ -474,7 +500,6 @@ export default function ReportsPanel({
   const optionSets = { accountOptions, campaignOptions, adSetOptions, objectiveOptions, statusOptions };
   const selectedRecipient = recipientClients?.find((c) => c.id === recipientClientId) ?? null;
   const previewClientLabel = recipientClientId ? (selectedRecipient?.label ?? null) : clientLabel;
-  const previewFileName = previewFileNameFor(previewClientLabel, resolvedRange);
 
   return (
     <div className="space-y-4">
@@ -494,7 +519,7 @@ export default function ReportsPanel({
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Baixar relatório em PDF</h3>
         <p className="text-[12px] text-intel-text-dim mb-1">
-          Gera um PDF executivo com os indicadores autorizados da visão geral, evolução, distribuição, desempenho por campanha e conjunto de anúncios, e análise — {periodLabel}.
+          Escolha os indicadores e a versão (Simplificado/Técnico) no painel &quot;Montar relatório&quot; antes de baixar — {periodLabel}.
         </p>
         {isAdmin && dbConfigured && (
           <div className="mb-4 mt-3">
@@ -521,45 +546,25 @@ export default function ReportsPanel({
             )}
           </div>
         )}
-        <p className="text-[11px] text-intel-text-dim/70 mb-5">Arquivo: {previewFileName}</p>
+        <p className="text-[11px] text-intel-text-dim/70 mb-5">
+          Arquivo: {previewFileNameFor(previewClientLabel, isMultiClient, resolvedRange, reportSettings.defaultType)}
+        </p>
         <button
           type="button"
-          onClick={downloadCurrentPdf}
-          disabled={generatingCurrent || reachPending}
-          aria-busy={generatingCurrent}
+          onClick={openDrawerForCurrent}
+          disabled={reachPending}
           className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-wait"
         >
-          {generatingCurrent && (
-            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-          )}
-          {generatingCurrent ? "Gerando relatório..." : reachPending ? "Calculando alcance dos filtros..." : "Baixar PDF do período atual"}
+          {reachPending ? "Calculando alcance dos filtros..." : "Montar relatório do período atual"}
         </button>
-        {generatingCurrent && (
-          <MascotState
-            pose="titan-carregando"
-            alt="Titan, mascote da Legado, buscando os dados do período"
-            message="Buscando os dados do período…"
-            className="py-4"
-          />
-        )}
-        {reachPending && !currentError && (
+        {reachPending && (
           <p className="mt-2 text-[12px] text-intel-text-dim">
             Recalculando o alcance deduplicado para os filtros de campanha atuais antes de liberar o download.
           </p>
         )}
-        {currentError && (
+        {downloadError && !drawerContext && (
           <div className="mt-3 flex flex-wrap items-center gap-3" role="alert">
-            <p className="text-[12px] text-intel-red">{currentError}</p>
-            <button
-              type="button"
-              onClick={downloadCurrentPdf}
-              className="text-[11.5px] tracking-[0.06em] uppercase text-intel-cyan hover:text-intel-text transition-colors duration-200"
-            >
-              Tentar novamente
-            </button>
+            <p className="text-[12px] text-intel-red">{downloadError}</p>
           </div>
         )}
       </div>
@@ -579,12 +584,12 @@ export default function ReportsPanel({
               <p className="text-[11.5px] text-intel-text-dim leading-relaxed flex-1">{report.description}</p>
               <button
                 type="button"
-                onClick={() => downloadPredefined(report)}
+                onClick={() => (report.format === "pdf" ? openDrawerForPredefined(report) : downloadPredefinedCsv(report))}
                 disabled={campaigns.length === 0 || predefinedLoading !== null || (report.format === "pdf" && reachPending)}
                 aria-busy={predefinedLoading === report.id}
                 className="self-start mt-1 text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50 disabled:cursor-wait"
               >
-                {predefinedLoading === report.id ? "Gerando..." : `Baixar ${report.format.toUpperCase()}`}
+                {predefinedLoading === report.id ? "Gerando..." : report.format === "pdf" ? "Montar relatório" : "Baixar CSV"}
               </button>
               {predefinedError?.id === report.id && (
                 <p className="text-[11.5px] text-intel-red" role="alert">
@@ -599,9 +604,7 @@ export default function ReportsPanel({
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Modelos de relatório</h3>
-        <p className="text-[12px] text-intel-text-dim mb-5">
-          Filtros salvos que geram o PDF direto, sem precisar reconfigurar tudo de novo.
-        </p>
+        <p className="text-[12px] text-intel-text-dim mb-5">Filtros salvos — abrem o painel &quot;Montar relatório&quot; já com a seleção salva no modelo.</p>
 
         {!dbConfigured ? (
           <p className="text-[12px] text-intel-text-dim">
@@ -613,7 +616,7 @@ export default function ReportsPanel({
           <p className="text-[12px] text-intel-text-dim">Carregando modelos...</p>
         ) : templates.length === 0 ? (
           <p className="text-[12px] text-intel-text-dim">
-            {isAdmin ? "Nenhum modelo ainda — configure os filtros acima e salve um abaixo." : "Nenhum modelo disponível ainda."}
+            {isAdmin ? "Nenhum modelo ainda — configure os filtros acima e salve um no painel ao montar um relatório." : "Nenhum modelo disponível ainda."}
           </p>
         ) : (
           <ul className="space-y-2 mb-2">
@@ -625,28 +628,15 @@ export default function ReportsPanel({
                 <div className="min-w-0">
                   <p className="text-[13px] text-intel-text font-medium truncate">{template.name}</p>
                   <p className="text-[11.5px] text-intel-text-dim mt-0.5">{templateSummary(template.filters, optionSets)}</p>
-                  {rowError?.id === template.id && (
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <p className="text-[11.5px] text-intel-red">{rowError.message}</p>
-                      <button
-                        type="button"
-                        onClick={() => applyTemplateAndDownload(template)}
-                        className="text-[11px] tracking-[0.06em] uppercase text-intel-cyan hover:text-intel-text transition-colors duration-200"
-                      >
-                        Tentar novamente
-                      </button>
-                    </div>
-                  )}
+                  {rowError?.id === template.id && <p className="mt-1 text-[11.5px] text-intel-red">{rowError.message}</p>}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <button
                     type="button"
-                    onClick={() => applyTemplateAndDownload(template)}
-                    disabled={generatingId === template.id}
-                    aria-busy={generatingId === template.id}
-                    className="text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50 disabled:cursor-wait"
+                    onClick={() => openDrawerForTemplate(template)}
+                    className="text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200"
                   >
-                    {generatingId === template.id ? "Gerando..." : "Gerar PDF"}
+                    Montar relatório
                   </button>
                   {isAdmin && (
                     <button
@@ -665,47 +655,11 @@ export default function ReportsPanel({
             ))}
           </ul>
         )}
-
-        {isAdmin && dbConfigured && (
-          <form onSubmit={saveCurrentAsTemplate} className="mt-4 pt-4 border-t border-white/[0.06] flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[220px]">
-              <label htmlFor="new-template-name" className={INTEL_LABEL}>
-                Salvar filtros atuais como modelo
-              </label>
-              <input
-                id="new-template-name"
-                value={newTemplateName}
-                onChange={(e) => setNewTemplateName(e.target.value)}
-                placeholder="Ex: Relatório mensal — todas as contas"
-                className={`${INTEL_INPUT} mt-2`}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={savingTemplate}
-              className="text-[12.5px] tracking-[0.06em] uppercase px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-50 disabled:cursor-wait"
-            >
-              {savingTemplate ? "Salvando..." : "Salvar modelo"}
-            </button>
-          </form>
-        )}
-        {saveError && (
-          <p className="mt-2 text-[12px] text-intel-red" role="alert">
-            {saveError}
-          </p>
-        )}
-        {isAdmin && dbConfigured && (
-          <p className="text-[11px] text-intel-text-dim/70 mt-2">
-            Usa exatamente os filtros ativos agora nesta tela (contas, período, campanha, conjunto, objetivo e status).
-          </p>
-        )}
       </div>
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Exportar dados do período</h3>
-        <p className="text-[12px] text-intel-text-dim mb-5">
-          Os arquivos refletem os filtros ativos no painel — {periodLabel}.
-        </p>
+        <p className="text-[12px] text-intel-text-dim mb-5">Os arquivos refletem os filtros ativos no painel — {periodLabel}.</p>
 
         <div className="flex flex-wrap gap-3">
           <button
@@ -740,8 +694,32 @@ export default function ReportsPanel({
         <ul className="text-[12px] text-intel-text-dim leading-relaxed list-disc pl-4 space-y-1">
           <li>Relatórios agendados por e-mail — depende de um serviço de envio (ex.: e-mail transacional) ainda não configurado.</li>
           <li>Histórico de relatórios gerados anteriormente — cada PDF é gerado na hora, não fica um arquivo salvo no servidor.</li>
+          <li>&quot;Melhores anúncios&quot; no PDF não inclui a miniatura da imagem nesta versão — veja a exportação CSV de criativos e qualidade para a URL da imagem.</li>
         </ul>
       </div>
+
+      {drawerContext && (
+        <ReportBuilderDrawer
+          onClose={() => setDrawerContext(null)}
+          clientLabel={previewClientLabel}
+          isMultiClient={isMultiClient}
+          periodLabel={drawerContext.periodLabel}
+          comparisonLabel={drawerContext.comparisonLabel}
+          reportSettings={reportSettings}
+          internalIndicatorIds={internalIndicatorIds}
+          hiddenIndicatorIds={hiddenIndicatorIds}
+          campaigns={campaigns}
+          initialIndicatorSet={drawerContext.initialIndicatorSet}
+          recipientClientId={recipientClientId || null}
+          canManageTemplates={isAdmin}
+          dbConfigured={dbConfigured}
+          downloading={downloading}
+          downloadError={downloadError}
+          lastSavedNote={null}
+          onDownload={handleDrawerDownload}
+          onSaveAsTemplate={handleSaveAsTemplate}
+        />
+      )}
     </div>
   );
 }

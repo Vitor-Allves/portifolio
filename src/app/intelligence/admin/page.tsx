@@ -6,10 +6,12 @@ import { isFullAdmin, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { listAdAccounts, MetaApiError } from "@/lib/meta-ads";
 import { listClientAccess } from "@/lib/client-access";
 import { listInternalUsers } from "@/lib/internal-users";
+import { listInternalIndicatorIds } from "@/lib/internal-indicators";
 import { DbConfigError } from "@/lib/db";
 import AnaliseHeader from "@/components/analise/AnaliseHeader";
 import AdminClientsPanel from "@/components/analise/AdminClientsPanel";
 import AdminUsersPanel from "@/components/analise/AdminUsersPanel";
+import InternalIndicatorsPanel from "@/components/analise/InternalIndicatorsPanel";
 import { MascotTabBanner } from "@/components/analise/Mascot";
 
 export const metadata: Metadata = {
@@ -37,9 +39,14 @@ export default async function AnaliseAdminPage() {
 
   let clients: Awaited<ReturnType<typeof listClientAccess>> = [];
   let internalUsers: Awaited<ReturnType<typeof listInternalUsers>> = [];
+  let internalIndicatorIds: Awaited<ReturnType<typeof listInternalIndicatorIds>> = [];
   let dbNotConfigured = false;
   try {
-    [clients, internalUsers] = await Promise.all([listClientAccess(), listInternalUsers()]);
+    [clients, internalUsers, internalIndicatorIds] = await Promise.all([
+      listClientAccess(),
+      listInternalUsers(),
+      listInternalIndicatorIds(),
+    ]);
   } catch (err) {
     if (err instanceof DbConfigError) {
       dbNotConfigured = true;
@@ -96,6 +103,12 @@ export default async function AnaliseAdminPage() {
               Empresas atendidas e as pessoas que acessam os dados de cada uma.
             </p>
             <AdminClientsPanel accounts={accounts} accountsError={accountsError} initialClients={clients} />
+
+            <h2 className="font-sans text-xl font-semibold text-intel-text mb-1 mt-14">Indicadores de uso interno</h2>
+            <p className="text-sm text-intel-text-dim mb-6">
+              Só o administrador geral vê e edita esta tela — controla quais indicadores do relatório exigem a permissão &quot;uso interno&quot;.
+            </p>
+            <InternalIndicatorsPanel initialIds={internalIndicatorIds} />
           </>
         )}
       </div>
