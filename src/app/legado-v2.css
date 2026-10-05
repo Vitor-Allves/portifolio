@@ -507,6 +507,18 @@
   aspect-ratio: 1916 / 720;
   overflow: hidden;
 }
+@media (min-width: 901px) {
+  /* Em telas baixas (ex.: 1366x768), a quadra plena-largura empurra o CTA
+     "Ver o método completo" para fora da primeira tela. Limita a altura
+     via vh (sem alterar aspect-ratio, então as tags % não precisam ser
+     recalculadas) — só entra em ação quando a viewport é curta; em
+     viewports altas o cálculo não restringe nada e a quadra segue
+     sangrando a largura total. */
+  .lg-clayscene {
+    width: min(100%, calc(55vh * 2.6611));
+    margin-inline: auto;
+  }
+}
 .lg-cs-img {
   position: absolute;
   inset: 0;
@@ -533,13 +545,13 @@
   display: grid;
   justify-items: center;
   text-align: center;
-  gap: 6px;
-  padding: 34px 20px 18px;
+  gap: 4px;
+  padding: 16px 20px 8px;
 }
 .lg-cs-head h2 {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(38px, 5vw, 72px);
+  font-size: clamp(32px, 4.2vw, 58px);
   line-height: 1;
   letter-spacing: 0.03em;
   background: linear-gradient(135deg, #ffffff 0%, #eef1f5 45%, #c9cfd7 75%, #ffffff 100%);
@@ -550,7 +562,7 @@
 }
 .lg-cs-head p {
   color: #e3e8ef;
-  font-size: 17px;
+  font-size: 15px;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 }
 .lg-spot {
@@ -625,16 +637,19 @@
 }
 .lg-mp-cta {
   display: grid;
-  gap: 18px;
+  gap: 10px;
   justify-items: center;
   text-align: center;
-  margin-top: 18px;
+  margin-top: 8px;
 }
 .lg-mp-cta p {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 17px;
   color: #ffffff;
   max-width: 34ch;
+}
+.lg-mp-cta .lg-btn {
+  padding: 10px 20px;
 }
 
 @media (max-width: 900px) {
@@ -1540,16 +1555,15 @@
 .lg-why div {
   background: var(--color-card);
   border-radius: 18px;
-  padding: 22px;
+  padding: 20px;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  column-gap: 16px;
+  gap: 8px;
   align-content: start;
+  justify-items: start;
 }
 .lg-why div img {
-  grid-row: span 2;
-  width: 64px;
-  height: 64px;
+  width: 44px;
+  height: 44px;
   object-fit: contain;
 }
 .lg-why h3 {
