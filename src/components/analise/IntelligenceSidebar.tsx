@@ -40,6 +40,7 @@ type IntelligenceSidebarProps = {
   hiddenSectionIds: Set<string>;
   consultant: ConsultantInfo | null;
   clientLabel: string | null;
+  isMultiClient?: boolean;
   periodLabel: string;
 };
 
@@ -137,6 +138,7 @@ function SidebarContent({
   visibleSections,
   consultant,
   clientLabel,
+  isMultiClient,
   periodLabel,
 }: {
   active: SectionId;
@@ -149,6 +151,7 @@ function SidebarContent({
   visibleSections: typeof SECTIONS;
   consultant: ConsultantInfo | null;
   clientLabel: string | null;
+  isMultiClient?: boolean;
   periodLabel: string;
 }) {
   return (
@@ -185,6 +188,7 @@ function SidebarContent({
           <ConsultantWhatsAppButton
             consultant={consultant}
             clientLabel={clientLabel}
+            isMultiClient={isMultiClient}
             periodLabel={periodLabel}
             screen="barra lateral"
             variant="sidebar"
@@ -251,6 +255,7 @@ export default function IntelligenceSidebar({
   hiddenSectionIds,
   consultant,
   clientLabel,
+  isMultiClient,
   periodLabel,
 }: IntelligenceSidebarProps) {
   // "overview" is never hideable — always somewhere for a client to land.
@@ -279,6 +284,7 @@ export default function IntelligenceSidebar({
           visibleSections={visibleSections}
           consultant={consultant}
           clientLabel={clientLabel}
+          isMultiClient={isMultiClient}
           periodLabel={periodLabel}
         />
       </aside>
@@ -309,6 +315,7 @@ export default function IntelligenceSidebar({
               visibleSections={visibleSections}
               consultant={consultant}
               clientLabel={clientLabel}
+              isMultiClient={isMultiClient}
               periodLabel={periodLabel}
             />
           </aside>

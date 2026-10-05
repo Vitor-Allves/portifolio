@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { MetaApiError } from "@/lib/meta-ads";
 import { sessionScopeFromRequest, hasDataAccess } from "@/lib/auth-context";
 import { isFullAdmin } from "@/lib/session-scope";
-import { isActionAllowed } from "@/lib/client-permissions";
+import { isActionAllowed, resolveReportSettings, type ReportSettingsRoleKind } from "@/lib/client-permissions";
 import { sanitizeReportFilters } from "@/lib/report-templates-types";
-import { buildReportPdf, reportFileName, type ReportPdfInput, type PdfReportType } from "@/lib/pdf-report-core";
+import { buildReportPdf, reportFileName, type ReportPdfInput, type PdfReportType, type ReportType } from "@/lib/pdf-report-core";
 import { loadReportAssetsServer } from "@/lib/pdf-report-server-assets";
+import { resolveReportClients } from "@/lib/client-access";
 import {
   resolveRecipient,
   isRecipientError,
@@ -14,8 +15,21 @@ import {
   periodSummaryLabel,
   fetchFilteredReportData,
   computeReach,
+  resolveSelectedIndicators,
+  isSelectedIndicatorsError,
 } from "@/lib/report-data";
 import { writeAudit } from "@/lib/audit-log";
+import { DbConfigError } from "@/lib/db";
+import { getClientBudgetWithPrevious } from "@/lib/client-budgets";
+import { projectedSpend } from "@/lib/budget-pacing";
+import { getDashboardData } from "@/lib/meta-ads";
+import { saveReportClientSelection } from "@/lib/report-client-selections";
+import { getClientConsultantInfo } from "@/lib/client-access";
+
+function roleKindFor(scope: { kind: "staff" | "client"; role?: string }): ReportSettingsRoleKind {
+  if (scope.kind === "client") return "client";
+  return (scope.role as ReportSettingsRoleKind) ?? "analista";
+}
 
 export const runtime = "nodejs";
 // See the same comment on src/app/analise/page.tsx — generating a report
@@ -42,12 +56,40 @@ type RequestBody = {
   filters?: unknown;
   recipientClientId?: unknown;
   reportType?: unknown;
+  reportVersion?: unknown;
+  indicators?: unknown;
+  rememberSelection?: unknown;
 };
+
+/** This month-to-date pacing for one client (see BudgetCard.tsx) — null on any missing piece (DB not configured, no budget registered, or the fetch itself fails) so a glitch here never blocks the rest of the report. */
+async function fetchBudgetPacing(clientAccessId: string, clientLabel: string, accountIds: string[]): Promise<ReportPdfInput["budgetPacing"]> {
+  try {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    const { current: budget } = await getClientBudgetWithPrevious(clientAccessId, year, month);
+    if (budget === null) return null;
+    const data = await getDashboardData({ kind: "preset", preset: "this_month" }, accountIds);
+    const [, , dayStr] = data.resolvedRange.until.split("-");
+    const dayOfMonth = Number(dayStr);
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const spend = data.campaigns.reduce((sum, c) => sum + c.spend, 0);
+    return { label: clientLabel, spend, budget, projected: projectedSpend(spend, dayOfMonth, daysInMonth), dayOfMonth, daysInMonth };
+  } catch (err) {
+    if (err instanceof DbConfigError) return null;
+    console.error("[api/analise/reports/pdf] budget pacing fetch failed", err);
+    return null;
+  }
+}
 
 const PDF_REPORT_TYPES: PdfReportType[] = ["executive", "detailed", "audience"];
 
 function sanitizeReportType(input: unknown): PdfReportType {
   return typeof input === "string" && (PDF_REPORT_TYPES as string[]).includes(input) ? (input as PdfReportType) : "detailed";
+}
+
+function sanitizeReportVersion(input: unknown): ReportType {
+  return input === "simplificado" ? "simplificado" : "tecnico";
 }
 
 export async function POST(req: NextRequest) {
@@ -68,6 +110,7 @@ export async function POST(req: NextRequest) {
 
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Relatório de campanhas";
   const reportType = sanitizeReportType(body.reportType);
+  const reportVersion = sanitizeReportVersion(body.reportVersion);
   const filters = sanitizeReportFilters(body.filters);
   if (!filters) {
     return NextResponse.json({ error: "Filtros de relatório inválidos." }, { status: 400 });
@@ -79,6 +122,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: recipient.error }, { status: recipient.status });
   }
 
+  const reportSettings = resolveReportSettings(scope.permissions, roleKindFor(scope));
+  if (!reportSettings.typesAllowed.includes(reportVersion)) {
+    return NextResponse.json({ error: "Este tipo de relatório (Simplificado/Técnico) não está liberado para o seu usuário." }, { status: 403 });
+  }
+
   const effectiveFilters = applyHiddenFilters(filters, recipient.permissions);
   const allowedColumns = buildAllowedColumns(recipient.permissions);
 
@@ -87,12 +135,63 @@ export async function POST(req: NextRequest) {
     const { reach, comparisonReach } = await computeReach(effectiveFilters, recipient, data);
     const { freshData, filteredCampaigns, scopedAdSets, selectedAdSetIds, resolvedAccountIds, activeFilters } = data;
 
+    // Who this report is actually ABOUT, from the accounts it ends up
+    // covering — never from who's logged in or which recipient id was
+    // requested beyond what that id itself resolves to. A client session or
+    // an admin-selected single recipientClientId both already resolve
+    // trivially to "single" here; only an admin's own unrestricted,
+    // multi-account export can resolve to "multiple".
+    const clientResolution = await resolveReportClients(resolvedAccountIds);
+    if (clientResolution.kind === "multiple" && !reportSettings.canMultiClient) {
+      return NextResponse.json(
+        { error: "Seu usuário não pode gerar relatórios com mais de um cliente (múltiplas contas). Restrinja o filtro de contas a um único cliente." },
+        { status: 403 }
+      );
+    }
+    const resolvedClientLabel = clientResolution.kind === "single" ? clientResolution.client.label : null;
+    const isMultiClient = clientResolution.kind === "multiple";
+    const multiClientNames = clientResolution.kind === "multiple" ? clientResolution.clients.map((c) => c.label) : [];
+
+    const selectedIndicators = await resolveSelectedIndicators(body.indicators, allowedColumns, reportSettings);
+    if (isSelectedIndicatorsError(selectedIndicators)) {
+      return NextResponse.json({ error: selectedIndicators.error }, { status: selectedIndicators.status });
+    }
+
+    const filteredCampaignIds = new Set(filteredCampaigns.map((c) => c.campaignId));
+    const scopedAds = freshData.ads.filter(
+      (a) => filteredCampaignIds.has(a.campaignId) && (selectedAdSetIds === null || selectedAdSetIds.has(a.adSetId))
+    );
+
+    const budgetPacing =
+      clientResolution.kind === "single" && selectedIndicators.has("budgetPacing")
+        ? await fetchBudgetPacing(clientResolution.client.id, clientResolution.client.label, recipient.accountIds ?? [...resolvedAccountIds])
+        : null;
+    const consultant =
+      clientResolution.kind === "single"
+        ? await getClientConsultantInfo(clientResolution.client.id)
+            .then((c) => (c ? { name: c.consultantName, whatsapp: c.consultantWhatsapp } : null))
+            .catch(() => null)
+        : null;
+
+    if (body.rememberSelection === true && clientResolution.kind === "single") {
+      await saveReportClientSelection(clientResolution.client.id, reportVersion, [...selectedIndicators], scope.userName).catch((err) => {
+        if (!(err instanceof DbConfigError)) console.error("[api/analise/reports/pdf] failed to save remembered selection", err);
+      });
+    }
+
     const input: ReportPdfInput = {
       title,
       reportType,
-      clientLabel: recipient.label,
+      reportVersion,
+      clientLabel: resolvedClientLabel,
+      isMultiClient,
+      multiClientNames,
       isClientScoped: recipient.isClientScoped,
       allowedColumns,
+      selectedIndicators,
+      ads: scopedAds,
+      budgetPacing,
+      consultant,
       accounts: freshData.accounts.filter((a) => resolvedAccountIds.has(a.id)),
       periodLabel: periodSummaryLabel(effectiveFilters, freshData.resolvedRange.since, freshData.resolvedRange.until),
       resolvedRange: freshData.resolvedRange,
@@ -128,8 +227,8 @@ export async function POST(req: NextRequest) {
       actorKind: scope.kind === "staff" ? "admin" : "client",
       action: "report.generate",
       targetType: "report",
-      targetLabel: recipient.label ?? "Interno",
-      metadata: { format: "pdf", recipientClientId, reportType },
+      targetLabel: isMultiClient ? "Múltiplas contas" : resolvedClientLabel ?? "Interno",
+      metadata: { format: "pdf", recipientClientId, reportType, reportVersion },
     });
 
     return new NextResponse(pdfBuffer, {

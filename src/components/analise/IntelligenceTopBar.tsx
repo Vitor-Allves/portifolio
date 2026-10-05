@@ -11,6 +11,7 @@ type ConnectionState = "ok" | "partial" | "down";
 type IntelligenceTopBarProps = {
   sectionLabel: string;
   clientLabel: string | null;
+  isMultiClient?: boolean;
   accountsCount: number;
   lastSyncIso: string;
   connectionState: ConnectionState;
@@ -47,6 +48,7 @@ const CONNECTION_COPY: Record<ConnectionState, { label: string; dot: string }> =
 export default function IntelligenceTopBar({
   sectionLabel,
   clientLabel,
+  isMultiClient,
   accountsCount,
   lastSyncIso,
   connectionState,
@@ -66,8 +68,9 @@ export default function IntelligenceTopBar({
     router.refresh();
   }
 
-  const accountContext =
-    clientLabel ?? (accountsCount === 1 ? "1 conta de anúncios" : `${accountsCount} contas de anúncios`);
+  const accountContext = isMultiClient
+    ? "Múltiplas contas"
+    : clientLabel ?? (accountsCount === 1 ? "1 conta de anúncios" : `${accountsCount} contas de anúncios`);
   const connection = CONNECTION_COPY[connectionState];
 
   return (
@@ -103,6 +106,7 @@ export default function IntelligenceTopBar({
           <ConsultantWhatsAppButton
             consultant={consultant}
             clientLabel={clientLabel}
+            isMultiClient={isMultiClient}
             periodLabel={periodLabel}
             screen="cabeçalho"
             variant="header"

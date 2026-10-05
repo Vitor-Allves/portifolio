@@ -99,11 +99,28 @@ export const ACTION_OPTIONS: { id: ActionId; label: string }[] = [
   { id: "export_reports", label: "Gerar/exportar relatórios (PDF/CSV)" },
 ];
 
+/** "Simplificado" or "Técnico" — see report-indicators.ts for the shared type (re-exported here to avoid a circular import, since report-indicators.ts itself imports CampaignColumnId from this file). */
+export type ReportType = "simplificado" | "tecnico";
+
 export type ClientPermissions = {
   hiddenFilters: FilterKey[];
   hiddenColumns: CampaignColumnId[];
   hiddenSections: HideableSectionId[];
   disabledActions: ActionId[];
+  /**
+   * Everything below is OPTIONAL and, when absent, resolved by role via
+   * resolveReportSettings() rather than defaulted here — sanitizePermissions
+   * has no notion of "which role is this", so an old row (saved before this
+   * existed) reads as "use the sensible default for this role", never as a
+   * hardcoded value baked into every already-stored permissions JSON.
+   */
+  reportTypesAllowed?: ReportType[];
+  reportDefaultType?: ReportType;
+  canBuildReport?: boolean;
+  canIncludeInternalIndicators?: boolean;
+  canMultiClientReport?: boolean;
+  /** null/absent = "every indicator this permission set doesn't already hide" (computed at point of use, never snapshotted here). */
+  reportDefaultIndicators?: string[] | null;
 };
 
 export const EMPTY_PERMISSIONS: ClientPermissions = {
@@ -126,15 +143,60 @@ const VALID_FILTER_KEYS = new Set(FILTER_OPTIONS.map((o) => o.id));
 const VALID_COLUMN_IDS = new Set(CAMPAIGN_COLUMN_OPTIONS.map((o) => o.id));
 const VALID_SECTION_IDS = new Set(HIDEABLE_SECTION_OPTIONS.map((o) => o.id));
 const VALID_ACTION_IDS = new Set(ACTION_OPTIONS.map((o) => o.id));
+const VALID_REPORT_TYPES = new Set<ReportType>(["simplificado", "tecnico"]);
 
-/** Normalizes arbitrary input (a JSONB column read, or a request body) into a well-formed ClientPermissions — unknown/invalid entries are dropped rather than rejected, so a future option removed from the lists above doesn't break existing rows. */
+function pickValidReportTypes(value: unknown): ReportType[] | undefined {
+  const picked = pickValid(value, VALID_REPORT_TYPES);
+  return picked.length > 0 ? picked : undefined;
+}
+
+/** Normalizes arbitrary input (a JSONB column read, or a request body) into a well-formed ClientPermissions — unknown/invalid entries are dropped rather than rejected, so a future option removed from the lists above doesn't break existing rows. The report-settings fields stay undefined (never defaulted here — see resolveReportSettings) when absent or invalid, so an old row reads as "use this role's default", not a value baked in by this function. */
 export function sanitizePermissions(input: unknown): ClientPermissions {
   const obj = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const reportDefaultType = obj.reportDefaultType === "simplificado" || obj.reportDefaultType === "tecnico" ? obj.reportDefaultType : undefined;
+  const reportDefaultIndicators =
+    obj.reportDefaultIndicators === null
+      ? null
+      : Array.isArray(obj.reportDefaultIndicators)
+        ? obj.reportDefaultIndicators.filter((v): v is string => typeof v === "string")
+        : undefined;
   return {
     hiddenFilters: pickValid(obj.hiddenFilters, VALID_FILTER_KEYS),
     hiddenColumns: pickValid(obj.hiddenColumns, VALID_COLUMN_IDS),
     hiddenSections: pickValid(obj.hiddenSections, VALID_SECTION_IDS),
     disabledActions: pickValid(obj.disabledActions, VALID_ACTION_IDS),
+    reportTypesAllowed: pickValidReportTypes(obj.reportTypesAllowed),
+    reportDefaultType,
+    canBuildReport: typeof obj.canBuildReport === "boolean" ? obj.canBuildReport : undefined,
+    canIncludeInternalIndicators: typeof obj.canIncludeInternalIndicators === "boolean" ? obj.canIncludeInternalIndicators : undefined,
+    canMultiClientReport: typeof obj.canMultiClientReport === "boolean" ? obj.canMultiClientReport : undefined,
+    reportDefaultIndicators,
+  };
+}
+
+/** Role-based fallback for every report-settings field a stored ClientPermissions leaves unset — see the comment on ClientPermissions itself for why these aren't defaulted inside sanitizePermissions. `"client"` covers both a client session and a client company's own stored permissions; every staff role gets the same "administrador" defaults EXCEPT administrador_geral, which also defaults canIncludeInternalIndicators to true. */
+export type ReportSettingsRoleKind = "administrador_geral" | "administrador" | "gestor" | "analista" | "client";
+
+export type ResolvedReportSettings = {
+  typesAllowed: ReportType[];
+  defaultType: ReportType;
+  canBuild: boolean;
+  canIncludeInternal: boolean;
+  canMultiClient: boolean;
+  /** null = no explicit default saved — resolve to "every indicator this permission set doesn't already hide" at the point of use (the drawer, or the server when the viewer can't build their own selection). */
+  defaultIndicators: string[] | null;
+};
+
+export function resolveReportSettings(permissions: ClientPermissions, roleKind: ReportSettingsRoleKind): ResolvedReportSettings {
+  const isStaff = roleKind !== "client";
+  const isFullAdminRole = roleKind === "administrador_geral";
+  return {
+    typesAllowed: permissions.reportTypesAllowed?.length ? permissions.reportTypesAllowed : isStaff ? ["simplificado", "tecnico"] : ["simplificado"],
+    defaultType: permissions.reportDefaultType ?? "simplificado",
+    canBuild: permissions.canBuildReport ?? isStaff,
+    canIncludeInternal: permissions.canIncludeInternalIndicators ?? isFullAdminRole,
+    canMultiClient: permissions.canMultiClientReport ?? isStaff,
+    defaultIndicators: permissions.reportDefaultIndicators ?? null,
   };
 }
 

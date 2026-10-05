@@ -23,6 +23,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type {
+  AdInsight,
   AdSetInsight,
   AudienceSegment,
   CampaignInsight,
@@ -33,7 +34,8 @@ import type {
   HourSegment,
 } from "./meta-ads-types";
 import type { CampaignColumnId } from "./client-permissions";
-import { objectiveLabel, statusLabel } from "./campaign-labels";
+import { objectiveLabel, statusLabel, qualityRankingLabel } from "./campaign-labels";
+import type { ReportIndicatorId } from "./report-indicators";
 import {
   formatCurrencyBRL,
   formatInteger,
@@ -68,11 +70,24 @@ import { primaryKpiIds, type KpiId } from "./kpi-hierarchy";
 /** Every CampaignColumnId the recipient is authorized to see — computed by the caller from the SAME ClientPermissions record the live dashboard uses (never a parallel, independently-maintained list). */
 export type AllowedColumns = ReadonlySet<CampaignColumnId>;
 
+export type ReportType = "simplificado" | "tecnico";
+
 export type ReportPdfInput = {
   /** Report/template name — shown as the small caption under the client name. */
   title: string;
-  /** Business name for a client-scoped report, or null for a consolidated multi-account view. */
+  /**
+   * The business this report is ABOUT, resolved from the Meta accounts it
+   * actually covers (see resolveReportClients in client-access.ts) — never
+   * the viewer's own identity. null only when isMultiClient is also false
+   * AND no registered client matched at all (an admin's fully internal
+   * export with accounts outside every registered client).
+   */
   clientLabel: string | null;
+  /** True when the resolved accounts span more than one registered client — overrides clientLabel with "Múltiplas contas" everywhere it's drawn, and lists every matched client's name on the cover. */
+  isMultiClient: boolean;
+  /** Every matched client's label, cover-page only, shown under "Múltiplas contas" — empty unless isMultiClient. */
+  multiClientNames: string[];
+  reportVersion: ReportType;
   /**
    * True when a specific recipient's permissions were actually resolved and
    * applied (the client generated their own report, or an admin generated
@@ -83,6 +98,8 @@ export type ReportPdfInput = {
    */
   isClientScoped: boolean;
   allowedColumns: AllowedColumns;
+  /** The viewer's chosen set, already validated server-side against everything they're allowed to pick (see report-data.ts) — intersected with allowedColumns at the top of buildReportPdf, never trusted alone. */
+  selectedIndicators: ReadonlySet<ReportIndicatorId>;
   /** Accounts actually represented in `campaigns` (already permission-filtered upstream — never more than the caller is allowed to see). */
   accounts: { id: string; name: string }[];
   periodLabel: string;
@@ -125,6 +142,12 @@ export type ReportPdfInput = {
   platforms: PlatformSegment[];
   devices: DeviceSegment[];
   hours: HourSegment[];
+  /** Every ad belonging to `campaigns` (same account/campaign/objective/status/ad-set scope already applied) — for the "Melhores anúncios" block only. */
+  ads: AdInsight[];
+  /** "Orçamento do mês" — always about the CURRENT calendar month, independent of this report's own period (see BudgetCard.tsx). null when there's nothing to show (DB not configured, no budget registered, or the report spans more than one client). */
+  budgetPacing: { label: string; spend: number; budget: number; projected: number; dayOfMonth: number; daysInMonth: number } | null;
+  /** The resolved single client's own consultant — simplified report's closing page only. null for a multi-client report or when no consultant is configured (falls back to Legado's general number). */
+  consultant: { name: string | null; whatsapp: string | null } | null;
   /** Accounts that failed to load for this request — surfaced so totals are never mistaken for "genuinely zero". */
   partialAccountNames: string[];
 };
@@ -1226,6 +1249,542 @@ function drawCampaignHierarchy(
   return y;
 }
 
+/**
+ * Top 10 campaigns ranked by spend, with every allowed core metric as a
+ * column — distinct from drawBarList's "Investimento por campanha" (a
+ * single-metric proportional bar chart): this is a ranked, multi-column
+ * table, closer to the live dashboard's own "Ranking de campanhas".
+ */
+function drawCampaignRankingTable(doc: jsPDF, ctx: Ctx, y: number, campaigns: CampaignInsight[], allowed: AllowedColumns): number {
+  const ranked = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 10);
+  if (ranked.length === 0) return y;
+  const metrics = allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).slice(0, 5);
+  if (metrics.length === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, "Ranking de campanhas");
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text("As 10 campanhas com maior investimento no período.", MARGIN_X, y + 3);
+  y += 8;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    columnStyles: { 0: { cellWidth: NAME_COL_W } },
+    head: [["Campanha", ...metrics.map((m) => m.label)]],
+    body: ranked.map((c, i) => [`${i + 1}º · ${c.campaignName}`, ...metrics.map((m) => formatMetricCell(m, c))]),
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
+/** One row per objective's own "resultado principal" — the same primaryResultKind/primaryResultFor logic the live dashboard's "Resultados por objetivo" card uses, grouped across every campaign in scope. */
+function drawResultsByObjective(doc: jsPDF, ctx: Ctx, y: number, campaigns: CampaignInsight[]): number {
+  const byKind = new Map<string, CampaignInsight[]>();
+  for (const c of campaigns) {
+    const kind = primaryResultKind(c.objective);
+    if (kind === "undefined") continue;
+    const list = byKind.get(kind) ?? [];
+    list.push(c);
+    byKind.set(kind, list);
+  }
+  if (byKind.size === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, "Resultados por objetivo");
+  y += 1;
+
+  const rows = [...byKind.entries()].map(([kind, group]) => {
+    const totals = sumTotals(group);
+    const { value, costPerResult } = primaryResultFor(kind as Parameters<typeof primaryResultFor>[0], totals);
+    return { label: PRIMARY_RESULT_LABEL[kind as keyof typeof PRIMARY_RESULT_LABEL], value, costPerResult };
+  });
+
+  const cols = Math.min(4, rows.length);
+  const colW = (CONTENT_W - 10) / cols;
+  rows.forEach((r, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = MARGIN_X + col * colW;
+    const my = y + row * 18;
+    doc.setFont(ctx.fonts.body, "normal");
+    doc.setFontSize(7);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    doc.text(r.label.toUpperCase(), x, my);
+    doc.setFont(ctx.fonts.body, "bold");
+    doc.setFontSize(10.5);
+    setColor(doc, "setTextColor", NAVY_DEEP);
+    doc.text(r.value === null ? "Não disponível" : formatInteger(r.value), x, my + 6);
+    doc.setFont(ctx.fonts.body, "normal");
+    doc.setFontSize(7.6);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    doc.text(r.costPerResult === null ? "—" : `${formatCurrencyBRL(r.costPerResult)} cada`, x, my + 11);
+  });
+  const rowCount = Math.ceil(rows.length / cols);
+  return y + rowCount * 18 + 4;
+}
+
+/** Always about the CURRENT calendar month, independent of the report's own period — see ReportPdfInput.budgetPacing and BudgetCard.tsx on the live dashboard, whose exact wording/math this mirrors. */
+function drawBudgetPacing(doc: jsPDF, ctx: Ctx, y: number, pacing: NonNullable<ReportPdfInput["budgetPacing"]>): number {
+  y = sectionTitle(doc, ctx, y, "Orçamento do mês");
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.6);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(
+    `Sempre sobre o mês atual (dia ${pacing.dayOfMonth} de ${pacing.daysInMonth}), independente do período deste relatório.`,
+    MARGIN_X,
+    y + 3
+  );
+  y += 9;
+  doc.setFont(ctx.fonts.body, "bold");
+  doc.setFontSize(10);
+  setColor(doc, "setTextColor", NAVY_DEEP);
+  doc.text(
+    `${pacing.label}: ${formatCurrencyBRL(pacing.spend)} investidos de ${formatCurrencyBRL(pacing.budget)} — projeção até o fim do mês: ${formatCurrencyBRL(pacing.projected)}.`,
+    MARGIN_X,
+    y
+  );
+  return y + 8;
+}
+
+/** No creative thumbnail — jspdf-autotable has no native image-cell renderer, and embedding one per row would mean fetching each ad's remote Meta CDN thumbnail URL server-side inside this already latency-sensitive route; see the delivery checklist for this disclosed limitation. Ranked by spend, same metric set as drawCampaignRankingTable, plus the quality/engagement/conversion diagnostic rankings. */
+function drawBestAdsSection(doc: jsPDF, ctx: Ctx, y: number, ads: AdInsight[], allowed: AllowedColumns): number {
+  const ranked = [...ads].sort((a, b) => b.spend - a.spend).slice(0, 10);
+  if (ranked.length === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, "Melhores anúncios");
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(
+    "Os 10 anúncios com maior investimento no período. Sem miniatura nesta versão — veja a exportação CSV de criativos e qualidade para a URL da imagem.",
+    MARGIN_X,
+    y + 3
+  );
+  y += 8;
+
+  const metrics = allowedMetricDefs(allowed, [...METRIC_GROUP_A, ...METRIC_GROUP_B]).slice(0, 3);
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    columnStyles: { 0: { cellWidth: NAME_COL_W } },
+    head: [["Anúncio", ...metrics.map((m) => m.label), "Qualidade", "Engajamento", "Conversão"]],
+    body: ranked.map((a, i) => [
+      `${i + 1}º · ${a.adName}`,
+      ...metrics.map((m) => formatMetricCell(m, a)),
+      a.qualityRanking ? qualityRankingLabel(a.qualityRanking) : "—",
+      a.engagementRateRanking ? qualityRankingLabel(a.engagementRateRanking) : "—",
+      a.conversionRateRanking ? qualityRankingLabel(a.conversionRateRanking) : "—",
+    ]),
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
+// ---------------------------------------------------------------------------
+// Simplified report — Parte 3 do "PROMPT — RELATÓRIOS": same numbers as the
+// technical report, different presentation. No Meta field names, no "CTR/
+// CPC/CPM" acronyms on their own, no fórmulas — a plain-language name plus a
+// one-line explanation for everything, percentages read as "em cada 100",
+// and "aumentou/diminuiu ... — melhorou/piorou" instead of a bare ±%.
+// ---------------------------------------------------------------------------
+
+type SimpleMetricId = "spend" | "impressions" | "reach" | "clicks" | "linkClicks" | "ctr" | "cpc" | "cpm" | "conversations" | "costPerConversation" | "leads";
+
+const SIMPLE_LABEL: Record<SimpleMetricId, { label: string; explanation: string }> = {
+  spend: { label: "Valor investido", explanation: "Quanto foi investido em anúncios no período." },
+  impressions: { label: "Vezes que o anúncio apareceu", explanation: "Quantas vezes os anúncios apareceram na tela das pessoas (a mesma pessoa pode ver mais de uma vez)." },
+  reach: { label: "Pessoas alcançadas", explanation: "Quantas pessoas diferentes viram os anúncios." },
+  clicks: { label: "Cliques no anúncio", explanation: "Todos os cliques no anúncio — para ver a foto, abrir o perfil, reagir ou ir até você." },
+  linkClicks: { label: "Cliques que levaram até você", explanation: "Cliques que levaram a pessoa ao seu WhatsApp, site ou formulário." },
+  ctr: { label: "Taxa de cliques", explanation: "De cada 100 vezes que o anúncio apareceu, quantas viraram clique." },
+  cpc: { label: "Custo por clique", explanation: "Quanto custou, em média, cada clique." },
+  cpm: { label: "Custo para aparecer 1.000 vezes", explanation: "Quanto custou, em média, para o anúncio aparecer mil vezes." },
+  conversations: { label: "Conversas iniciadas", explanation: "Quantas pessoas começaram uma conversa com você (WhatsApp, Direct ou Messenger) a partir do anúncio." },
+  costPerConversation: { label: "Custo por conversa", explanation: "Quanto custou, em média, cada conversa iniciada." },
+  leads: { label: "Contatos recebidos", explanation: "Quantas pessoas deixaram nome e contato no formulário do anúncio." },
+};
+
+/** "Melhorar" = subir for these; the cost-type ids below (not listed here) mean the opposite; spend is always neutral — see simpleDeltaColor. */
+const SIMPLE_HIGHER_IS_BETTER = new Set<SimpleMetricId>(["impressions", "reach", "clicks", "linkClicks", "ctr", "conversations", "leads"]);
+
+function simpleDeltaColor(id: SimpleMetricId, delta: number): [number, number, number] {
+  if (id === "spend" || Math.abs(delta) < 0.5) return TEXT_MUTED;
+  const goingUp = delta > 0;
+  const isGood = SIMPLE_HIGHER_IS_BETTER.has(id) ? goingUp : !goingUp;
+  return isGood ? GOOD : BAD;
+}
+
+function simpleDeltaWord(id: SimpleMetricId, delta: number): string {
+  if (id === "spend" || Math.abs(delta) < 0.5) return "";
+  const goingUp = delta > 0;
+  const isGood = SIMPLE_HIGHER_IS_BETTER.has(id) ? goingUp : !goingUp;
+  return isGood ? "melhorou" : "piorou";
+}
+
+/** R$ with cents only below R$100 — a leigo reads "R$ 1.766" more easily than "R$ 1.766,40", but a small value still needs its cents to be meaningful. */
+function formatSimpleCurrency(n: number): string {
+  if (n < 100) return formatCurrencyBRL(n);
+  return `R$ ${Math.round(n).toLocaleString("pt-BR")}`;
+}
+
+/** "2,86%" → "cerca de 3 em cada 100 vezes" — every rate in the simplified report is read this way instead of as a bare percentage. */
+function simplePercentReading(pct: number): string {
+  const per100 = Math.round(pct);
+  return `cerca de ${per100} em cada 100`;
+}
+
+/** Swaps the handful of acronyms/technical terms strategic-insights.ts's own generated prose uses for their plain-language equivalents — the automated analysis text itself is reused verbatim (same rule-based findings), only the vocabulary changes. */
+function simplifyInsightText(text: string): string {
+  return text
+    .replace(/\bCPM\b/g, "custo para aparecer 1.000 vezes")
+    .replace(/\bCPC\b/g, "custo por clique")
+    .replace(/\bCTR\b/g, "taxa de cliques")
+    .replace(/Custo por conversa iniciada/gi, "custo por conversa")
+    .replace(/vencedora/gi, "melhor resultado")
+    .replace(/atribuição de 7 dias/gi, "contados nos 7 dias após o clique");
+}
+
+function formatSimpleValue(id: SimpleMetricId, n: number | null): string {
+  if (n === null) return "Esse número não se aplica às campanhas deste período.";
+  switch (id) {
+    case "spend":
+    case "cpc":
+    case "cpm":
+    case "costPerConversation":
+      return formatSimpleCurrency(n);
+    case "ctr":
+      return `${simplePercentReading(n)} vezes`;
+    default:
+      return formatInteger(n);
+  }
+}
+
+/** One big labeled card — the simplified report's version of a KPI card: plain name, the number, and its one-line explanation underneath (never a raw acronym or formula). */
+function drawSimpleCard(doc: jsPDF, ctx: Ctx, box: { x: number; y: number; w: number; h: number }, id: SimpleMetricId, value: number | null, delta: number | null) {
+  const def = SIMPLE_LABEL[id];
+  setColor(doc, "setDrawColor", BORDER);
+  doc.setLineWidth(0.25);
+  setColor(doc, "setFillColor", WHITE);
+  doc.roundedRect(box.x, box.y, box.w, box.h, 2, 2, "FD");
+  setColor(doc, "setFillColor", NAVY);
+  doc.rect(box.x, box.y, 1.4, box.h, "F");
+
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(8.2);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(def.label, box.x + 6, box.y + 8);
+
+  doc.setFont(ctx.fonts.body, "bold");
+  doc.setFontSize(17);
+  setColor(doc, "setTextColor", NAVY_DEEP);
+  doc.text(formatSimpleValue(id, value), box.x + 6, box.y + 18);
+
+  if (delta !== null) {
+    const word = simpleDeltaWord(id, delta);
+    doc.setFont(ctx.fonts.body, "normal");
+    doc.setFontSize(8);
+    setColor(doc, "setTextColor", simpleDeltaColor(id, delta));
+    doc.text(`${formatSignedPercent(delta)} em relação ao período anterior${word ? ` — ${word}` : ""}`, box.x + 6, box.y + 24);
+  }
+
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  const lines = wrapText(doc, def.explanation, box.w - 10).slice(0, 3);
+  doc.text(lines, box.x + 6, box.y + (delta !== null ? 30 : 26));
+}
+
+/** A tasteful mascot aside — "O que isso quer dizer?" — never covering numbers/tables/charts; just a small image plus a short note beside the section it accompanies. */
+function drawMascotCallout(doc: jsPDF, ctx: Ctx, x: number, y: number, w: number, note: string, mascot: string | null) {
+  const h = 26;
+  setColor(doc, "setFillColor", SILVER_TINT);
+  doc.roundedRect(x, y, w, h, 2, 2, "F");
+  let textX = x + 6;
+  if (mascot) {
+    const imgH = h - 6;
+    const imgW = imgH * TITAN_ASPECT_WH;
+    try {
+      doc.addImage(mascot, "PNG", x + 4, y + 3, imgW, imgH);
+      textX = x + imgW + 10;
+    } catch {
+      // A corrupt/unsupported mascot asset never blocks the callout text.
+    }
+  }
+  doc.setFont(ctx.fonts.body, "bold");
+  doc.setFontSize(7.6);
+  setColor(doc, "setTextColor", NAVY);
+  doc.text("O QUE ISSO QUER DIZER?", textX, y + 7);
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.6);
+  setColor(doc, "setTextColor", TEXT);
+  const lines = wrapText(doc, note, x + w - textX - 4).slice(0, 2);
+  doc.text(lines, textX, y + 13);
+}
+
+/** Max 5 columns, top 5 rows + one "Demais" row summing the rest — the simplified report's table shape for every ranking. */
+function drawSimpleTable(
+  doc: jsPDF,
+  ctx: Ctx,
+  y: number,
+  questionTitle: string,
+  head: string[],
+  rows: string[][],
+  demaisRow: string[] | null
+): number {
+  y = sectionTitle(doc, ctx, y, questionTitle);
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    head: [head],
+    body: demaisRow ? [...rows, demaisRow] : rows,
+    didParseCell: (data) => {
+      if (demaisRow && data.row.index === rows.length && data.section === "body") {
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
+/**
+ * Parte 3 do prompt de relatórios — mesmos números do relatório técnico,
+ * apresentação para quem não é da área: frases-modelo, cartões grandes com
+ * explicação de uma linha, tabelas de até 5 colunas (5 linhas + "Demais"),
+ * um único gráfico com o dia de melhor resultado, leitura automática sem
+ * jargão, e glossário + contato na última página.
+ */
+function buildSimplifiedBody(
+  doc: jsPDF,
+  ctx: Ctx,
+  input: ReportPdfInput,
+  allowed: AllowedColumns,
+  isBlockSelected: (id: ReportIndicatorId) => boolean,
+  showComparison: boolean,
+  totals: Totals,
+  totalReach: number | null,
+  comparisonTotals: Totals | null,
+  comparisonReach: number | null,
+  dailyAgg: { date: string; spend: number; impressions: number; clicks: number; linkClicks: number; conversations: number | null; reach: number }[],
+  insights: ReturnType<typeof computeStrategicInsights>
+): number {
+  const { fonts, assets } = ctx;
+  let y = HEADER_BOTTOM + 8;
+
+  const nonSpendPrimary = primaryKpiIds(input.campaigns).find((id) => id !== "spend" && isAllowed(allowed, id));
+  const simpleIdFor = (id: KpiId | null): SimpleMetricId | null => (id && id in SIMPLE_LABEL ? (id as SimpleMetricId) : null);
+  const resultId = simpleIdFor(nonSpendPrimary ?? null);
+  const costId: SimpleMetricId | null = resultId === "conversations" ? "costPerConversation" : resultId === "clicks" || resultId === "linkClicks" ? "cpc" : null;
+
+  // ---- a) Página 1 — "O resumo do período" ----
+  doc.setFont(fonts.heading, "bold");
+  doc.setFontSize(17);
+  setColor(doc, "setTextColor", NAVY);
+  doc.text("O resumo do período", MARGIN_X, y);
+  y += 9;
+
+  doc.setFont(fonts.body, "normal");
+  doc.setFontSize(10);
+  setColor(doc, "setTextColor", TEXT);
+  const sentences: string[] = [];
+  if (isAllowed(allowed, "spend")) {
+    sentences.push(
+      `De ${formatShortDate(input.resolvedRange.since)} a ${formatShortDate(input.resolvedRange.until)} foram investidos ${formatSimpleCurrency(totals.spend)} em anúncios.`
+    );
+  }
+  let resultCount: number | null = null;
+  let resultCost: number | null = null;
+  if (resultId) {
+    resultCount = resultId === "clicks" ? totals.clicks : resultId === "linkClicks" ? totals.linkClicks : resultId === "conversations" ? totals.conversations : resultId === "reach" ? totalReach : null;
+    resultCost = costId === "costPerConversation" ? costPerConversation(totals) : costId === "cpc" ? cpc(totals) : null;
+    if (resultCount !== null) {
+      const resultLabel = SIMPLE_LABEL[resultId].label.toLowerCase();
+      sentences.push(
+        `Esse investimento gerou ${formatInteger(resultCount)} ${resultLabel}${resultCost !== null ? ` — cerca de ${formatSimpleCurrency(resultCost)} cada` : ""}.`
+      );
+    }
+  }
+  if (showComparison && comparisonTotals && resultId && resultCount !== null) {
+    const prevCount = resultId === "clicks" ? comparisonTotals.clicks : resultId === "linkClicks" ? comparisonTotals.linkClicks : resultId === "conversations" ? comparisonTotals.conversations : resultId === "reach" ? comparisonReach : null;
+    const prevCost = costId === "costPerConversation" ? costPerConversation(comparisonTotals) : costId === "cpc" ? cpc(comparisonTotals) : null;
+    const countDelta = prevCount !== null && prevCount !== 0 ? pctChange(resultCount, prevCount) : null;
+    const costDelta = resultCost !== null && prevCost !== null && prevCost !== 0 ? pctChange(resultCost, prevCost) : null;
+    if (countDelta !== null) {
+      sentences.push(
+        `Comparado com o período anterior, ${SIMPLE_LABEL[resultId].label.toLowerCase()} ${countDelta >= 0 ? "aumentou" : "diminuiu"} ${formatPercent(Math.abs(countDelta))}${
+          costDelta !== null ? ` e o custo de cada um ${costDelta >= 0 ? "subiu" : "caiu"} ${formatPercent(Math.abs(costDelta))}` : ""
+        }.`
+      );
+    }
+  }
+  for (const s of sentences) {
+    const lines = wrapText(doc, s, CONTENT_W);
+    doc.text(lines, MARGIN_X, y);
+    y += lines.length * 5.2 + 3;
+  }
+  y += 3;
+
+  const cardIds: { id: SimpleMetricId; value: number | null; delta: number | null }[] = [];
+  const pushCard = (id: SimpleMetricId, value: number | null, prevValue: number | null) => {
+    if (cardIds.length >= 4) return;
+    const delta = showComparison && comparisonTotals && value !== null && prevValue !== null && prevValue !== 0 ? pctChange(value, prevValue) : null;
+    cardIds.push({ id, value, delta });
+  };
+  if (isAllowed(allowed, "spend")) pushCard("spend", totals.spend, comparisonTotals?.spend ?? null);
+  if (resultId && resultCount !== null) pushCard(resultId, resultCount, null);
+  if (costId && resultCost !== null) pushCard(costId, resultCost, null);
+  if (isAllowed(allowed, "reach") && totalReach !== null && !cardIds.some((c) => c.id === "reach")) pushCard("reach", totalReach, comparisonReach);
+
+  if (cardIds.length > 0) {
+    const gap = 5;
+    const cardW = (CONTENT_W - gap * (cardIds.length - 1)) / cardIds.length;
+    const cardH = 42;
+    cardIds.forEach((c, i) => drawSimpleCard(doc, ctx, { x: MARGIN_X + i * (cardW + gap), y, w: cardW, h: cardH }, c.id, c.value, c.delta));
+    y += cardH + 10;
+  }
+
+  if (assets.titanBoasVindasDataUrl) {
+    drawMascotCallout(
+      doc,
+      ctx,
+      MARGIN_X,
+      y,
+      CONTENT_W,
+      "Esses números mostram o resultado dos seus anúncios no período — quanto foi investido e o que esse investimento trouxe de volta.",
+      assets.titanBoasVindasDataUrl
+    );
+    y += 32;
+  }
+
+  // ---- g) Gráfico único de evolução ----
+  if (isBlockSelected("trendChart") && dailyAgg.length > 1 && resultId) {
+    y = ensureSpace(doc, ctx, y, 80);
+    y = sectionTitle(doc, ctx, y, "Como os resultados evoluíram no período");
+    const best = [...dailyAgg].sort((a, b) => b.spend - a.spend)[0];
+    drawLineChart(
+      doc,
+      ctx,
+      { x: MARGIN_X, y, w: CONTENT_W, h: 56 },
+      {
+        title: SIMPLE_LABEL.spend.label,
+        caption: "",
+        xLabels: dailyAgg.map((d) => formatShortDate(d.date)),
+        series: [{ values: dailyAgg.map((d) => d.spend), color: NAVY }],
+        formatValue: formatSimpleCurrency,
+        legend: [],
+      }
+    );
+    y += 58;
+    doc.setFont(fonts.body, "normal");
+    doc.setFontSize(8.4);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    doc.text(`O dia de maior investimento foi ${formatShortDate(best.date)}.`, MARGIN_X, y);
+    y += 10;
+  }
+
+  // ---- h) Leitura automática, sem jargão, no máx. 3 pontos ----
+  if (isBlockSelected("strategicInsights") && insights.hasData) {
+    const points = [...insights.attention, ...insights.opportunities].slice(0, 3);
+    if (points.length > 0) {
+      y = ensureSpace(doc, ctx, y, 30);
+      y = sectionTitle(doc, ctx, y, "O que os números mostram");
+      for (const p of points) {
+        y = ensureSpace(doc, ctx, y, 12);
+        doc.setFont(fonts.body, "normal");
+        doc.setFontSize(8.6);
+        setColor(doc, "setTextColor", TEXT);
+        const lines = wrapText(doc, `• ${simplifyInsightText(p.text)}`, CONTENT_W);
+        doc.text(lines, MARGIN_X, y);
+        y += lines.length * 4.6 + 3;
+      }
+    }
+  }
+
+  // ---- f) Tabela — "Quais campanhas trouxeram mais resultado?" ----
+  if (isBlockSelected("campaignRanking") && isAllowed(allowed, "spend")) {
+    const ranked = [...input.campaigns].sort((a, b) => b.spend - a.spend);
+    if (ranked.length > 0) {
+      y = ensureSpace(doc, ctx, y, 50);
+      const top5 = ranked.slice(0, 5);
+      const rest = ranked.slice(5);
+      const rows = top5.map((c) => [c.campaignName, formatSimpleCurrency(c.spend)]);
+      const demais = rest.length > 0 ? [`Demais (${rest.length})`, formatSimpleCurrency(rest.reduce((s, c) => s + c.spend, 0))] : null;
+      y = drawSimpleTable(doc, ctx, y, "Quais campanhas trouxeram mais resultado?", ["Campanha", "Valor investido"], rows, demais);
+    }
+  }
+
+  // ---- f) Tabela — horários, quando selecionado ----
+  if (isBlockSelected("topHours") && isAllowed(allowed, "spend") && input.hours.length > 0) {
+    const byHour = new Map<string, number>();
+    for (const h of input.hours) byHour.set(h.hour, (byHour.get(h.hour) ?? 0) + h.spend);
+    const ranked = [...byHour.entries()].sort((a, b) => b[1] - a[1]);
+    if (ranked.length > 0) {
+      y = ensureSpace(doc, ctx, y, 50);
+      const top5 = ranked.slice(0, 5);
+      const rest = ranked.slice(5);
+      const rows = top5.map(([hour, spend]) => [`${hour.slice(0, 2)}h`, formatSimpleCurrency(spend)]);
+      const demais = rest.length > 0 ? [`Demais (${rest.length})`, formatSimpleCurrency(rest.reduce((s, [, v]) => s + v, 0))] : null;
+      y = drawSimpleTable(doc, ctx, y, "Em que horários os anúncios funcionaram melhor?", ["Horário", "Valor investido"], rows, demais);
+    }
+  }
+
+  // ---- j) Última página — "Como ler este relatório" ----
+  y = ensureSpace(doc, ctx, y, 90);
+  y = sectionTitle(doc, ctx, y, "Como ler este relatório");
+  const glossaryIds = [...cardIds.map((c) => c.id), ...(resultId ? [resultId] : []), ...(costId ? [costId] : [])];
+  const uniqueGlossary = [...new Set(glossaryIds)];
+  for (const id of uniqueGlossary) {
+    y = ensureSpace(doc, ctx, y, 12);
+    doc.setFont(fonts.body, "bold");
+    doc.setFontSize(8.4);
+    setColor(doc, "setTextColor", NAVY_DEEP);
+    doc.text(SIMPLE_LABEL[id].label, MARGIN_X, y);
+    doc.setFont(fonts.body, "normal");
+    doc.setFontSize(8);
+    setColor(doc, "setTextColor", TEXT_MUTED);
+    const lines = wrapText(doc, SIMPLE_LABEL[id].explanation, CONTENT_W - 50);
+    doc.text(lines, MARGIN_X + 48, y);
+    y += Math.max(5, lines.length * 4) + 2;
+  }
+
+  y += 4;
+  if (assets.legacyOlaDataUrl) {
+    const h = 36;
+    const w = h * LEGACY_ASPECT_WH;
+    y = ensureSpace(doc, ctx, y, h + 6);
+    try {
+      doc.addImage(assets.legacyOlaDataUrl, "PNG", MARGIN_X, y, w, h);
+    } catch {
+      // A corrupt/unsupported mascot asset never blocks the closing page.
+    }
+    doc.setFont(fonts.body, "normal");
+    doc.setFontSize(9.5);
+    setColor(doc, "setTextColor", NAVY_DEEP);
+    const consultantLine = input.consultant?.name
+      ? `Dúvidas sobre estes números? Fale com ${input.consultant.name}, seu consultor na Legado.`
+      : "Dúvidas sobre estes números? Fale com o seu consultor da Legado.";
+    const lines = wrapText(doc, consultantLine, CONTENT_W - w - 8);
+    doc.text(lines, MARGIN_X + w + 8, y + h / 2 - (lines.length * 4.6) / 2 + 3);
+  }
+
+  return y;
+}
+
 // ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
@@ -1241,9 +1800,10 @@ function slugify(value: string): string {
   );
 }
 
-export function reportFileName(input: Pick<ReportPdfInput, "clientLabel" | "resolvedRange">): string {
-  const scope = slugify(input.clientLabel ?? "consolidado");
-  return `legado-intelligence_${scope}_${input.resolvedRange.since}_a_${input.resolvedRange.until}.pdf`;
+export function reportFileName(input: Pick<ReportPdfInput, "clientLabel" | "isMultiClient" | "resolvedRange" | "reportVersion">): string {
+  const scope = input.isMultiClient ? "multiplas-contas" : slugify(input.clientLabel ?? "consolidado");
+  const versionSuffix = input.reportVersion === "tecnico" ? "_tecnico" : "";
+  return `legado-intelligence_${scope}${versionSuffix}_${input.resolvedRange.since}_a_${input.resolvedRange.until}.pdf`;
 }
 
 /**
@@ -1283,8 +1843,15 @@ function drawCoverPage(doc: jsPDF, ctx: Ctx, input: ReportPdfInput) {
   doc.setFont(fonts.body, "normal");
   doc.setFontSize(12);
   setColor(doc, "setTextColor", TEXT_MUTED);
-  doc.text(input.clientLabel ?? "Visão consolidada — múltiplas contas", PAGE_W / 2, y, { align: "center" });
+  doc.text(input.isMultiClient ? "Múltiplas contas" : input.clientLabel ?? "Visão consolidada — múltiplas contas", PAGE_W / 2, y, { align: "center" });
   y += 8;
+
+  if (input.isMultiClient && input.multiClientNames.length > 0) {
+    doc.setFontSize(8.5);
+    const lines = wrapText(doc, input.multiClientNames.join(", "), PAGE_W - MARGIN_X * 2 - 40);
+    doc.text(lines, PAGE_W / 2, y, { align: "center" });
+    y += lines.length * 4 + 2;
+  }
 
   doc.setFontSize(9.5);
   doc.text(ctx.periodLine, PAGE_W / 2, y, { align: "center" });
@@ -1315,24 +1882,38 @@ function drawCoverPage(doc: jsPDF, ctx: Ctx, input: ReportPdfInput) {
 export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsPDF {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const fonts = registerFonts(doc, assets);
-  const allowed = input.allowedColumns;
+  // Everything drawn below reads this ONE intersected set, never
+  // input.allowedColumns directly — a column the viewer is allowed to see
+  // but chose not to include in THIS report must disappear exactly like a
+  // permission-hidden one: no card, column, chart, legend, total, sentence,
+  // summary line or glossary entry anywhere.
+  const allowed: AllowedColumns = new Set([...input.allowedColumns].filter((id) => input.selectedIndicators.has(id)));
+  const selected = input.selectedIndicators;
+  const isBlockSelected = (id: ReportIndicatorId): boolean => selected.has(id);
+  // "Comparação com o período anterior" is its own selectable block — unlike
+  // every other indicator this one doesn't gate a column but a WHOLE extra
+  // dimension (the dashed series, the delta line) drawn alongside already-
+  // selected indicators, so it needs its own flag rather than folding into
+  // `allowed`.
+  const showComparison = input.compare && isBlockSelected("compare");
 
-  const scopeLine = input.clientLabel ? `${input.clientLabel} · ${input.title}` : `Visão consolidada — múltiplas contas · ${input.title}`;
-  const periodLine = input.compare && input.comparisonRange
+  const displayClientLabel = input.isMultiClient ? "Múltiplas contas" : input.clientLabel ?? "Visão consolidada — múltiplas contas";
+  const scopeLine = `${displayClientLabel} · ${input.title}`;
+  const periodLine = showComparison && input.comparisonRange
     ? `${formatShortDate(input.resolvedRange.since)}–${formatShortDate(input.resolvedRange.until)} vs. ${formatShortDate(input.comparisonRange.since)}–${formatShortDate(input.comparisonRange.until)}`
     : `${formatShortDate(input.resolvedRange.since)}–${formatShortDate(input.resolvedRange.until)}`;
-  const footerLeft = `${input.clientLabel ?? "Visão consolidada — múltiplas contas"} · ${periodLine}`;
+  const footerLeft = `${displayClientLabel} · ${periodLine}`;
 
   const ctx: Ctx = { fonts, assets, scopeLine, periodLine, footerLeft };
 
   const totals = sumTotals(input.campaigns);
   const totalReach = isAllowed(allowed, "reach") ? input.reach : null;
-  const comparisonTotals = input.comparisonCampaigns ? sumTotals(input.comparisonCampaigns) : null;
-  const comparisonReach = isAllowed(allowed, "reach") ? input.comparisonReach : null;
+  const comparisonTotals = showComparison && input.comparisonCampaigns ? sumTotals(input.comparisonCampaigns) : null;
+  const comparisonReach = showComparison && isAllowed(allowed, "reach") ? input.comparisonReach : null;
 
   const accountIdSet = new Set(input.accounts.map((a) => a.id));
   const dailyAgg = aggregateDailyByDate(input.daily, accountIdSet);
-  const comparisonDailyAgg = input.comparisonDaily ? aggregateDailyByDate(input.comparisonDaily, accountIdSet) : null;
+  const comparisonDailyAgg = showComparison && input.comparisonDaily ? aggregateDailyByDate(input.comparisonDaily, accountIdSet) : null;
 
   const allowedKpiIds = new Set<KpiId>((Object.keys(METRIC_DEFS) as KpiId[]).filter((id) => isAllowed(allowed, id)));
   const insights = computeStrategicInsights({
@@ -1350,12 +1931,16 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
 
   // ---- Page 2: abertura e visão executiva ----
   drawHeader(doc, ctx);
+
+  if (input.reportVersion === "simplificado") {
+    buildSimplifiedBody(doc, ctx, input, allowed, isBlockSelected, showComparison, totals, totalReach, comparisonTotals, comparisonReach, dailyAgg, insights);
+  } else {
   let y = HEADER_BOTTOM + 8;
 
   doc.setFont(fonts.heading, "bold");
   doc.setFontSize(19);
   setColor(doc, "setTextColor", NAVY);
-  doc.text(input.clientLabel ?? "Visão consolidada — múltiplas contas", MARGIN_X, y);
+  doc.text(displayClientLabel, MARGIN_X, y);
   y += 6;
   doc.setFont(fonts.body, "normal");
   doc.setFontSize(9.5);
@@ -1394,7 +1979,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     ["Período", `${formatShortDate(input.resolvedRange.since)} a ${formatShortDate(input.resolvedRange.until)}`],
     [
       "Comparando com",
-      input.compare && input.comparisonRange
+      showComparison && input.comparisonRange
         ? `${formatShortDate(input.comparisonRange.since)} a ${formatShortDate(input.comparisonRange.until)}`
         : "Comparação não ativada",
     ],
@@ -1441,21 +2026,14 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += lines.length * 4 + 3;
   }
 
-  const showKpiGrid = input.reportType !== "audience";
-  const visibleKpiDefs = showKpiGrid ? KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, totalReach)) : [];
+  const visibleKpiDefs = KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, totalReach));
   y += 2;
-  if (showKpiGrid && visibleKpiDefs.length > 0) {
+  if (visibleKpiDefs.length > 0) {
     y = ensureSpace(doc, ctx, y, kpiGridHeight(visibleKpiDefs, Boolean(ctx.periodLine && comparisonTotals)));
     y = drawKpiGrid(doc, ctx, y, visibleKpiDefs, totals, totalReach, comparisonTotals, comparisonReach);
-  } else if (showKpiGrid) {
-    doc.setFont(fonts.body, "normal");
-    doc.setFontSize(9);
-    setColor(doc, "setTextColor", TEXT_MUTED);
-    doc.text("Nenhum indicador disponível para exibição neste relatório.", MARGIN_X, y + 4);
-    y += 14;
   }
 
-  const showExecutiveSummary = input.reportType !== "audience";
+  const showExecutiveSummary = isBlockSelected("strategicInsights");
   if (showExecutiveSummary && insights.summary.length > 0) {
     y = ensureSpace(doc, ctx, y, 20);
     const summaryTitleY = y;
@@ -1490,7 +2068,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   }
 
   // ---- Evolução e distribuição ----
-  const showEvolution = input.reportType !== "audience";
+  const showEvolution = isBlockSelected("trendChart");
   const nonSpendPrimary = primaryKpiIds(input.campaigns).find((id) => id !== "spend" && isAllowed(allowed, id)) ?? [...METRIC_GROUP_B, ...METRIC_GROUP_A].find((id) => isAllowed(allowed, id));
   const hasEvolutionSection = showEvolution && (isAllowed(allowed, "spend") || nonSpendPrimary !== undefined);
 
@@ -1512,7 +2090,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
       doc.text("Sem série diária disponível para este período/filtro.", MARGIN_X, y + 4);
       y += 14;
     } else {
-      const legend = input.compare && comparisonDailyAgg
+      const legend = showComparison && comparisonDailyAgg
         ? [
             { label: `Período atual (${formatShortDate(input.resolvedRange.since)}–${formatShortDate(input.resolvedRange.until)})`, color: NAVY },
             { label: `Período anterior (${input.comparisonRange ? `${formatShortDate(input.comparisonRange.since)}–${formatShortDate(input.comparisonRange.until)}` : "—"})`, color: SILVER, dashed: true },
@@ -1522,7 +2100,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
       let chartX = MARGIN_X;
       if (isAllowed(allowed, "spend")) {
         const spendSeries: LineSeries[] = [{ values: dailyAgg.map((d) => d.spend), color: NAVY }];
-        if (input.compare && comparisonDailyAgg && comparisonDailyAgg.length > 0) {
+        if (showComparison && comparisonDailyAgg && comparisonDailyAgg.length > 0) {
           const n = dailyAgg.length;
           spendSeries.push({ values: Array.from({ length: n }, (_, i) => comparisonDailyAgg[i]?.spend ?? null), color: SILVER, dashed: true });
         }
@@ -1539,7 +2117,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
 
       if (nonSpendPrimary) {
         const resultSeries: LineSeries[] = [{ values: derivedDailySeries(dailyAgg, nonSpendPrimary), color: NAVY }];
-        if (input.compare && comparisonDailyAgg && comparisonDailyAgg.length > 0) {
+        if (showComparison && comparisonDailyAgg && comparisonDailyAgg.length > 0) {
           const n = dailyAgg.length;
           const alignedResult = derivedDailySeries(
             Array.from({ length: n }, (_, i) => comparisonDailyAgg[i] ?? { date: "", spend: 0, impressions: 0, clicks: 0, linkClicks: 0, conversations: null, reach: 0 }),
@@ -1560,8 +2138,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     }
   }
 
-  const showCampaignDistribution = input.reportType === "detailed";
-  if (showCampaignDistribution && isAllowed(allowed, "spend")) {
+  if (isBlockSelected("spendByCampaign") && isAllowed(allowed, "spend")) {
     y = ensureSpace(doc, ctx, y, 70);
     const distItems = [...input.campaigns].sort((a, b) => b.spend - a.spend).map((c) => ({ label: c.campaignName, value: c.spend }));
     drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 62 }, {
@@ -1573,25 +2150,34 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y += 68;
   }
 
-  // Standalone title for the audience-only report — "detailed" already got
-  // one from the evolution section above, and "executive" never reaches
-  // this branch (showAudienceBreakdowns is false for it).
-  const showAudienceBreakdowns = input.reportType === "detailed" || input.reportType === "audience";
-  if (input.reportType === "audience") {
-    y = ensureSpace(doc, ctx, y, 16);
-    y = sectionTitle(doc, ctx, y, "Público e distribuição");
+  if (isBlockSelected("campaignRanking")) {
+    y = ensureSpace(doc, ctx, y, 20);
+    y = drawCampaignRankingTable(doc, ctx, y, input.campaigns, allowed);
   }
 
-  if (showAudienceBreakdowns && input.audience.length > 0) {
+  if (isBlockSelected("resultsByObjective")) {
+    y = ensureSpace(doc, ctx, y, 20);
+    y = drawResultsByObjective(doc, ctx, y, input.campaigns);
+  }
+
+  if (input.budgetPacing && isBlockSelected("budgetPacing")) {
+    y = ensureSpace(doc, ctx, y, 20);
+    y = drawBudgetPacing(doc, ctx, y, input.budgetPacing);
+  }
+
+  if (isBlockSelected("audienceAge") && input.audience.length > 0) {
+    y = ensureSpace(doc, ctx, y, 60);
+    const ageRows = aggregateBreakdown(input.audience, (a) => a.age, (k) => k);
+    y = drawBreakdownTable(doc, ctx, y, "Público por idade", "Faixas etárias com dados reportados pela Meta no período.", "Idade", ageRows, allowed);
+  }
+  if (isBlockSelected("audienceGender") && input.audience.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const genderLabel: Record<string, string> = { male: "Masculino", female: "Feminino" };
-    const ageRows = aggregateBreakdown(input.audience, (a) => a.age, (k) => k);
     const genderRows = aggregateBreakdown(input.audience, (a) => a.gender, (k) => genderLabel[k] ?? k);
-    y = drawBreakdownTable(doc, ctx, y, "Público por idade", "Faixas etárias com dados reportados pela Meta no período.", "Idade", ageRows, allowed);
     y = drawBreakdownTable(doc, ctx, y, "Público por gênero", "Gêneros com dados reportados pela Meta no período.", "Gênero", genderRows, allowed);
   }
 
-  if (showAudienceBreakdowns && input.regions.length > 0) {
+  if (isBlockSelected("audienceRegion") && input.regions.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const regionRows = aggregateBreakdown(input.regions, (r) => r.region, (k) => k);
     y = drawBreakdownTable(doc, ctx, y, "Público por região", "Estados com dados reportados pela Meta no período.", "Região", regionRows, allowed);
@@ -1605,27 +2191,29 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   };
   const deviceLabel: Record<string, string> = { desktop: "Desktop", mobile_app: "App mobile", mobile_web: "Web mobile" };
 
-  if (showAudienceBreakdowns && input.platforms.length > 0) {
+  if (isBlockSelected("platformDistribution") && input.platforms.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const platformRows = aggregateBreakdown(input.platforms, (p) => p.platform, (k) => platformLabel[k] ?? k);
     y = drawBreakdownTable(doc, ctx, y, "Distribuição por plataforma", "Plataformas com dados reportados pela Meta no período.", "Plataforma", platformRows, allowed);
   }
 
-  if (showAudienceBreakdowns && input.devices.length > 0) {
+  if (isBlockSelected("deviceDistribution") && input.devices.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const deviceRows = aggregateBreakdown(input.devices, (d) => d.device, (k) => deviceLabel[k] ?? k);
     y = drawBreakdownTable(doc, ctx, y, "Distribuição por dispositivo", "Dispositivos com dados reportados pela Meta no período.", "Dispositivo", deviceRows, allowed);
   }
 
-  if (showAudienceBreakdowns && isAllowed(allowed, "spend") && input.hours.length > 0) {
+  if (isBlockSelected("topHours") && isAllowed(allowed, "spend") && input.hours.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     y = drawTopHoursTable(doc, ctx, y, input.hours, allowed);
   }
 
-  const showDetailedExtras = input.reportType === "detailed";
-  const visibleConversionDefs = showDetailedExtras
-    ? EXTRA_CONVERSION_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null))
-    : [];
+  if (isBlockSelected("bestAds") && input.ads.length > 0) {
+    y = ensureSpace(doc, ctx, y, 20);
+    y = drawBestAdsSection(doc, ctx, y, input.ads, allowed);
+  }
+
+  const visibleConversionDefs = EXTRA_CONVERSION_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null));
   if (visibleConversionDefs.length > 0) {
     y = ensureSpace(doc, ctx, y, 12);
     doc.setFont(fonts.body, "bold");
@@ -1642,9 +2230,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y = drawKpiGrid(doc, ctx, y, visibleConversionDefs, totals, null, null, null);
   }
 
-  const visibleEngagementDefs = showDetailedExtras
-    ? EXTRA_ENGAGEMENT_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null))
-    : [];
+  const visibleEngagementDefs = EXTRA_ENGAGEMENT_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null));
   if (visibleEngagementDefs.length > 0) {
     y = ensureSpace(doc, ctx, y, 12);
     doc.setFont(fonts.body, "bold");
@@ -1657,7 +2243,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   }
 
   // ---- Campaign → ad set hierarchy ----
-  if (showDetailedExtras) {
+  if (isBlockSelected("campaignHierarchy")) {
     y = ensureSpace(doc, ctx, y, 60);
     y = drawCampaignHierarchy(doc, ctx, y, input.campaigns, input.adSets, input.selectedAdSetIds, allowed);
   }
@@ -1679,6 +2265,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     } catch {
       // A corrupt/unsupported mascot asset never blocks the report itself.
     }
+  }
   }
 
   // ---- Final pass: footer with "Página X de Y" on every page except the cover ----

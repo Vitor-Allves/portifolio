@@ -39,7 +39,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -248,6 +248,39 @@ async function ensureSchema(): Promise<void> {
       PRIMARY KEY (client_access_id, year, month)
     )
   `);
+
+  // Global, admin_geral-only flag: which report indicator ids are "uso
+  // interno" (never auto-checked for anyone, and only an admin with
+  // canIncludeInternalIndicators can check them at all) — presence of a row
+  // IS the flag, there is no boolean column. Starts empty (nothing flagged)
+  // until an administrador_geral marks something via the admin screen.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS report_internal_indicators (
+      indicator_id TEXT PRIMARY KEY
+    )
+  `);
+
+  // "Lembrar esta seleção para este cliente" — one remembered report
+  // type+indicator selection per client, shared by the whole team (never
+  // per-person). Only ever written for a report resolved to exactly ONE
+  // client; a multi-client/consolidated export has nothing to key this on
+  // and relies on "Salvar como modelo" instead.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS report_client_selections (
+      client_access_id TEXT PRIMARY KEY REFERENCES client_access (id) ON DELETE CASCADE,
+      report_type TEXT NOT NULL,
+      indicators JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by_label TEXT NOT NULL
+    )
+  `);
+
+  // A template now also carries the report type + indicator selection
+  // chosen when it was saved (not just filters) — NULL indicators means a
+  // template saved before this existed, which keeps resolving to the
+  // viewer's own default selection, exactly as before this column existed.
+  await db.query(`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS report_type TEXT NOT NULL DEFAULT 'tecnico'`);
+  await db.query(`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS indicators JSONB`);
 
   await db.query(
     `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`,

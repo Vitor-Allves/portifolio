@@ -13,8 +13,10 @@ import {
 import { isFullAdmin, type SessionScope } from "./session-scope";
 import { listClientAccess } from "./client-access";
 import { DbConfigError } from "./db";
-import { CAMPAIGN_COLUMN_OPTIONS, EMPTY_PERMISSIONS, type CampaignColumnId, type ClientPermissions } from "./client-permissions";
+import { CAMPAIGN_COLUMN_OPTIONS, EMPTY_PERMISSIONS, type CampaignColumnId, type ClientPermissions, type ResolvedReportSettings } from "./client-permissions";
 import type { ReportFilters } from "./report-templates-types";
+import { ALL_INDICATOR_IDS, isCampaignColumnId, sanitizeIndicatorIds, type ReportIndicatorId } from "./report-indicators";
+import { listInternalIndicatorIds } from "./internal-indicators";
 import { OBJECTIVE_NONE_KEY, resolveIdFilter, filterCampaignsByIds } from "./campaign-filters";
 import { computeNarrowedCampaignIdsByAccount } from "./reach-scope";
 import { objectiveLabel, statusLabel, buildDisplayNameMap } from "./campaign-labels";
@@ -88,6 +90,43 @@ export function isRecipientError(r: Recipient | RecipientError): r is RecipientE
 export function buildAllowedColumns(permissions: ClientPermissions | null): AllowedColumns {
   const hidden = new Set<CampaignColumnId>((permissions ?? EMPTY_PERMISSIONS).hiddenColumns);
   return new Set<CampaignColumnId>(CAMPAIGN_COLUMN_OPTIONS.map((o) => o.id).filter((id) => !hidden.has(id)));
+}
+
+export type SelectedIndicatorsError = { error: string; status: number };
+
+/**
+ * Validates a client-submitted indicator list (the "Montar relatório"
+ * drawer's checkboxes) into the actually-drawn set — never trusts it as
+ * final on its own. Every id must already be in `allowedColumns` (a
+ * CampaignColumnId hidden for this recipient is rejected outright, not
+ * silently dropped — see the brief's 403 list) and, when it's one of the
+ * globally-flagged "uso interno" ids, the requester must carry
+ * canIncludeInternal. Absent/empty input defaults to "every indicator this
+ * recipient isn't already denied" (today's pre-selection-feature behavior).
+ */
+export async function resolveSelectedIndicators(
+  requested: unknown,
+  allowedColumns: AllowedColumns,
+  reportSettings: ResolvedReportSettings
+): Promise<ReadonlySet<ReportIndicatorId> | SelectedIndicatorsError> {
+  const defaultSet = new Set<ReportIndicatorId>(ALL_INDICATOR_IDS.filter((id) => !isCampaignColumnId(id) || allowedColumns.has(id)));
+  const ids = sanitizeIndicatorIds(requested);
+  if (ids.length === 0) return defaultSet;
+
+  const internalIds = new Set(await listInternalIndicatorIds());
+  for (const id of ids) {
+    if (isCampaignColumnId(id) && !allowedColumns.has(id)) {
+      return { error: `O indicador "${id}" está oculto para este cliente e não pode entrar no relatório.`, status: 403 };
+    }
+    if (internalIds.has(id) && !reportSettings.canIncludeInternal) {
+      return { error: `O indicador "${id}" é de uso interno e seu usuário não tem permissão para incluí-lo no relatório.`, status: 403 };
+    }
+  }
+  return new Set(ids);
+}
+
+export function isSelectedIndicatorsError(r: ReadonlySet<ReportIndicatorId> | SelectedIndicatorsError): r is SelectedIndicatorsError {
+  return "error" in r;
 }
 
 /** A client-scoped recipient can only ever export using the filter dimensions their own permissions leave visible — a hidden filter is forced back to "no restriction" server-side regardless of what the request asked for, so a crafted request can't route around the dashboard's own filter-visibility rule. */

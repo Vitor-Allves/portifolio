@@ -4,6 +4,9 @@ import { sessionScopeFromCookieStore } from "@/lib/auth-context";
 import { isFullAdmin, resolveAllowedAccountIds, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
 import { getClientConsultantInfo } from "@/lib/client-access";
+import { resolveReportSettings, type ReportSettingsRoleKind } from "@/lib/client-permissions";
+import { listInternalIndicatorIds } from "@/lib/internal-indicators";
+import { DbConfigError } from "@/lib/db";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
 
@@ -47,6 +50,15 @@ export default async function AnalisePage() {
   const viewerLabel = scope.kind === "client" ? scope.label : `${scope.userName} · ${STAFF_ROLE_LABELS[scope.role]}`;
   const dbConfigured = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
+  const roleKind: ReportSettingsRoleKind = scope.kind === "client" ? "client" : scope.role;
+  const reportSettings = resolveReportSettings(scope.permissions, roleKind);
+  const internalIndicatorIds = dbConfigured
+    ? await listInternalIndicatorIds().catch((err) => {
+        if (!(err instanceof DbConfigError)) console.error("[analise] failed to load internal indicator ids", err);
+        return [];
+      })
+    : [];
+
   // Only a client session has exactly one company's consultant to resolve —
   // an internal/admin viewer sees the button too, but it always falls back
   // to Legado's own general number (see ConsultantWhatsAppButton).
@@ -85,6 +97,8 @@ export default async function AnalisePage() {
       clientPermissions={clientPermissions}
       dbConfigured={dbConfigured}
       consultant={consultant}
+      reportSettings={reportSettings}
+      internalIndicatorIds={internalIndicatorIds}
     />
   );
 }

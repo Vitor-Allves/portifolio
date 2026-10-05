@@ -172,6 +172,31 @@ export async function updateClientAccess(id: string, input: UpdateClientAccessIn
   }
 }
 
+export type ReportClientResolution =
+  | { kind: "none" }
+  | { kind: "single"; client: { id: string; label: string } }
+  | { kind: "multiple"; clients: { id: string; label: string }[] };
+
+/**
+ * Who a report/WhatsApp message is actually ABOUT, from the Meta ad account
+ * ids it ends up covering — never from who's logged in. One client's
+ * accountIds can match several of the given ids (one company, several ad
+ * accounts) and still resolves to "single"; two DIFFERENT companies each
+ * matching at least one given id resolves to "multiple". An id that matches
+ * no registered client at all (e.g. an admin's own internal-only account)
+ * is simply not counted — "none" only when NOTHING given matches any client.
+ */
+export async function resolveReportClients(accountIds: Iterable<string>): Promise<ReportClientResolution> {
+  const idSet = new Set(accountIds);
+  if (idSet.size === 0) return { kind: "none" };
+
+  const all = await listClientAccess();
+  const matched = all.filter((c) => c.accountIds.some((id) => idSet.has(id)));
+  if (matched.length === 0) return { kind: "none" };
+  if (matched.length === 1) return { kind: "single", client: { id: matched[0].id, label: matched[0].label } };
+  return { kind: "multiple", clients: matched.map((c) => ({ id: c.id, label: c.label })) };
+}
+
 /** Lightweight lookup for the "Falar com meu consultor" button — avoids pulling every client + their users just to read two columns. null consultantName/consultantWhatsapp means fall back to Legado's own general number. */
 export async function getClientConsultantInfo(
   clientAccessId: string

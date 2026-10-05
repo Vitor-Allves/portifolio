@@ -4,8 +4,11 @@ import { buildConsultantWhatsAppLink, type ConsultantInfo } from "@/lib/consulta
 
 type ConsultantWhatsAppButtonProps = {
   consultant: ConsultantInfo | null;
+  /** The business this message is about — never the viewer's own display identity (see buildConsultantWhatsAppLink). */
   clientLabel: string | null;
   periodLabel: string;
+  /** Overrides clientLabel with "múltiplas contas" wording — see buildConsultantWhatsAppLink. */
+  isMultiClient?: boolean;
   /** Where this button was clicked from — logged, never the conversation itself. */
   screen: string;
   variant?: "header" | "sidebar" | "inline";
@@ -42,11 +45,12 @@ export default function ConsultantWhatsAppButton({
   consultant,
   clientLabel,
   periodLabel,
+  isMultiClient = false,
   screen,
   variant = "inline",
   className = "",
 }: ConsultantWhatsAppButtonProps) {
-  const { href, label } = buildConsultantWhatsAppLink(consultant, clientLabel, periodLabel);
+  const { href, label } = buildConsultantWhatsAppLink(consultant, clientLabel, periodLabel, isMultiClient);
 
   return (
     <a
