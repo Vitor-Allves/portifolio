@@ -1,7 +1,7 @@
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import About from "@/components/About";
-import MatchPoint from "@/components/MatchPoint";
+import MatchPointLive from "@/components/MatchPointLive";
 import Solutions from "@/components/Solutions";
 import DataIntelligence from "@/components/DataIntelligence";
 import CaseStudy from "@/components/CaseStudy";
@@ -19,7 +19,7 @@ export default function Home() {
       <main className="flex-1">
         <Hero />
         <About />
-        <MatchPoint />
+        <MatchPointLive />
         <Solutions />
         <DataIntelligence />
         <CaseStudy />
