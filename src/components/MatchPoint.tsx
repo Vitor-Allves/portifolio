@@ -97,8 +97,8 @@ export default function MatchPoint() {
           <div className="lg-clayscene">
             <img
               className="lg-cs-img"
-              src="/site/home/match-point-quadra-saibro.webp"
-              alt="Titan e Legacy apertando as mãos sobre a rede de uma quadra de saibro ao entardecer"
+              src="/site/home/match-point-quadra-concreto.webp"
+              alt="Quadra de tênis iluminada à noite, vista central a partir da rede"
               loading="eager"
             />
             <div className="lg-cs-shade" aria-hidden="true" />

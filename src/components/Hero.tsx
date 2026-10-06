@@ -74,7 +74,6 @@ export default function Hero() {
         </div>
 
         <div className="lg-stage" id="lg-stage" ref={stageRef}>
-          <div className="lg-glow" aria-hidden="true" />
           <img
             src="/site/geral/logo-legado-branco.svg"
             alt="Legado Enterprise"

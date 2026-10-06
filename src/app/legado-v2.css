@@ -352,15 +352,6 @@
   position: relative;
   height: 580px;
 }
-.lg-stage .lg-glow {
-  position: absolute;
-  left: 50%;
-  top: -4%;
-  width: 70%;
-  aspect-ratio: 1;
-  transform: translateX(-50%);
-  background: radial-gradient(circle, rgba(169, 193, 232, 0.35), transparent 62%);
-}
 .lg-stage .lg-floor {
   position: absolute;
   left: 6%;
