@@ -1,5 +1,5 @@
-const WIDTHS = [640, 1024, 1600, 2160];
-const CARD_SIZES = "150px";
+const WIDTHS = [480, 800, 1200, 1600];
+const CARD_SIZES = "(max-width: 640px) 160px, 220px";
 
 type FounderCardProps = {
   name: string;
@@ -30,7 +30,7 @@ export default function FounderCard({
             <source type="image/avif" srcSet={srcSet(imageBase, "avif")} sizes={CARD_SIZES} />
             <source type="image/webp" srcSet={srcSet(imageBase, "webp")} sizes={CARD_SIZES} />
             <img
-              src={`/founders/${imageBase}-1024.webp`}
+              src={`/founders/${imageBase}-800.webp`}
               alt={`Retrato de ${name}`}
               loading="lazy"
               decoding="async"

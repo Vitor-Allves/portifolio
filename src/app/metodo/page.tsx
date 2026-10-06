@@ -144,7 +144,7 @@ export default function MetodoPage() {
         </section>
 
         <Scene
-          id="lg-st15"
+          id="etapa-15"
           dataScore={0}
           bg="/site/metodo/etapa-15-fundacao.webp"
           num="15"
@@ -161,7 +161,7 @@ export default function MetodoPage() {
         />
 
         <Scene
-          id="lg-st30"
+          id="etapa-30"
           dataScore={1}
           reverse
           bg="/site/metodo/etapa-30-validacao.webp"
@@ -179,7 +179,7 @@ export default function MetodoPage() {
         />
 
         <Scene
-          id="lg-st40"
+          id="etapa-40"
           dataScore={2}
           bg="/site/metodo/etapa-40-otimizacao.webp"
           num="40"
@@ -205,7 +205,7 @@ export default function MetodoPage() {
         />
 
         <Scene
-          id="lg-stgame"
+          id="etapa-game"
           dataScore={3}
           reverse
           game

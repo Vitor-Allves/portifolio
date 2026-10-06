@@ -1,582 +1,531 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import Link from "next/link";
 
-type Depth = "perto" | "fundo";
-
-type PointDef = {
-  score: string;
-  stageNo: string;
-  label: string;
-  x: number;
-  y: number;
-  depth: Depth;
-  objective: string;
-  decide: string;
-  anchor: string;
+type Etapa = {
+  sc: string;
+  nm: string;
+  ob: string;
+  dc: string;
+  href: string;
 };
 
-const POINTS: PointDef[] = [
+const ETAPAS: Etapa[] = [
   {
-    score: "15",
-    stageNo: "ETAPA 01",
-    label: "Fundação Estratégica",
-    x: 30,
-    y: 70,
-    depth: "perto",
-    objective: "Entender o jogo antes de executar.",
-    decide: "Para quem vender, o que oferecer e por onde começar.",
-    anchor: "lg-st15",
+    sc: "15",
+    nm: "Fundação Estratégica",
+    ob: "Entender o jogo antes de executar.",
+    dc: "Para quem vender, o que oferecer e por onde começar.",
+    href: "/metodo#etapa-15",
   },
   {
-    score: "30",
-    stageNo: "ETAPA 02",
-    label: "Validação de Mercado",
-    x: 73,
-    y: 64,
-    depth: "fundo",
-    objective: "Colocar hipóteses em contato com o mercado.",
-    decide: "O que funciona no seu mercado e o que precisa mudar.",
-    anchor: "lg-st30",
+    sc: "30",
+    nm: "Validação de Mercado",
+    ob: "Colocar hipóteses em contato com o mercado.",
+    dc: "O que funciona no seu mercado e o que precisa mudar.",
+    href: "/metodo#etapa-30",
   },
   {
-    score: "40",
-    stageNo: "ETAPA 03",
-    label: "Otimização Contínua",
-    x: 33,
-    y: 65,
-    depth: "fundo",
-    objective: "Usar dados para melhorar decisões.",
-    decide: "Onde colocar mais esforço e investimento.",
-    anchor: "lg-st40",
+    sc: "40",
+    nm: "Otimização Contínua",
+    ob: "Usar dados para melhorar decisões.",
+    dc: "Onde colocar mais esforço e investimento.",
+    href: "/metodo#etapa-40",
   },
   {
-    score: "GAME",
-    stageNo: "ETAPA 04",
-    label: "Evolução Estratégica",
-    x: 68,
-    y: 70,
-    depth: "perto",
-    objective: "Transformar aprendizados em novos movimentos de crescimento.",
-    decide: "Quais são os próximos movimentos de crescimento.",
-    anchor: "lg-stgame",
+    sc: "GAME",
+    nm: "Evolução Estratégica",
+    ob: "Transformar aprendizados em novos movimentos de crescimento.",
+    dc: "Quais são os próximos movimentos de crescimento.",
+    href: "/metodo#etapa-game",
   },
 ];
 
-const LIGHTS = [
-  { x: 3.5, y: 7.5 },
-  { x: 18.5, y: 20.5 },
-  { x: 81.5, y: 21 },
-  { x: 95.5, y: 8 },
-];
-
-// Origem do saque (aprox., canto inferior esquerdo do palco, perto do Titan).
-const SERVE = { x: 6, y: 93 };
-
-const VB_W = 1916;
-const VB_H = 821;
-const ASPECT = VB_W / VB_H;
-
-function toVb(pt: { x: number; y: number }) {
-  return { x: (pt.x / 100) * VB_W, y: (pt.y / 100) * VB_H };
-}
-
-function quadPath(a: { x: number; y: number }, b: { x: number; y: number }, liftPct: number) {
-  const A = toVb(a);
-  const B = toVb(b);
-  const midX = (A.x + B.x) / 2;
-  const midY = (A.y + B.y) / 2;
-  const cx = midX;
-  const cy = midY - VB_H * liftPct;
-  return { d: `M ${A.x} ${A.y} Q ${cx} ${cy} ${B.x} ${B.y}`, start: A, end: B };
-}
-
-const FLIGHTS = [
-  { from: SERVE, to: POINTS[0], start: 2000, dur: 900 },
-  { from: POINTS[0], to: POINTS[1], start: 3100, dur: 900 },
-  { from: POINTS[1], to: POINTS[2], start: 4200, dur: 900 },
-  { from: POINTS[2], to: POINTS[3], start: 5300, dur: 900 },
-];
-
-const GAME_START = 6400;
-const FINAL_START = 7400;
-const TOTAL_MS = 8000;
-
-function ease(t: number) {
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-}
+type Pt = [number, number];
+type Flight = { a: Pt; b: Pt; c: Pt; path: SVGPathElement; len: number };
 
 export default function MatchPointLive() {
   const sectionRef = useRef<HTMLElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const ballRef = useRef<HTMLImageElement>(null);
-  const titanRef = useRef<HTMLImageElement>(null);
-  const legacyRef = useRef<HTMLImageElement>(null);
-  const flareRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const numRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const ringRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const beamRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const cardTriggerRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const pathRefs = useRef<Array<SVGPathElement | null>>([]);
-  const tickRefs = useRef<Array<HTMLSpanElement | null>>([]);
-  const badgeRef = useRef<HTMLSpanElement>(null);
-  const titleRef = useRef<HTMLDivElement>(null);
-  const finalRef = useRef<HTMLDivElement>(null);
-  const flashRef = useRef<HTMLDivElement>(null);
-
-  const [activeCard, setActiveCard] = useState<number | null>(null);
-  const [started, setStarted] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-  const [ariaScore, setAriaScore] = useState("");
-
-  const pausedRef = useRef(false);
-  const elapsedRef = useRef(0);
-  const lastTsRef = useRef<number | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const firedRef = useRef<Set<string>>(new Set());
-  const reduceMotionRef = useRef(false);
-  const manualStripRef = useRef(false);
-
-  const layout = useCallback(() => {
-    const sec = sectionRef.current;
-    const stage = stageRef.current;
-    if (!sec || !stage) return;
-    const r = sec.getBoundingClientRect();
-    if (!r.width || !r.height) return;
-    const w = Math.max(r.width, r.height * ASPECT);
-    const h = w / ASPECT;
-    stage.style.width = `${w}px`;
-    stage.style.height = `${h}px`;
-    stage.style.setProperty("--mpl-w", `${w}px`);
-    if (window.matchMedia("(max-width: 900px)").matches && !manualStripRef.current) {
-      const targetLeft = (POINTS[0].x / 100) * w - r.width / 2;
-      sec.scrollLeft = Math.max(0, targetLeft);
-    }
-  }, []);
 
   useEffect(() => {
-    layout();
-    const ro = new ResizeObserver(() => layout());
-    if (sectionRef.current) ro.observe(sectionRef.current);
-    window.addEventListener("resize", layout);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", layout);
-    };
-  }, [layout]);
-
-  // No mobile, a faixa acompanha a bola horizontalmente, a menos que a
-  // pessoa já tenha tocado/rolado manualmente.
-  const followStripToBall = useCallback((xPercentOfStage: number) => {
-    const sec = sectionRef.current;
-    const stage = stageRef.current;
-    if (!sec || !stage) return;
-    if (!window.matchMedia("(max-width: 900px)").matches) return;
-    if (manualStripRef.current) return;
-    const stageW = stage.getBoundingClientRect().width;
-    const target = (xPercentOfStage / 100) * stageW - sec.getBoundingClientRect().width / 2;
-    sec.scrollLeft = Math.max(0, target);
-  }, []);
-
-  const lightPoint = useCallback((i: number) => {
-    numRefs.current[i]?.classList.add("lg-mpl-lit");
-    ringRefs.current[i]?.classList.add("lg-mpl-ring-pulse");
-    beamRefs.current[i]?.classList.add("lg-mpl-in");
-    cardTriggerRefs.current[i]?.classList.add("lg-mpl-in");
-    const key = POINTS[i].score;
-    setAriaScore(key);
-    tickRefs.current.forEach((el, k) => {
-      if (!el) return;
-      el.classList.toggle("lg-on", k === i);
-      el.classList.toggle("lg-done", k < i);
-    });
-  }, []);
-
-  const applyFinalState = useCallback(() => {
-    titleRef.current?.classList.add("lg-mpl-title-in");
-    flareRefs.current.forEach((el) => el?.classList.add("lg-mpl-in"));
-    titanRef.current?.classList.add("lg-mpl-in");
-    legacyRef.current?.classList.add("lg-mpl-in");
-    POINTS.forEach((_, i) => lightPoint(i));
-    pathRefs.current.forEach((p) => {
-      if (!p) return;
-      p.classList.add("lg-mpl-trail-in", "lg-mpl-trail-rest");
-      p.style.strokeDashoffset = "0";
-    });
-    badgeRef.current?.classList.add("lg-mpl-in");
-    finalRef.current?.classList.add("lg-mpl-in");
-    if (ballRef.current) ballRef.current.style.display = "none";
-  }, [lightPoint]);
-
-  const runFlight = useCallback(
-    (flightIndex: number, atMs: number) => {
-      const f = FLIGHTS[flightIndex];
-      const path = pathRefs.current[flightIndex];
-      const ball = ballRef.current;
-      if (!path || !ball) return;
-      const p = Math.min(1, Math.max(0, (atMs - f.start) / f.dur));
-      const e = ease(p);
-      const len = path.getTotalLength();
-      const pos = path.getPointAtLength(len * e);
-      ball.style.display = "block";
-      const xPct = (pos.x / VB_W) * 100;
-      ball.style.left = `${xPct}%`;
-      ball.style.top = `${(pos.y / VB_H) * 100}%`;
-      const hop = Math.sin(Math.PI * e) * 0.35;
-      ball.style.transform = `translate(-50%, -50%) scale(${1 + hop})`;
-      path.classList.add("lg-mpl-trail-in");
-      path.style.strokeDashoffset = `${len * (1 - e)}`;
-      followStripToBall(xPct);
-      if (p >= 1 && !firedRef.current.has(`flight-${flightIndex}`)) {
-        firedRef.current.add(`flight-${flightIndex}`);
-        lightPoint(flightIndex);
-        path.classList.add("lg-mpl-trail-rest");
-      }
-    },
-    [lightPoint, followStripToBall]
-  );
-
-  const frameRef = useRef<(ts: number) => void>(() => {});
-
-  const frame = useCallback(
-    (ts: number) => {
-      if (pausedRef.current) {
-        lastTsRef.current = ts;
-        rafRef.current = requestAnimationFrame(frameRef.current);
-        return;
-      }
-      if (lastTsRef.current === null) lastTsRef.current = ts;
-      elapsedRef.current += ts - lastTsRef.current;
-      lastTsRef.current = ts;
-      const t = elapsedRef.current;
-
-      if (t >= 0 && !firedRef.current.has("lights")) {
-        firedRef.current.add("lights");
-        const stage = stageRef.current;
-        if (stage) {
-          stage.style.transition = "filter 1.2s ease";
-          stage.style.filter = "brightness(1)";
-        }
-        LIGHTS.forEach((_, i) => {
-          setTimeout(() => flareRefs.current[i]?.classList.add("lg-mpl-in"), i * 120);
-        });
-      }
-      if (t >= 600 && !firedRef.current.has("title")) {
-        firedRef.current.add("title");
-        titleRef.current?.classList.add("lg-mpl-title-in");
-      }
-      if (t >= 1400 && !firedRef.current.has("titan")) {
-        firedRef.current.add("titan");
-        titanRef.current?.classList.add("lg-mpl-in");
-      }
-
-      FLIGHTS.forEach((f, i) => {
-        if (t >= f.start && t <= f.start + f.dur + 20) runFlight(i, t);
-      });
-
-      if (t >= GAME_START && !firedRef.current.has("game")) {
-        firedRef.current.add("game");
-        flashRef.current?.classList.add("lg-mpl-flash-in");
-        setTimeout(() => flashRef.current?.classList.remove("lg-mpl-flash-in"), 420);
-        legacyRef.current?.classList.add("lg-mpl-in");
-        badgeRef.current?.classList.add("lg-mpl-in", "lg-mpl-pulse-twice");
-        numRefs.current.forEach((el) => {
-          el?.classList.add("lg-mpl-flash-all");
-          setTimeout(() => el?.classList.remove("lg-mpl-flash-all"), 650);
-        });
-      }
-      if (t >= FINAL_START && !firedRef.current.has("final")) {
-        firedRef.current.add("final");
-        finalRef.current?.classList.add("lg-mpl-in");
-      }
-
-      if (t >= TOTAL_MS) {
-        pathRefs.current.forEach((p) => p?.classList.add("lg-mpl-trail-rest"));
-        if (ballRef.current) ballRef.current.style.display = "none";
-        setStarted(true);
-        sectionRef.current?.classList.remove("lg-mpl-intro");
-        return;
-      }
-      rafRef.current = requestAnimationFrame(frameRef.current);
-    },
-    [runFlight]
-  );
-
-  useEffect(() => {
-    frameRef.current = frame;
-  }, [frame]);
-
-  const beginIntro = useCallback(() => {
     const sec = sectionRef.current;
     if (!sec) return;
-    firedRef.current = new Set();
-    elapsedRef.current = 0;
-    lastTsRef.current = null;
-    pausedRef.current = false;
-    sec.classList.add("lg-mpl-intro");
-    POINTS.forEach((_, i) => {
-      numRefs.current[i]?.classList.remove("lg-mpl-lit");
-      beamRefs.current[i]?.classList.remove("lg-mpl-in");
-      cardTriggerRefs.current[i]?.classList.remove("lg-mpl-in");
-    });
-    tickRefs.current.forEach((el) => el?.classList.remove("lg-on", "lg-done"));
-    pathRefs.current.forEach((p) => {
-      if (!p) return;
-      const len = p.getTotalLength();
-      p.style.strokeDasharray = `${len}`;
-      p.style.strokeDashoffset = `${len}`;
-      p.classList.remove("lg-mpl-trail-in", "lg-mpl-trail-rest");
-    });
-    titleRef.current?.classList.remove("lg-mpl-title-in");
-    titanRef.current?.classList.remove("lg-mpl-in");
-    legacyRef.current?.classList.remove("lg-mpl-in");
-    flareRefs.current.forEach((el) => el?.classList.remove("lg-mpl-in"));
-    badgeRef.current?.classList.remove("lg-mpl-in", "lg-mpl-pulse-twice");
-    finalRef.current?.classList.remove("lg-mpl-in");
-    if (stageRef.current) {
-      stageRef.current.style.transition = "none";
-      stageRef.current.style.filter = "brightness(.35)";
-    }
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(frame);
-  }, [frame]);
 
-  useEffect(() => {
+    let alive = true;
+    const cleanupFns: Array<() => void> = [];
+
+    const stage = sec.querySelector<HTMLElement>("#mp2Stage");
+    const scroller = sec.querySelector<HTMLElement>("#mp2Scroll");
+    const ball = sec.querySelector<HTMLElement>("#mp2Ball");
+    const trails = sec.querySelector<SVGGElement>(".mp2-trails");
+    const pts = Array.from(sec.querySelectorAll<HTMLButtonElement>(".mp2-pt"));
+    const cells = Array.from(sec.querySelectorAll<HTMLElement>(".mp2-cell"));
+    const replay = sec.querySelector<HTMLButtonElement>("#mp2Replay");
+    const card = sec.querySelector<HTMLElement>("#mp2Card");
+    if (!stage || !scroller || !ball || !trails || !replay || !card || pts.length !== 4) return;
+
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    reduceMotionRef.current = reduce;
-    if (reduce) {
-      applyFinalState();
-      return;
+    const VB: [number, number] = [1916, 821];
+    const START: Pt = [3.2, 51];
+
+    const P: Pt[] = pts.map((p) => [
+      parseFloat(p.style.getPropertyValue("--x")),
+      parseFloat(p.style.getPropertyValue("--y")),
+    ]);
+
+    const flights: Flight[] = [];
+    let prev: Pt = START;
+    P.forEach((b) => {
+      const a = prev;
+      const c: Pt = [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - 16];
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute(
+        "d",
+        "M" +
+          (a[0] * VB[0]) / 100 +
+          " " +
+          (a[1] * VB[1]) / 100 +
+          " Q" +
+          (c[0] * VB[0]) / 100 +
+          " " +
+          (c[1] * VB[1]) / 100 +
+          " " +
+          (b[0] * VB[0]) / 100 +
+          " " +
+          (b[1] * VB[1]) / 100
+      );
+      trails.appendChild(path);
+      const len = path.getTotalLength();
+      flights.push({ a, b, c, path, len });
+      prev = b;
+    });
+
+    function q(f: Flight, t: number): Pt {
+      const u = 1 - t;
+      return [
+        u * u * f.a[0] + 2 * u * t * f.c[0] + t * t * f.b[0],
+        u * u * f.a[1] + 2 * u * t * f.c[1] + t * t * f.b[1],
+      ];
     }
-    const sec = sectionRef.current;
-    if (!sec) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.4 && !started) {
-            beginIntro();
-          }
+
+    const FLY = 900;
+    const GAP = 350;
+    const T0 = 2000;
+    const landAt = flights.map((_, i) => T0 + i * (FLY + GAP) + FLY);
+    const END = landAt[3] + 750;
+
+    let clock = 0;
+    let last: number | null = null;
+    let running = false;
+    let paused = false;
+    let fired: Record<string, number> = {};
+    let userScrolled = false;
+    let rafId = 0;
+
+    function setCells(k: number) {
+      cells.forEach((c, j) => {
+        c.classList.toggle("is-on", j === k);
+        c.classList.toggle("is-done", j < k);
+      });
+    }
+
+    function land(k: number) {
+      const p = pts[k];
+      p.classList.add("is-lit");
+      p.classList.remove("is-hit");
+      void p.offsetWidth;
+      p.classList.add("is-hit");
+      flights[k].path.classList.add("is-old");
+      setCells(k);
+      if (k === 3) {
+        sec!.classList.add("is-game", "is-legacy", "is-flash");
+        sec!.classList.remove("is-sheen");
+        void sec!.offsetWidth;
+        sec!.classList.add("is-sheen");
+      }
+    }
+
+    function once(key: string, fn: () => void) {
+      if (!fired[key]) {
+        fired[key] = 1;
+        fn();
+      }
+    }
+
+    function follow(xPct: number) {
+      if (userScrolled || scroller!.scrollWidth <= scroller!.clientWidth + 2) return;
+      const x = (stage!.offsetWidth * xPct) / 100 - scroller!.clientWidth / 2;
+      scroller!.scrollLeft = Math.max(0, x);
+    }
+
+    function frame(ts: number) {
+      if (!alive || !running) return;
+      if (last === null) last = ts;
+      const dt = ts - last;
+      last = ts;
+      if (!paused) clock += dt;
+      if (clock >= 0) once("on", () => sec!.classList.add("is-on"));
+      if (clock >= 600) once("title", () => sec!.classList.add("is-title"));
+      if (clock >= 1500) once("sheen", () => sec!.classList.add("is-sheen"));
+      if (clock >= 1400) once("titan", () => sec!.classList.add("is-titan"));
+      let flying = false;
+      flights.forEach((f, i) => {
+        const s = T0 + i * (FLY + GAP);
+        if (clock >= s && clock < s + FLY) {
+          flying = true;
+          const t = (clock - s) / FLY;
+          const pt = q(f, t);
+          ball!.style.left = pt[0] + "%";
+          ball!.style.top = pt[1] + "%";
+          ball!.style.opacity = "1";
+          ball!.style.transform = `translate(-50%, -50%) scale(${1 + Math.sin(Math.PI * t) * 0.35})`;
+          f.path.style.opacity = "1";
+          f.path.style.strokeDashoffset = String(f.len * (1 - t));
+          follow(pt[0]);
+        }
+        if (clock >= s + FLY) {
+          once("land" + i, () => {
+            f.path.style.strokeDashoffset = "0";
+            land(i);
+          });
+        }
+      });
+      if (!flying && clock > T0) {
+        let lastLanded = -1;
+        landAt.forEach((t, i) => {
+          if (clock >= t) lastLanded = i;
         });
-      },
-      { threshold: [0, 0.4, 1] }
-    );
-    io.observe(sec);
-    return () => io.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+        if (lastLanded >= 0) {
+          const b = P[lastLanded];
+          ball!.style.left = b[0] + "%";
+          ball!.style.top = b[1] + "%";
+          ball!.style.transform = "translate(-50%, -50%) scale(1)";
+        }
+      }
+      if (clock >= END) {
+        once("end", () => {
+          ball!.style.opacity = "0";
+          sec!.classList.add("is-done");
+          sec!.classList.remove("is-flash");
+          replay!.hidden = false;
+        });
+        running = false;
+        return;
+      }
+      rafId = requestAnimationFrame(frame);
+    }
 
-  useEffect(() => {
+    let openIdx = -1;
+
+    function closeCard() {
+      card!.hidden = true;
+      if (openIdx >= 0) pts[openIdx].classList.remove("is-open");
+      openIdx = -1;
+      paused = false;
+    }
+
+    function openCard(i: number) {
+      if (!pts[i].classList.contains("is-lit")) return;
+      if (openIdx >= 0) pts[openIdx].classList.remove("is-open");
+      openIdx = i;
+      paused = true;
+      pts[i].classList.add("is-open");
+      const e = ETAPAS[i];
+      card!.querySelector(".mp2-card-sc")!.textContent = e.sc;
+      card!.querySelector(".mp2-card-nm")!.textContent = e.nm;
+      card!.querySelector(".mp2-card-ob")!.textContent = e.ob;
+      card!.querySelector(".mp2-card-dc span")!.textContent = e.dc;
+      card!.querySelector(".mp2-card-lk")!.setAttribute("href", e.href);
+      card!.hidden = false;
+      const W = stage!.offsetWidth;
+      const H = stage!.offsetHeight;
+      const cw = card!.offsetWidth;
+      const ch = card!.offsetHeight;
+      const x = (W * P[i][0]) / 100;
+      const tag = pts[i].querySelector(".mp2-tag")!.getBoundingClientRect();
+      const st = stage!.getBoundingClientRect();
+      let top = tag.top - st.top - ch - 10;
+      if (top < 8) top = tag.bottom - st.top + 10;
+      card!.style.left = Math.max(8, Math.min(W - cw - 8, x - cw / 2)) + "px";
+      card!.style.top = Math.max(8, Math.min(H - ch - 8, top)) + "px";
+    }
+
+    function reset() {
+      clock = 0;
+      last = null;
+      fired = {};
+      paused = false;
+      userScrolled = false;
+      sec!.classList.remove("is-on", "is-title", "is-sheen", "is-titan", "is-legacy", "is-game", "is-flash", "is-done");
+      pts.forEach((p) => p.classList.remove("is-lit", "is-hit", "is-open"));
+      flights.forEach((f) => {
+        f.path.classList.remove("is-old");
+        f.path.style.opacity = "0";
+        f.path.style.strokeDasharray = String(f.len);
+        f.path.style.strokeDashoffset = String(f.len);
+      });
+      cells.forEach((c) => c.classList.remove("is-on", "is-done"));
+      ball!.style.opacity = "0";
+      replay!.hidden = true;
+      closeCard();
+    }
+
+    function play() {
+      reset();
+      void sec!.offsetWidth;
+      running = true;
+      rafId = requestAnimationFrame(frame);
+    }
+
+    function finalState() {
+      sec!.classList.add("is-on", "is-title", "is-titan", "is-legacy", "is-game", "is-done");
+      pts.forEach((p) => p.classList.add("is-lit"));
+      flights.forEach((f) => {
+        f.path.style.strokeDasharray = String(f.len);
+        f.path.style.strokeDashoffset = "0";
+        f.path.style.opacity = "0.25";
+      });
+      setCells(3);
+    }
+
+    const onMouseEnterFns: Array<() => void> = [];
+    const onClickFns: Array<(ev: MouseEvent) => void> = [];
+    pts.forEach((p, i) => {
+      const onEnter = () => openCard(i);
+      const onClick = (ev: MouseEvent) => {
+        ev.stopPropagation();
+        if (openIdx === i) closeCard();
+        else openCard(i);
+      };
+      p.addEventListener("mouseenter", onEnter);
+      p.addEventListener("click", onClick);
+      onMouseEnterFns.push(onEnter);
+      onClickFns.push(onClick);
+      cleanupFns.push(() => {
+        p.removeEventListener("mouseenter", onEnter);
+        p.removeEventListener("click", onClick);
+      });
+    });
+
+    const onStageLeave = () => closeCard();
+    stage.addEventListener("mouseleave", onStageLeave);
+    cleanupFns.push(() => stage.removeEventListener("mouseleave", onStageLeave));
+
+    const onCardEnter = () => {
+      paused = true;
+    };
+    card.addEventListener("mouseenter", onCardEnter);
+    cleanupFns.push(() => card.removeEventListener("mouseenter", onCardEnter));
+
+    const onKeydown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") closeCard();
+    };
+    document.addEventListener("keydown", onKeydown);
+    cleanupFns.push(() => document.removeEventListener("keydown", onKeydown));
+
+    const onDocClick = (ev: MouseEvent) => {
+      if (openIdx >= 0 && !card!.contains(ev.target as Node)) closeCard();
+    };
+    document.addEventListener("click", onDocClick);
+    cleanupFns.push(() => document.removeEventListener("click", onDocClick));
+
+    const onScrollerStart = () => {
+      userScrolled = true;
+    };
+    ["touchstart", "wheel", "pointerdown"].forEach((ev) => {
+      scroller.addEventListener(ev, onScrollerStart, { passive: true });
+      cleanupFns.push(() => scroller.removeEventListener(ev, onScrollerStart));
+    });
+
+    let onPointerMove: ((ev: PointerEvent) => void) | null = null;
+    if (!reduce) {
+      onPointerMove = (ev: PointerEvent) => {
+        const r = stage.getBoundingClientRect();
+        sec!.style.setProperty("--px", (((ev.clientX - r.left) / r.width) - 0.5).toFixed(3));
+        sec!.style.setProperty("--py", (((ev.clientY - r.top) / r.height) - 0.5).toFixed(3));
+      };
+      stage.addEventListener("pointermove", onPointerMove);
+      cleanupFns.push(() => stage.removeEventListener("pointermove", onPointerMove!));
+    }
+
+    const onReplayClick = () => {
+      if (!reduce) play();
+    };
+    replay.addEventListener("click", onReplayClick);
+    cleanupFns.push(() => replay.removeEventListener("click", onReplayClick));
+
+    reset();
+    let io: IntersectionObserver | null = null;
+    if (reduce) {
+      finalState();
+    } else if ("IntersectionObserver" in window) {
+      io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((e) => {
+            if (e.isIntersecting && e.intersectionRatio >= 0.4) {
+              io!.disconnect();
+              play();
+            }
+          });
+        },
+        { threshold: [0.4] }
+      );
+      io.observe(scroller);
+    } else {
+      play();
+    }
+
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      alive = false;
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (io) io.disconnect();
+      cleanupFns.forEach((fn) => fn());
     };
   }, []);
-
-  // Parallax sutil do palco e dos mascotes com o cursor.
-  useEffect(() => {
-    const sec = sectionRef.current;
-    if (!sec || reduceMotionRef.current) return;
-    function onMove(e: PointerEvent) {
-      const r = sec!.getBoundingClientRect();
-      const dx = (e.clientX - r.left) / r.width - 0.5;
-      const dy = (e.clientY - r.top) / r.height - 0.5;
-      if (stageRef.current) stageRef.current.style.translate = `calc(-50% + ${dx * 6}px) calc(-50% + ${dy * 6}px)`;
-      if (titanRef.current) titanRef.current.style.transform = `translate(${dx * -12}px, ${dy * -12}px)`;
-      if (legacyRef.current) legacyRef.current.style.transform = `translate(${dx * 12}px, ${dy * -12}px)`;
-    }
-    sec.addEventListener("pointermove", onMove);
-    return () => sec.removeEventListener("pointermove", onMove);
-  }, []);
-
-  // Mobile: a faixa (a própria seção, com overflow-x) acompanha a bola
-  // sozinha, mas para de seguir assim que a pessoa toca/rola na mão.
-  useEffect(() => {
-    const sec = sectionRef.current;
-    if (!sec) return;
-    function onTouch() {
-      manualStripRef.current = true;
-    }
-    sec.addEventListener("touchstart", onTouch, { passive: true });
-    sec.addEventListener("wheel", onTouch, { passive: true });
-    return () => {
-      sec.removeEventListener("touchstart", onTouch);
-      sec.removeEventListener("wheel", onTouch);
-    };
-  }, []);
-
-  function openCard(i: number) {
-    setActiveCard(i);
-    pausedRef.current = true;
-  }
-  function closeCard() {
-    setActiveCard(null);
-    pausedRef.current = false;
-  }
 
   return (
-    <section className="lg-mpl" id="metodo" data-score="1" ref={sectionRef}>
-      <div className="lg-mpl-stage" ref={stageRef}>
-        <img
-          className="lg-mpl-photo"
-          src="/site/home/match-point-quadra-concreto.webp"
-          alt="Quadra de tênis iluminada à noite, vista a partir da rede"
-          width={1916}
-          height={821}
-          fetchPriority="high"
-          loading="eager"
-        />
-        <div className="lg-mpl-veil" aria-hidden="true" />
-        <div className="lg-mpl-vignette" aria-hidden="true" />
-        <div className="lg-mpl-flash" ref={flashRef} aria-hidden="true" />
-
-        {LIGHTS.map((l, i) => (
-          <div
-            key={i}
-            className="lg-mpl-flare"
-            style={{ left: `${l.x}%`, top: `${l.y}%` }}
-            ref={(el) => {
-              flareRefs.current[i] = el;
-            }}
-            aria-hidden="true"
-          />
-        ))}
-
-        <svg className="lg-mpl-rallysvg" viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="none" aria-hidden="true">
-          {FLIGHTS.map((f, i) => {
-            const { d } = quadPath(f.from, f.to, 0.16);
-            return (
-              <path
-                key={i}
-                d={d}
-                className="lg-mpl-trail"
-                ref={(el) => {
-                  pathRefs.current[i] = el;
-                }}
-              />
-            );
-          })}
-        </svg>
-
-        <img className="lg-mpl-ball" ref={ballRef} src="/site/geral/bola-tenis.webp" alt="" aria-hidden="true" loading="lazy" />
-
-        {POINTS.map((p, i) => (
-          <div key={p.score} className={`lg-mpl-point lg-mpl-point-${p.depth}`} style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-            <div
-              className="lg-mpl-ring"
-              ref={(el) => {
-                ringRefs.current[i] = el;
-              }}
-              aria-hidden="true"
-            />
-            <div
-              className="lg-mpl-num"
-              ref={(el) => {
-                numRefs.current[i] = el;
-              }}
-            >
-              <svg className="lg-mpl-num-outline" viewBox="0 0 100 60" aria-hidden="true">
-                <rect x="3" y="3" width="94" height="54" rx="3" />
-              </svg>
-              <span className={p.score === "GAME" ? "lg-mpl-num-game" : ""}>{p.score}</span>
-            </div>
-            <div
-              className="lg-mpl-beam"
-              ref={(el) => {
-                beamRefs.current[i] = el;
-              }}
-            >
-              <button
-                type="button"
-                className="lg-mpl-tag"
-                aria-label={`${p.score}, ${p.label}: ver detalhes`}
-                aria-expanded={activeCard === i}
-                onMouseEnter={() => openCard(i)}
-                onMouseLeave={closeCard}
-                onFocus={() => openCard(i)}
-                onBlur={closeCard}
-                onClick={() => (activeCard === i ? closeCard() : openCard(i))}
-                ref={(el) => {
-                  cardTriggerRefs.current[i] = el;
-                }}
-              >
-                <small>{p.stageNo}</small>
-                <span>{p.label}</span>
-              </button>
-              {activeCard === i && (
-                <div className={`lg-mpl-detail ${p.x > 50 ? "lg-mpl-detail-left" : "lg-mpl-detail-right"}`} role="dialog">
-                  <small>
-                    {p.score} · {p.stageNo}
-                  </small>
-                  <strong>{p.objective}</strong>
-                  <p>
-                    <b>O que você decide aqui</b> {p.decide}
-                  </p>
-                  <Link href={`/metodo#${p.anchor}`}>Ver a etapa →</Link>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="lg-mpl-head">
-        <span className="lg-eyebrow">Não acreditamos em fórmulas. Criamos um método.</span>
-        <h2 ref={titleRef} className="lg-mpl-title">
+    <section id="metodo" className="mp2" data-score="1" aria-labelledby="mp2-title" ref={sectionRef}>
+      <div className="mp2-head">
+        <span className="mp2-eyebrow">Não acreditamos em fórmulas. Criamos um método.</span>
+        <h2 id="mp2-title" className="mp2-title">
           Match Point
         </h2>
-        <p>Ponto a ponto, como no tênis: cada etapa prepara a próxima.</p>
+        <p className="mp2-sub">Ponto a ponto, como no tênis: cada etapa prepara a próxima.</p>
       </div>
 
-      <img
-        className="lg-mpl-titan"
-        ref={titanRef}
-        src="/site/titan-e-legacy/titan/01-titan-tenis-saque.webp"
-        alt="Titan sacando"
-        loading="lazy"
-      />
-      <img
-        className="lg-mpl-legacy"
-        ref={legacyRef}
-        src="/site/metodo/etapa-game-legacy-comemorando.webp"
-        alt="Legacy comemorando o ponto"
-        loading="lazy"
-      />
+      <div className="mp2-scroll" id="mp2Scroll">
+        <div className="mp2-stage" id="mp2Stage">
+          <img
+            className="mp2-photo"
+            src="/site/home/match-point-quadra-concreto.webp"
+            alt="Quadra de tênis iluminada à noite, vista a partir da rede"
+            width={1916}
+            height={821}
+            fetchPriority="high"
+          />
+          <div className="mp2-veil" aria-hidden="true" />
+          <span className="mp2-light" style={{ "--x": "3.5%", "--y": "7.5%", "--d": "0ms" } as CSSProperties} aria-hidden="true" />
+          <span className="mp2-light" style={{ "--x": "95.5%", "--y": "8%", "--d": "120ms" } as CSSProperties} aria-hidden="true" />
+          <span className="mp2-light" style={{ "--x": "18.5%", "--y": "20.5%", "--d": "240ms" } as CSSProperties} aria-hidden="true" />
+          <span className="mp2-light" style={{ "--x": "81.5%", "--y": "21%", "--d": "360ms" } as CSSProperties} aria-hidden="true" />
 
-      <div className="lg-mpl-ticker">
-        <b>LEGADO</b>
-        {POINTS.map((p, i) => (
-          <span
-            key={p.score}
-            ref={(el) => {
-              tickRefs.current[i] = el;
-            }}
+          <svg className="mp2-svg" viewBox="0 0 1916 821" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <filter id="mp2Glow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="3" result="b" />
+                <feMerge>
+                  <feMergeNode in="b" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <g className="mp2-trails" fill="none" stroke="#E4F25C" strokeWidth={3} strokeLinecap="round" filter="url(#mp2Glow)" />
+          </svg>
+
+          <button
+            type="button"
+            className="mp2-pt"
+            data-i="0"
+            style={{ "--x": "22%", "--y": "76%", "--stem": "4.6cqw" } as CSSProperties}
+            aria-label="15, Fundação Estratégica: ver detalhes"
           >
-            {p.score}
-          </span>
-        ))}
-        <span className="lg-mpl-badge" ref={badgeRef}>
-          MATCH POINT
-        </span>
-      </div>
-      <span className="sr-only" aria-live="polite">
-        {ariaScore}
-      </span>
+            <span className="mp2-mark" />
+            <span className="mp2-stem" />
+            <span className="mp2-tag">
+              <b>15</b>
+              <span>
+                <small>Etapa 01</small>Fundação Estratégica
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="mp2-pt"
+            data-i="1"
+            style={{ "--x": "68%", "--y": "66%", "--stem": "3.6cqw" } as CSSProperties}
+            aria-label="30, Validação de Mercado: ver detalhes"
+          >
+            <span className="mp2-mark" />
+            <span className="mp2-stem" />
+            <span className="mp2-tag">
+              <b>30</b>
+              <span>
+                <small>Etapa 02</small>Validação de Mercado
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="mp2-pt"
+            data-i="2"
+            style={{ "--x": "33%", "--y": "65%", "--stem": "3.6cqw" } as CSSProperties}
+            aria-label="40, Otimização Contínua: ver detalhes"
+          >
+            <span className="mp2-mark" />
+            <span className="mp2-stem" />
+            <span className="mp2-tag">
+              <b>40</b>
+              <span>
+                <small>Etapa 03</small>Otimização Contínua
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="mp2-pt"
+            data-i="3"
+            style={{ "--x": "76%", "--y": "76%", "--stem": "4.6cqw" } as CSSProperties}
+            aria-label="GAME, Evolução Estratégica: ver detalhes"
+          >
+            <span className="mp2-mark" />
+            <span className="mp2-stem" />
+            <span className="mp2-tag">
+              <b>GAME</b>
+              <span>
+                <small>Etapa 04</small>Evolução Estratégica
+              </span>
+            </span>
+          </button>
 
-      <div className="lg-mpl-final" ref={finalRef}>
-        <p>Cada movimento gera informação. Cada informação melhora a próxima decisão.</p>
-        <Link href="/metodo" className="lg-btn lg-btn-metal">
+          <img className="mp2-ball" id="mp2Ball" src="/site/geral/bola-tenis.webp" alt="" aria-hidden="true" />
+          <img className="mp2-titan" src="/site/titan-e-legacy/titan/01-titan-tenis-saque.webp" alt="Titan sacando" loading="lazy" />
+          <img className="mp2-legacy" src="/site/metodo/etapa-game-legacy-comemorando.webp" alt="Legacy comemorando o ponto" loading="lazy" />
+          <div className="mp2-flash" aria-hidden="true" />
+
+          <div className="mp2-card" id="mp2Card" role="dialog" aria-live="polite" hidden>
+            <b className="mp2-card-sc" />
+            <strong className="mp2-card-nm" />
+            <p className="mp2-card-ob" />
+            <p className="mp2-card-dc">
+              <small>O que você decide aqui</small>
+              <span />
+            </p>
+            <a className="mp2-card-lk" href="/metodo">
+              Ver a etapa →
+            </a>
+          </div>
+        </div>
+      </div>
+      <p className="mp2-swipe">Deslize para acompanhar o ponto →</p>
+
+      <div className="mp2-foot">
+        <div className="mp2-board" aria-live="polite">
+          <span className="mp2-board-lg">LEGADO</span>
+          <span className="mp2-cell">15</span>
+          <span className="mp2-cell">30</span>
+          <span className="mp2-cell">40</span>
+          <span className="mp2-cell mp2-cell-g">GAME</span>
+          <span className="mp2-badge">Match Point</span>
+        </div>
+        <Link className="mp2-btn" href="/metodo">
           Ver o método completo
         </Link>
-      </div>
-
-      {started && (
-        <button type="button" className="lg-mpl-replay" onClick={beginIntro}>
+        <button type="button" className="mp2-replay" id="mp2Replay" hidden>
           ↻ Ver o ponto de novo
         </button>
-      )}
-
-      <p className="lg-mpl-swipe-hint">Deslize para acompanhar o ponto →</p>
+      </div>
     </section>
   );
 }

@@ -1,10 +1,10 @@
 "use client";
 
 const STAGES = [
-  { id: "lg-st15", score: "15", label: "Fundação" },
-  { id: "lg-st30", score: "30", label: "Validação" },
-  { id: "lg-st40", score: "40", label: "Otimização" },
-  { id: "lg-stgame", score: "GAME", label: "Evolução" },
+  { id: "etapa-15", score: "15", label: "Fundação" },
+  { id: "etapa-30", score: "30", label: "Validação" },
+  { id: "etapa-40", score: "40", label: "Otimização" },
+  { id: "etapa-game", score: "GAME", label: "Evolução" },
 ];
 
 export default function JumpBoard() {
