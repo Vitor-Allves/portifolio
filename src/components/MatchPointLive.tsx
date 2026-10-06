@@ -63,43 +63,51 @@ export default function MatchPointLive() {
     const cells = Array.from(sec.querySelectorAll<HTMLElement>(".mp2-cell"));
     const replay = sec.querySelector<HTMLButtonElement>("#mp2Replay");
     const card = sec.querySelector<HTMLElement>("#mp2Card");
+    const now = sec.querySelector<HTMLElement>("#mp2Now");
     if (!stage || !scroller || !ball || !trails || !replay || !card || pts.length !== 4) return;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const mq = window.matchMedia("(max-width: 900px)");
     const VB: [number, number] = [1916, 821];
-    const START: Pt = [3.2, 51];
+    function startPoint(): Pt {
+      return mq.matches ? [-3, 56] : [3.2, 51];
+    }
 
-    const P: Pt[] = pts.map((p) => [
-      parseFloat(p.style.getPropertyValue("--x")),
-      parseFloat(p.style.getPropertyValue("--y")),
-    ]);
-
-    const flights: Flight[] = [];
-    let prev: Pt = START;
-    P.forEach((b) => {
-      const a = prev;
-      const c: Pt = [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - 16];
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute(
-        "d",
-        "M" +
-          (a[0] * VB[0]) / 100 +
-          " " +
-          (a[1] * VB[1]) / 100 +
-          " Q" +
-          (c[0] * VB[0]) / 100 +
-          " " +
-          (c[1] * VB[1]) / 100 +
-          " " +
-          (b[0] * VB[0]) / 100 +
-          " " +
-          (b[1] * VB[1]) / 100
-      );
-      trails.appendChild(path);
-      const len = path.getTotalLength();
-      flights.push({ a, b, c, path, len });
-      prev = b;
-    });
+    let P: Pt[] = [];
+    let flights: Flight[] = [];
+    function buildFlights() {
+      const kx = mq.matches ? "--mx" : "--x";
+      const ky = mq.matches ? "--my" : "--y";
+      P = pts.map((p) => [parseFloat(p.style.getPropertyValue(kx)), parseFloat(p.style.getPropertyValue(ky))]);
+      while (trails!.firstChild) trails!.removeChild(trails!.firstChild);
+      flights = [];
+      let prev: Pt = startPoint();
+      P.forEach((b) => {
+        const a = prev;
+        const c: Pt = [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - 16];
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute(
+          "d",
+          "M" +
+            (a[0] * VB[0]) / 100 +
+            " " +
+            (a[1] * VB[1]) / 100 +
+            " Q" +
+            (c[0] * VB[0]) / 100 +
+            " " +
+            (c[1] * VB[1]) / 100 +
+            " " +
+            (b[0] * VB[0]) / 100 +
+            " " +
+            (b[1] * VB[1]) / 100
+        );
+        trails!.appendChild(path);
+        const len = path.getTotalLength();
+        flights.push({ a, b, c, path, len });
+        prev = b;
+      });
+    }
+    buildFlights();
 
     function q(f: Flight, t: number): Pt {
       const u = 1 - t;
@@ -130,6 +138,18 @@ export default function MatchPointLive() {
       });
     }
 
+    function setNow(k: number) {
+      if (!now) return;
+      while (now.firstChild) now.removeChild(now.firstChild);
+      if (k < 0) return;
+      const b = document.createElement("b");
+      b.textContent = ETAPAS[k].sc;
+      const s = document.createElement("span");
+      s.textContent = ETAPAS[k].nm;
+      now.appendChild(b);
+      now.appendChild(s);
+    }
+
     function land(k: number) {
       const p = pts[k];
       p.classList.add("is-lit");
@@ -138,6 +158,7 @@ export default function MatchPointLive() {
       p.classList.add("is-hit");
       flights[k].path.classList.add("is-old");
       setCells(k);
+      setNow(k);
       if (k === 3) {
         sec!.classList.add("is-game", "is-legacy", "is-flash");
         sec!.classList.remove("is-sheen");
@@ -231,6 +252,7 @@ export default function MatchPointLive() {
       openIdx = i;
       paused = true;
       pts[i].classList.add("is-open");
+      setNow(i);
       const e = ETAPAS[i];
       card!.querySelector(".mp2-card-sc")!.textContent = e.sc;
       card!.querySelector(".mp2-card-nm")!.textContent = e.nm;
@@ -269,6 +291,7 @@ export default function MatchPointLive() {
       ball!.style.opacity = "0";
       replay!.hidden = true;
       closeCard();
+      setNow(-1);
     }
 
     function play() {
@@ -287,7 +310,22 @@ export default function MatchPointLive() {
         f.path.style.opacity = "0.25";
       });
       setCells(3);
+      setNow(3);
     }
+
+    function onMq() {
+      const wasRunning = running;
+      running = false;
+      closeCard();
+      buildFlights();
+      if (wasRunning || sec!.classList.contains("is-done") || reduce) {
+        finalState();
+        ball!.style.opacity = "0";
+        if (!reduce) replay!.hidden = false;
+      }
+    }
+    mq.addEventListener("change", onMq);
+    cleanupFns.push(() => mq.removeEventListener("change", onMq));
 
     const onMouseEnterFns: Array<() => void> = [];
     const onClickFns: Array<(ev: MouseEvent) => void> = [];
@@ -428,7 +466,16 @@ export default function MatchPointLive() {
             type="button"
             className="mp2-pt"
             data-i="0"
-            style={{ "--x": "22%", "--y": "76%", "--stem": "4.6cqw" } as CSSProperties}
+            style={
+              {
+                "--x": "22%",
+                "--y": "76%",
+                "--stem": "4.6cqw",
+                "--mx": "9.3%",
+                "--my": "76%",
+                "--mstem": "3cqw",
+              } as CSSProperties
+            }
             aria-label="15, Fundação Estratégica: ver detalhes"
           >
             <span className="mp2-mark" />
@@ -444,7 +491,16 @@ export default function MatchPointLive() {
             type="button"
             className="mp2-pt"
             data-i="1"
-            style={{ "--x": "68%", "--y": "66%", "--stem": "3.6cqw" } as CSSProperties}
+            style={
+              {
+                "--x": "68%",
+                "--y": "66%",
+                "--stem": "3.6cqw",
+                "--mx": "76.2%",
+                "--my": "66%",
+                "--mstem": "7cqw",
+              } as CSSProperties
+            }
             aria-label="30, Validação de Mercado: ver detalhes"
           >
             <span className="mp2-mark" />
@@ -460,7 +516,16 @@ export default function MatchPointLive() {
             type="button"
             className="mp2-pt"
             data-i="2"
-            style={{ "--x": "33%", "--y": "65%", "--stem": "3.6cqw" } as CSSProperties}
+            style={
+              {
+                "--x": "33%",
+                "--y": "65%",
+                "--stem": "3.6cqw",
+                "--mx": "25.3%",
+                "--my": "65%",
+                "--mstem": "7cqw",
+              } as CSSProperties
+            }
             aria-label="40, Otimização Contínua: ver detalhes"
           >
             <span className="mp2-mark" />
@@ -476,7 +541,16 @@ export default function MatchPointLive() {
             type="button"
             className="mp2-pt"
             data-i="3"
-            style={{ "--x": "76%", "--y": "76%", "--stem": "4.6cqw" } as CSSProperties}
+            style={
+              {
+                "--x": "76%",
+                "--y": "76%",
+                "--stem": "4.6cqw",
+                "--mx": "87.8%",
+                "--my": "76%",
+                "--mstem": "3cqw",
+              } as CSSProperties
+            }
             aria-label="GAME, Evolução Estratégica: ver detalhes"
           >
             <span className="mp2-mark" />
@@ -508,7 +582,8 @@ export default function MatchPointLive() {
           </div>
         </div>
       </div>
-      <p className="mp2-swipe">Deslize para acompanhar o ponto →</p>
+      <p className="mp2-now" id="mp2Now" aria-live="polite" />
+      <p className="mp2-swipe">Toque nos números para ver cada etapa</p>
 
       <div className="mp2-foot">
         <div className="mp2-board" aria-live="polite">

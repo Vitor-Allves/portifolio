@@ -583,16 +583,34 @@
 .mp2-btn { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #1F3A63;
   background: linear-gradient(135deg, #FFFFFF 0%, #EEF1F5 38%, #D9DEE5 62%, #F7F8FA 100%); box-shadow: 0 10px 24px rgba(0,0,0,.35); }
 .mp2-replay { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.55); background: rgba(11,21,38,.6); color: #FFFFFF; font: 600 12px "Montserrat", sans-serif; letter-spacing: .06em; cursor: pointer; }
-.mp2-swipe { display: none; }
+.mp2-swipe, .mp2-now { display: none; }
 .mp2 button:focus-visible, .mp2 a:focus-visible { outline: 2px solid #E4F25C; outline-offset: 2px; }
 
-/* celular */
+/* celular e tablet: a quadra inteira cabe na tela (sem arrastar para o lado).
+   O palco vira 16:10 e mostra o miolo da foto (≈ 70% da largura, com os refletores);
+   os pontos usam --mx/--my (já convertidos para esse recorte) e as placas mostram só o placar.
+   O nome da etapa aparece embaixo da quadra, conforme a bola cai. */
 @media (max-width: 900px) {
-  .mp2-head { position: static; padding: 44px 16px 14px; }
-  .mp2-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .mp2-scroll::-webkit-scrollbar { display: none; }
-  .mp2-stage { width: 1000px; }
-  .mp2-swipe { display: block; margin: 10px 0 0; text-align: center; font-size: 12.5px; letter-spacing: .08em; color: #B9C3D1; }
+  .mp2-head { position: static; padding: 40px 16px 14px; }
+  .mp2-eyebrow { flex-wrap: wrap; justify-content: center; text-align: center; line-height: 1.6; letter-spacing: .16em; }
+  .mp2-eyebrow::before { display: none; }
+  .mp2-stage { aspect-ratio: 16 / 10; }
+  .mp2-pt { left: var(--mx); top: var(--my); }
+  .mp2-stem { height: var(--mstem); }
+  .mp2-tag { bottom: var(--mstem); gap: 0; padding: 4px 9px; border-radius: 7px; }
+  .mp2-tag b { font-size: 17px; padding-right: 0; border-right: 0; }
+  .mp2-tag > span { display: none; }
+  .mp2-mark { left: -12px; top: -4px; width: 24px; height: 8px; }
+  .mp2-ball { width: 13px; }
+  .mp2-trails path { vector-effect: non-scaling-stroke; stroke-width: 2.5px; }
+  .mp2-titan, .mp2-legacy { display: none; }
+  .mp2-stage > .mp2-light:nth-of-type(1), .mp2-stage > .mp2-light:nth-of-type(2) { display: none; }
+  .mp2-stage > .mp2-light:nth-of-type(3) { left: 4.2%; }
+  .mp2-stage > .mp2-light:nth-of-type(4) { left: 95.8%; }
+  .mp2-light { width: 24cqw; margin: -12cqw 0 0 -12cqw; }
+  .mp2-now { display: flex; justify-content: center; align-items: baseline; gap: 10px; min-height: 26px; margin: 14px 16px 0; text-align: center; font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #FFFFFF; }
+  .mp2-now b { font-family: "Cinzel", Georgia, serif; font-size: 22px; letter-spacing: .02em; line-height: 1; }
+  .mp2-swipe { display: block; margin: 6px 16px 0; text-align: center; font-size: 12px; letter-spacing: .06em; color: #B9C3D1; }
   .mp2-foot { position: static; padding: 16px 16px 40px; }
   .mp2-board-lg { display: none; }
 }
@@ -601,7 +619,6 @@
 @media (prefers-reduced-motion: reduce) {
   .mp2 *, .mp2 *::before, .mp2 *::after { transition: none !important; animation: none !important; }
 }
-
 /* ===== soluções ===== */
 .lg-sol {
   display: grid;
@@ -2436,3 +2453,51 @@
     transition: none;
   }
 }
+
+/* ===== ajustes do celular (avaliação de 06/10/2026) ===== */
+
+/* Parte 2: /metodo — mascotes das etapas 40 e GAME estourando a tela */
+@media (max-width: 900px) {
+  #etapa-15 .lg-sc-m, #etapa-30 .lg-sc-m, #etapa-40 .lg-sc-m, #etapa-game .lg-sc-m {
+    position: relative; left: auto; right: auto; height: 380px; width: auto; max-width: 100%;
+    object-fit: contain; margin: 18px auto 0; transform: none;
+  }
+}
+
+/* Parte 3: /titan-e-legacy — a dupla do topo gigante e cortada */
+.lg-dstage figure { grid-template-rows: minmax(0, 1fr) auto; }
+.lg-dstage figure img { height: 100%; width: auto; max-width: 100%; min-height: 0; object-fit: contain; object-position: center bottom; }
+@media (max-width: 640px) {
+  .lg-dstage { height: 400px; margin-bottom: 28px; }
+  .lg-dstage figcaption { padding: 6px 10px; }
+  .lg-dstage figcaption span { font-size: 9.5px; letter-spacing: .12em; }
+}
+
+/* Parte 4: página inicial — cartão "Próximo movimento" apertado */
+@media (max-width: 640px) {
+  .lg-cta { grid-template-columns: minmax(0, 1fr); padding: 26px 22px 0; }
+  .lg-cta .lg-txt { padding-bottom: 0; }
+  .lg-cta img { width: 150px; justify-self: end; margin-top: -8px; }
+  .lg-cta .lg-btn { white-space: nowrap; justify-self: start; }
+}
+
+/* Parte 5: barra do topo em celular pequeno (320 px) */
+.lg-burger, .lg-hd-enter { flex-shrink: 0; }
+@media (max-width: 380px) {
+  .lg-hd .lg-in-wide { gap: 8px; }
+  .lg-placar { gap: 3px; }
+  .lg-placar > span { min-width: 24px; padding-inline: 4px; font-size: 11px; }
+}
+
+/* Parte 6: campos de formulário com 16px (evita zoom automático no iPhone) */
+@media (max-width: 900px) {
+  input, select, textarea,
+  .lg-fld input, .lg-fld select, .lg-fld textarea { font-size: 16px; }
+}
+
+/* Parte 9: carrossel do Titan — setas invisíveis no fundo claro */
+.lg-section:not(.lg-dark) .lg-car-ctl .lg-arr { color: #1F3A63; border-color: rgba(31,58,99,.35); background: #FFFFFF; }
+.lg-section:not(.lg-dark) .lg-dots button { background: rgba(31,58,99,.25); }
+.lg-section:not(.lg-dark) .lg-dots button[aria-current="true"] { background: #1F3A63; }
+.lg-dots button { position: relative; }
+.lg-dots button::after { content: ""; position: absolute; inset: -8px -3px; }

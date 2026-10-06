@@ -30,7 +30,7 @@ export type LoginVisualEvent =
   | { type: "forgot-view"; open: boolean };
 
 const fieldClass =
-  "w-full h-[46px] rounded-[10px] border border-slate-300 bg-slate-50 px-3.5 text-[15px] font-medium text-[#16243D] placeholder:text-slate-400 focus:border-[#2E5BA8] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#2E5BA8]/20 transition-colors duration-200 aria-[invalid=true]:border-[#A23A3A]";
+  "w-full h-[46px] rounded-[10px] border border-slate-300 bg-slate-50 px-3.5 text-[15px] max-[900px]:text-[16px] font-medium text-[#16243D] placeholder:text-slate-400 focus:border-[#2E5BA8] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#2E5BA8]/20 transition-colors duration-200 aria-[invalid=true]:border-[#A23A3A]";
 const labelClass = "block text-[12.5px] font-semibold text-[#16243D] mb-1.5";
 const submitClass =
   "mt-1 inline-flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-[#1F3A63] px-6 text-[15px] font-bold tracking-[0.02em] text-white transition-[filter] duration-200 hover:brightness-110 disabled:cursor-progress disabled:saturate-[.6]";

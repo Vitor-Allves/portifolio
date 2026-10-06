@@ -16,10 +16,6 @@ export default function CaseStudy() {
         </div>
         <div className="lg-case lg-card-look">
           <div className="lg-case-l">
-            <div className="lg-ctx">
-              <span className="lg-pend">Segmento · a preencher</span>
-              <span className="lg-pend">Período · a preencher</span>
-            </div>
             <p className="lg-big">
               R$ 1.154,59 investidos.
               <br />
