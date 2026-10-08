@@ -323,6 +323,7 @@ export default function ReportsPanel({
 
   const [drawerContext, setDrawerContext] = useState<DrawerContext | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [templateGenerating, setTemplateGenerating] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -385,19 +386,49 @@ export default function ReportsPanel({
   const currentComparisonLabel =
     compare && comparisonRange ? `comparando com ${formatShortDate(comparisonRange.since)} a ${formatShortDate(comparisonRange.until)}` : null;
 
+  // Pulls the exact bytes the drawer's own "Baixar PDF" button would fetch,
+  // using the entry point's own indicator set (null for ad-hoc — the server
+  // then applies its own "every indicator this recipient isn't denied"
+  // default) and the recipient's default report type. Used only when
+  // reportSettings.canBuild is false: nothing calls this while the picker
+  // is reachable, since then the drawer's own button is what fires it.
+  async function generateReportPdfNow(ctx: DrawerContext): Promise<void> {
+    await downloadPdfFromServer(
+      {
+        title: ctx.title,
+        filters: ctx.filters,
+        reportVersion: reportSettings.defaultType,
+        indicators: ctx.initialIndicatorSet ?? [],
+        rememberSelection: false,
+        recipientClientId: recipientClientId || null,
+      },
+      previewFileNameFor(clientLabel, isMultiClient, resolvedRange, reportSettings.defaultType)
+    );
+  }
+
   function openDrawerForCurrent() {
     if (reachPending) {
       setDownloadError("Aguarde o cálculo do alcance para os filtros atuais antes de gerar o PDF.");
       return;
     }
     setDownloadError(null);
-    setDrawerContext({
+    const ctx: DrawerContext = {
       title: "Relatório de campanhas",
       filters: currentFiltersForExport(),
       initialIndicatorSet: null,
       periodLabel,
       comparisonLabel: currentComparisonLabel,
-    });
+    };
+    if (!reportSettings.canBuild) {
+      if (downloading) return;
+      setDownloading(true);
+      generateReportPdfNow(ctx)
+        .then(() => setSuccessMessage("Relatório gerado!"))
+        .catch((err) => setDownloadError(err instanceof ExportError ? err.message : "Não foi possível gerar o PDF. Tente novamente."))
+        .finally(() => setDownloading(false));
+      return;
+    }
+    setDrawerContext(ctx);
   }
 
   function openDrawerForPredefined(report: PredefinedPdfReport) {
@@ -406,25 +437,46 @@ export default function ReportsPanel({
       return;
     }
     setDownloadError(null);
-    setDrawerContext({
+    const ctx: DrawerContext = {
       title: `Relatório ${report.label.toLowerCase()}`,
       filters: currentFiltersForExport(),
       initialIndicatorSet: report.indicators,
       periodLabel,
       comparisonLabel: currentComparisonLabel,
-    });
+    };
+    if (!reportSettings.canBuild) {
+      if (predefinedLoading) return;
+      setPredefinedLoading(report.id);
+      setPredefinedError(null);
+      generateReportPdfNow(ctx)
+        .then(() => setSuccessMessage("Relatório gerado!"))
+        .catch((err) => setPredefinedError({ id: report.id, message: err instanceof ExportError ? err.message : "Não foi possível gerar. Tente novamente." }))
+        .finally(() => setPredefinedLoading(null));
+      return;
+    }
+    setDrawerContext(ctx);
   }
 
   function openDrawerForTemplate(template: ReportTemplateSummary) {
     setRowError(null);
     setDownloadError(null);
-    setDrawerContext({
+    const ctx: DrawerContext = {
       title: template.name,
       filters: template.filters,
       initialIndicatorSet: template.indicators,
       periodLabel: periodSummary(template.filters.period),
       comparisonLabel: template.filters.compare ? "comparando com o período anterior" : null,
-    });
+    };
+    if (!reportSettings.canBuild) {
+      if (templateGenerating) return;
+      setTemplateGenerating(template.id);
+      generateReportPdfNow(ctx)
+        .then(() => setSuccessMessage("Relatório gerado!"))
+        .catch((err) => setRowError({ id: template.id, message: err instanceof ExportError ? err.message : "Não foi possível gerar. Tente novamente." }))
+        .finally(() => setTemplateGenerating(null));
+      return;
+    }
+    setDrawerContext(ctx);
   }
 
   async function downloadPredefinedCsv(report: PredefinedCsvReport) {
@@ -583,10 +635,17 @@ export default function ReportsPanel({
         <button
           type="button"
           onClick={openDrawerForCurrent}
-          disabled={reachPending}
+          disabled={reachPending || downloading}
+          aria-busy={downloading}
           className="inline-flex items-center gap-2 text-[13px] px-4 py-2.5 rounded-full bg-intel-cyan text-[#04121a] font-medium hover:brightness-110 transition-[filter] duration-200 disabled:opacity-40 disabled:cursor-wait"
         >
-          {reachPending ? "Calculando alcance dos filtros..." : "Montar relatório do período atual"}
+          {reachPending
+            ? "Calculando alcance dos filtros..."
+            : downloading
+              ? "Gerando relatório..."
+              : reportSettings.canBuild
+                ? "Montar relatório do período atual"
+                : "Baixar PDF do período atual"}
         </button>
         {reachPending && (
           <p className="mt-2 text-[12px] text-intel-text-dim">
@@ -620,7 +679,13 @@ export default function ReportsPanel({
                 aria-busy={predefinedLoading === report.id}
                 className="self-start mt-1 text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50 disabled:cursor-wait"
               >
-                {predefinedLoading === report.id ? "Gerando..." : report.format === "pdf" ? "Montar relatório" : "Baixar CSV"}
+                {predefinedLoading === report.id
+                  ? "Gerando..."
+                  : report.format === "pdf"
+                    ? reportSettings.canBuild
+                      ? "Montar relatório"
+                      : "Baixar PDF"
+                    : "Baixar CSV"}
               </button>
               {predefinedError?.id === report.id && (
                 <p className="text-[11.5px] text-intel-red" role="alert">
@@ -635,7 +700,11 @@ export default function ReportsPanel({
 
       <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
         <h3 className="text-[13px] font-medium text-intel-text mb-1">Modelos de relatório</h3>
-        <p className="text-[12px] text-intel-text-dim mb-5">Filtros salvos — abrem o painel &quot;Montar relatório&quot; já com a seleção salva no modelo.</p>
+        <p className="text-[12px] text-intel-text-dim mb-5">
+          {reportSettings.canBuild
+            ? 'Filtros salvos — abrem o painel "Montar relatório" já com a seleção salva no modelo.'
+            : "Filtros salvos — geram o PDF diretamente, com a seleção salva no modelo."}
+        </p>
 
         {!dbConfigured ? (
           <p className="text-[12px] text-intel-text-dim">
@@ -665,9 +734,11 @@ export default function ReportsPanel({
                   <button
                     type="button"
                     onClick={() => openDrawerForTemplate(template)}
-                    className="text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200"
+                    disabled={templateGenerating === template.id}
+                    aria-busy={templateGenerating === template.id}
+                    className="text-[12px] tracking-[0.06em] uppercase px-3.5 py-2 rounded-full bg-intel-cyan/[0.14] text-intel-cyan hover:bg-intel-cyan/[0.22] transition-colors duration-200 disabled:opacity-50 disabled:cursor-wait"
                   >
-                    Montar relatório
+                    {templateGenerating === template.id ? "Gerando..." : reportSettings.canBuild ? "Montar relatório" : "Baixar PDF"}
                   </button>
                   {isAdmin && (
                     <button

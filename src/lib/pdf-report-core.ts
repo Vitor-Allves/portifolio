@@ -652,19 +652,63 @@ function drawLineChart(
       presentIdx.length > 0 ? Math.max(...presentIdx.map((i) => doc.getTextWidth(opts.formatValue(primarySeries.values[i] as number)))) : 0;
     const maxLabels = widestLabelW > 0 ? Math.max(1, Math.floor(plot.w / (widestLabelW + 4))) : presentIdx.length;
 
-    // Evenly-sampled positions across the present points, not a plain modulo
-    // step — a modulo step plus "always force the very last point" can land
-    // that forced point right next to the previous labeled one, crowding
-    // two labels together at the end of a long series instead of spreading
-    // them out.
+    // Evenly-sampled CANDIDATE positions across the present points, not a
+    // plain modulo step — a modulo step plus "always force the very last
+    // point" can land that forced point right next to the previous labeled
+    // one, crowding two labels together at the end of a long series instead
+    // of spreading them out. This only decides which points are offered a
+    // label; real estate near actual overlap is decided below.
     const count = Math.min(maxLabels, presentIdx.length);
     const sampled = count <= 1 ? [0] : Array.from({ length: count }, (_, k) => Math.round((k * (presentIdx.length - 1)) / (count - 1)));
-    // Even x-spacing alone doesn't stop two labels from colliding when the
-    // line has a local peak/plateau — neighboring labeled points can still
-    // sit at nearly the same height. Alternating a small vertical lift
-    // between consecutive labels (a zigzag) keeps them apart regardless of
-    // the data's shape, without needing real bounding-box collision checks.
-    const labelLift = new Map<number, number>(sampled.map((p, k) => [presentIdx[p], k % 2 === 0 ? 0 : 3.2]));
+
+    // Real collision detection, not a parity guess: alternating a fixed lift
+    // between consecutive labels assumes collisions only happen between
+    // immediate x-neighbors, but real data (a flat week of spend, a
+    // weekly/short cycle) can repeat similar values every few points — two
+    // labels on the SAME alternating tier can then still collide. Instead,
+    // place candidates left to right, and for each one try increasing
+    // vertical lifts until its text box clears every label already placed
+    // (checked against all of them, not just immediate neighbors — cheap at
+    // the handful of labels a chart like this ever shows). A candidate that
+    // can't clear any tier is dropped rather than drawn overlapping; its
+    // value is still recoverable from the gridlines.
+    const LIFTS = [0, 3.2, 6.4, 9.6];
+    const TEXT_H = 2.6;
+    const placedBoxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    // A label for a point near the top of the plot can clear every OTHER
+    // label yet still rise, once lifted, straight into the chart's own
+    // title/caption above the plot area — those aren't in placedBoxes
+    // since they're not data labels. Seeding that strip as an
+    // already-occupied box makes the same collision loop below keep every
+    // lift tier out of it too. The boundary is the caption's own baseline
+    // (box.y + 9, see below) plus a hair of clearance — NOT plot.y: an
+    // unlifted label for a near-maximum point is SUPPOSED to float a couple
+    // mm above plot.y already (that's normal, expected headroom use), so
+    // drawing the line at plot.y itself would reject nearly every label on
+    // a chart whose values all sit close to the series max.
+    placedBoxes.push({ x0: -1e6, x1: 1e6, y0: -1e6, y1: box.y + 9.5 });
+    const labelLift = new Map<number, number>();
+    for (const p of sampled) {
+      const i = presentIdx[p];
+      const v = primarySeries.values[i] as number;
+      const px = plot.x + i * stepX;
+      const pyBase = plot.y + plot.h - (v / maxV) * plot.h;
+      const label = opts.formatValue(v);
+      const w = doc.getTextWidth(label);
+      const align = i === 0 ? "left" : i === n - 1 ? "right" : "center";
+      const x0 = align === "left" ? px : align === "right" ? px - w : px - w / 2;
+      const x1 = x0 + w;
+      for (const lift of LIFTS) {
+        const y1 = pyBase - 2 - lift;
+        const y0 = y1 - TEXT_H;
+        const collides = placedBoxes.some((b) => x0 < b.x1 + 1 && x1 > b.x0 - 1 && y0 < b.y1 && y1 > b.y0);
+        if (!collides) {
+          placedBoxes.push({ x0, x1, y0, y1 });
+          labelLift.set(i, lift);
+          break;
+        }
+      }
+    }
 
     primarySeries.values.forEach((v, i) => {
       if (v === null) return;
