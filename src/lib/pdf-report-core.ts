@@ -1574,6 +1574,7 @@ function buildSimplifiedBody(
   ctx: Ctx,
   input: ReportPdfInput,
   allowed: AllowedColumns,
+  permitted: AllowedColumns,
   isBlockSelected: (id: ReportIndicatorId) => boolean,
   showComparison: boolean,
   totals: Totals,
@@ -1716,7 +1717,7 @@ function buildSimplifiedBody(
   }
 
   // ---- f) Tabela — "Quais campanhas trouxeram mais resultado?" ----
-  if (isBlockSelected("campaignRanking") && isAllowed(allowed, "spend")) {
+  if (isBlockSelected("campaignRanking") && isAllowed(permitted, "spend")) {
     const ranked = [...input.campaigns].sort((a, b) => b.spend - a.spend);
     if (ranked.length > 0) {
       y = ensureSpace(doc, ctx, y, 50);
@@ -1729,7 +1730,7 @@ function buildSimplifiedBody(
   }
 
   // ---- f) Tabela — horários, quando selecionado ----
-  if (isBlockSelected("topHours") && isAllowed(allowed, "spend") && input.hours.length > 0) {
+  if (isBlockSelected("topHours") && isAllowed(permitted, "spend") && input.hours.length > 0) {
     const byHour = new Map<string, number>();
     for (const h of input.hours) byHour.set(h.hour, (byHour.get(h.hour) ?? 0) + h.spend);
     const ranked = [...byHour.entries()].sort((a, b) => b[1] - a[1]);
@@ -1882,12 +1883,27 @@ function drawCoverPage(doc: jsPDF, ctx: Ctx, input: ReportPdfInput) {
 export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsPDF {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const fonts = registerFonts(doc, assets);
-  // Everything drawn below reads this ONE intersected set, never
-  // input.allowedColumns directly — a column the viewer is allowed to see
-  // but chose not to include in THIS report must disappear exactly like a
-  // permission-hidden one: no card, column, chart, legend, total, sentence,
-  // summary line or glossary entry anywhere.
+  // Everything drawn below for a standalone, individually-checkable KPI
+  // (the main grid, the simplified report's headline cards, "Outras colunas
+  // da tabela") reads this ONE intersected set, never input.allowedColumns
+  // directly — a column the viewer is allowed to see but chose not to
+  // include in THIS report must disappear exactly like a permission-hidden
+  // one: no card, chart, legend, total, sentence, summary line or glossary
+  // entry anywhere.
   const allowed: AllowedColumns = new Set([...input.allowedColumns].filter((id) => input.selectedIndicators.has(id)));
+  // But a breakdown/ranking/hierarchy table's OWN internal columns (its
+  // "Investimento"/"Cliques"/"CTR"/"Alcance"/"Conversa iniciada" sub-columns)
+  // have no checkbox of their own in the drawer — only the section itself
+  // ("Público por idade", "Ranking de campanhas", "Melhores horários"...)
+  // does, via isBlockSelected. Gating those internal columns by the
+  // intersected set made them vanish whenever a preset (or a custom
+  // selection) picked the section without ALSO separately ticking every
+  // base metric it displays — e.g. the "Público e distribuição" preset
+  // selects audienceAge/topHours/etc. but no CampaignColumnId at all, so
+  // every breakdown table ended up with zero columns and rendered nothing.
+  // Once a block is selected, its own columns must reflect the recipient's
+  // real permission, not a second, redundant opt-in.
+  const permitted: AllowedColumns = input.allowedColumns;
   const selected = input.selectedIndicators;
   const isBlockSelected = (id: ReportIndicatorId): boolean => selected.has(id);
   // "Comparação com o período anterior" is its own selectable block — unlike
@@ -1915,7 +1931,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   const dailyAgg = aggregateDailyByDate(input.daily, accountIdSet);
   const comparisonDailyAgg = showComparison && input.comparisonDaily ? aggregateDailyByDate(input.comparisonDaily, accountIdSet) : null;
 
-  const allowedKpiIds = new Set<KpiId>((Object.keys(METRIC_DEFS) as KpiId[]).filter((id) => isAllowed(allowed, id)));
+  const allowedKpiIds = new Set<KpiId>((Object.keys(METRIC_DEFS) as KpiId[]).filter((id) => isAllowed(permitted, id)));
   const insights = computeStrategicInsights({
     campaigns: input.campaigns,
     comparisonCampaigns: input.comparisonCampaigns,
@@ -1933,7 +1949,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   drawHeader(doc, ctx);
 
   if (input.reportVersion === "simplificado") {
-    buildSimplifiedBody(doc, ctx, input, allowed, isBlockSelected, showComparison, totals, totalReach, comparisonTotals, comparisonReach, dailyAgg, insights);
+    buildSimplifiedBody(doc, ctx, input, allowed, permitted, isBlockSelected, showComparison, totals, totalReach, comparisonTotals, comparisonReach, dailyAgg, insights);
   } else {
   let y = HEADER_BOTTOM + 8;
 
@@ -2069,8 +2085,8 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
 
   // ---- Evolução e distribuição ----
   const showEvolution = isBlockSelected("trendChart");
-  const nonSpendPrimary = primaryKpiIds(input.campaigns).find((id) => id !== "spend" && isAllowed(allowed, id)) ?? [...METRIC_GROUP_B, ...METRIC_GROUP_A].find((id) => isAllowed(allowed, id));
-  const hasEvolutionSection = showEvolution && (isAllowed(allowed, "spend") || nonSpendPrimary !== undefined);
+  const nonSpendPrimary = primaryKpiIds(input.campaigns).find((id) => id !== "spend" && isAllowed(permitted, id)) ?? [...METRIC_GROUP_B, ...METRIC_GROUP_A].find((id) => isAllowed(permitted, id));
+  const hasEvolutionSection = showEvolution && (isAllowed(permitted, "spend") || nonSpendPrimary !== undefined);
 
   if (hasEvolutionSection) {
     // A fresh page unless the executive summary above already spilled onto a
@@ -2080,7 +2096,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     y = sectionTitle(doc, ctx, y, "Evolução e distribuição");
 
     const xLabels = dailyAgg.map((d) => formatShortDate(d.date));
-    const chartW = isAllowed(allowed, "spend") && nonSpendPrimary ? (CONTENT_W - 8) / 2 : CONTENT_W;
+    const chartW = isAllowed(permitted, "spend") && nonSpendPrimary ? (CONTENT_W - 8) / 2 : CONTENT_W;
     const chartH = 58;
 
     if (dailyAgg.length === 0) {
@@ -2098,7 +2114,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
         : [{ label: `Período atual (${formatShortDate(input.resolvedRange.since)}–${formatShortDate(input.resolvedRange.until)})`, color: NAVY }];
 
       let chartX = MARGIN_X;
-      if (isAllowed(allowed, "spend")) {
+      if (isAllowed(permitted, "spend")) {
         const spendSeries: LineSeries[] = [{ values: dailyAgg.map((d) => d.spend), color: NAVY }];
         if (showComparison && comparisonDailyAgg && comparisonDailyAgg.length > 0) {
           const n = dailyAgg.length;
@@ -2138,7 +2154,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
     }
   }
 
-  if (isBlockSelected("spendByCampaign") && isAllowed(allowed, "spend")) {
+  if (isBlockSelected("spendByCampaign") && isAllowed(permitted, "spend")) {
     y = ensureSpace(doc, ctx, y, 70);
     const distItems = [...input.campaigns].sort((a, b) => b.spend - a.spend).map((c) => ({ label: c.campaignName, value: c.spend }));
     drawBarList(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 62 }, {
@@ -2152,7 +2168,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
 
   if (isBlockSelected("campaignRanking")) {
     y = ensureSpace(doc, ctx, y, 20);
-    y = drawCampaignRankingTable(doc, ctx, y, input.campaigns, allowed);
+    y = drawCampaignRankingTable(doc, ctx, y, input.campaigns, permitted);
   }
 
   if (isBlockSelected("resultsByObjective")) {
@@ -2168,19 +2184,19 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   if (isBlockSelected("audienceAge") && input.audience.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const ageRows = aggregateBreakdown(input.audience, (a) => a.age, (k) => k);
-    y = drawBreakdownTable(doc, ctx, y, "Público por idade", "Faixas etárias com dados reportados pela Meta no período.", "Idade", ageRows, allowed);
+    y = drawBreakdownTable(doc, ctx, y, "Público por idade", "Faixas etárias com dados reportados pela Meta no período.", "Idade", ageRows, permitted);
   }
   if (isBlockSelected("audienceGender") && input.audience.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const genderLabel: Record<string, string> = { male: "Masculino", female: "Feminino" };
     const genderRows = aggregateBreakdown(input.audience, (a) => a.gender, (k) => genderLabel[k] ?? k);
-    y = drawBreakdownTable(doc, ctx, y, "Público por gênero", "Gêneros com dados reportados pela Meta no período.", "Gênero", genderRows, allowed);
+    y = drawBreakdownTable(doc, ctx, y, "Público por gênero", "Gêneros com dados reportados pela Meta no período.", "Gênero", genderRows, permitted);
   }
 
   if (isBlockSelected("audienceRegion") && input.regions.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const regionRows = aggregateBreakdown(input.regions, (r) => r.region, (k) => k);
-    y = drawBreakdownTable(doc, ctx, y, "Público por região", "Estados com dados reportados pela Meta no período.", "Região", regionRows, allowed);
+    y = drawBreakdownTable(doc, ctx, y, "Público por região", "Estados com dados reportados pela Meta no período.", "Região", regionRows, permitted);
   }
 
   const platformLabel: Record<string, string> = {
@@ -2194,23 +2210,23 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   if (isBlockSelected("platformDistribution") && input.platforms.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const platformRows = aggregateBreakdown(input.platforms, (p) => p.platform, (k) => platformLabel[k] ?? k);
-    y = drawBreakdownTable(doc, ctx, y, "Distribuição por plataforma", "Plataformas com dados reportados pela Meta no período.", "Plataforma", platformRows, allowed);
+    y = drawBreakdownTable(doc, ctx, y, "Distribuição por plataforma", "Plataformas com dados reportados pela Meta no período.", "Plataforma", platformRows, permitted);
   }
 
   if (isBlockSelected("deviceDistribution") && input.devices.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
     const deviceRows = aggregateBreakdown(input.devices, (d) => d.device, (k) => deviceLabel[k] ?? k);
-    y = drawBreakdownTable(doc, ctx, y, "Distribuição por dispositivo", "Dispositivos com dados reportados pela Meta no período.", "Dispositivo", deviceRows, allowed);
+    y = drawBreakdownTable(doc, ctx, y, "Distribuição por dispositivo", "Dispositivos com dados reportados pela Meta no período.", "Dispositivo", deviceRows, permitted);
   }
 
-  if (isBlockSelected("topHours") && isAllowed(allowed, "spend") && input.hours.length > 0) {
+  if (isBlockSelected("topHours") && isAllowed(permitted, "spend") && input.hours.length > 0) {
     y = ensureSpace(doc, ctx, y, 60);
-    y = drawTopHoursTable(doc, ctx, y, input.hours, allowed);
+    y = drawTopHoursTable(doc, ctx, y, input.hours, permitted);
   }
 
   if (isBlockSelected("bestAds") && input.ads.length > 0) {
     y = ensureSpace(doc, ctx, y, 20);
-    y = drawBestAdsSection(doc, ctx, y, input.ads, allowed);
+    y = drawBestAdsSection(doc, ctx, y, input.ads, permitted);
   }
 
   const visibleConversionDefs = EXTRA_CONVERSION_KPI_DEFS.filter((d) => isAllowed(allowed, d.id) && isKpiPopulated(d, totals, null));
@@ -2245,7 +2261,7 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   // ---- Campaign → ad set hierarchy ----
   if (isBlockSelected("campaignHierarchy")) {
     y = ensureSpace(doc, ctx, y, 60);
-    y = drawCampaignHierarchy(doc, ctx, y, input.campaigns, input.adSets, input.selectedAdSetIds, allowed);
+    y = drawCampaignHierarchy(doc, ctx, y, input.campaigns, input.adSets, input.selectedAdSetIds, permitted);
   }
 
   // ---- Closing block ----
