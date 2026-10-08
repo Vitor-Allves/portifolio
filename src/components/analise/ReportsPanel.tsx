@@ -392,13 +392,25 @@ export default function ReportsPanel({
   // default) and the recipient's default report type. Used only when
   // reportSettings.canBuild is false: nothing calls this while the picker
   // is reachable, since then the drawer's own button is what fires it.
+  //
+  // A hidden or "uso interno" indicator in a predefined/template's fixed
+  // list must simply drop out of the report, not fail the whole download —
+  // the drawer's own lazy initializer already does this exact filtering
+  // before a selection ever reaches the server (see
+  // ReportBuilderDrawer.tsx's `withoutInternal`/hiddenIndicatorIds filter);
+  // this path has no drawer to do it, so it filters here instead. The
+  // server still re-validates everything regardless (resolveSelectedIndicators
+  // never trusts the client alone) — this is purely about not requesting an
+  // indicator this recipient can't have in the first place.
   async function generateReportPdfNow(ctx: DrawerContext): Promise<void> {
+    const internalSet = new Set(internalIndicatorIds);
+    const indicators = (ctx.initialIndicatorSet ?? []).filter((id) => !hiddenIndicatorIds.has(id) && !internalSet.has(id));
     await downloadPdfFromServer(
       {
         title: ctx.title,
         filters: ctx.filters,
         reportVersion: reportSettings.defaultType,
-        indicators: ctx.initialIndicatorSet ?? [],
+        indicators,
         rememberSelection: false,
         recipientClientId: recipientClientId || null,
       },
