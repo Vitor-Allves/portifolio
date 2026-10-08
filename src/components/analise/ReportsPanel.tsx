@@ -9,7 +9,7 @@ import type { ReportFilters, ReportTemplateSummary } from "@/lib/report-template
 import type { PdfReportType } from "@/lib/pdf-report-core";
 import type { ClientAccessSummary } from "@/lib/client-access-types";
 import type { ResolvedReportSettings, ReportType } from "@/lib/client-permissions";
-import { ALL_INDICATOR_IDS, type ReportIndicatorId } from "@/lib/report-indicators";
+import { OTHER_COLUMN_OPTIONS, type ReportIndicatorId } from "@/lib/report-indicators";
 import type { FilterOption } from "./MultiSelectFilter";
 import { INTEL_INPUT, INTEL_LABEL } from "./intel-styles";
 import { MascotState } from "./Mascot";
@@ -128,6 +128,33 @@ const EXECUTIVE_INDICATORS: ReportIndicatorId[] = [
   "budgetPacing",
 ];
 
+// Deliberadamente SEM kpiBreakdownByAnchor/strategicInsights/resultsByObjective/
+// budgetPacing — esses são o conteúdo exclusivo do Executivo, e repeti-los
+// aqui faria o Executivo perder o sentido de existir como relatório à parte.
+// Também sem os breakdowns de público/distribuição, que são exclusivos de
+// "Público e distribuição". O que sobra é o que só este relatório tem:
+// detalhe campanha a campanha (ranking, investimento por campanha,
+// hierarquia campanha → conjunto → anúncio, melhores anúncios).
+const CAMPAIGN_PERFORMANCE_INDICATORS: ReportIndicatorId[] = [
+  "spend",
+  "impressions",
+  "clicks",
+  "linkClicks",
+  "conversations",
+  "costPerConversation",
+  "ctr",
+  "cpc",
+  "cpm",
+  "reach",
+  "trendChart",
+  "compare",
+  "spendByCampaign",
+  "campaignRanking",
+  "campaignHierarchy",
+  "bestAds",
+  ...OTHER_COLUMN_OPTIONS.map((o) => o.id),
+];
+
 const PREDEFINED_REPORTS: PredefinedReport[] = [
   {
     id: "executive",
@@ -140,8 +167,8 @@ const PREDEFINED_REPORTS: PredefinedReport[] = [
     id: "detailed",
     format: "pdf",
     label: "Performance por campanha",
-    description: "O relatório completo: KPIs, evolução, distribuição, hierarquia campanha → conjunto → anúncio e análise estratégica.",
-    indicators: ALL_INDICATOR_IDS,
+    description: "Detalhe campanha a campanha: investimento por campanha, ranking, hierarquia campanha → conjunto → anúncio e melhores anúncios.",
+    indicators: CAMPAIGN_PERFORMANCE_INDICATORS,
   },
   {
     id: "audience",

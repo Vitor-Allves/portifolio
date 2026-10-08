@@ -633,6 +633,58 @@ function drawLineChart(
     doc.setLineDashPattern([], 0);
   }
 
+  // Value at each point — a static PDF has no hover/tooltip, so without this
+  // the line alone gives no sense of magnitude. Labeled only on the primary
+  // (solid, "período atual") series; the comparison line stays unlabeled to
+  // avoid doubling the clutter. Every point gets its own small dot marker
+  // regardless of whether its value is labeled, so the eye can still find
+  // each day on the line. When there are more points than legibly fit at
+  // this width (computed from the widest formatted value actually present,
+  // not a fixed count — "R$ 12.345,67" needs far more room than "42"),
+  // labels thin out the same way the x-axis ticks already do; every value
+  // beyond that thinning is still recoverable from the gridlines.
+  const primarySeries = opts.series.find((s) => !s.dashed) ?? opts.series[0];
+  if (primarySeries) {
+    doc.setFont(ctx.fonts.body, "normal");
+    doc.setFontSize(6.2);
+    const presentIdx = primarySeries.values.map((v, i) => (v === null ? -1 : i)).filter((i) => i >= 0);
+    const widestLabelW =
+      presentIdx.length > 0 ? Math.max(...presentIdx.map((i) => doc.getTextWidth(opts.formatValue(primarySeries.values[i] as number)))) : 0;
+    const maxLabels = widestLabelW > 0 ? Math.max(1, Math.floor(plot.w / (widestLabelW + 4))) : presentIdx.length;
+
+    // Evenly-sampled positions across the present points, not a plain modulo
+    // step — a modulo step plus "always force the very last point" can land
+    // that forced point right next to the previous labeled one, crowding
+    // two labels together at the end of a long series instead of spreading
+    // them out.
+    const count = Math.min(maxLabels, presentIdx.length);
+    const sampled = count <= 1 ? [0] : Array.from({ length: count }, (_, k) => Math.round((k * (presentIdx.length - 1)) / (count - 1)));
+    // Even x-spacing alone doesn't stop two labels from colliding when the
+    // line has a local peak/plateau — neighboring labeled points can still
+    // sit at nearly the same height. Alternating a small vertical lift
+    // between consecutive labels (a zigzag) keeps them apart regardless of
+    // the data's shape, without needing real bounding-box collision checks.
+    const labelLift = new Map<number, number>(sampled.map((p, k) => [presentIdx[p], k % 2 === 0 ? 0 : 3.2]));
+
+    primarySeries.values.forEach((v, i) => {
+      if (v === null) return;
+      const px = plot.x + i * stepX;
+      const py = plot.y + plot.h - (v / maxV) * plot.h;
+      setColor(doc, "setFillColor", primarySeries.color);
+      doc.circle(px, py, 0.55, "F");
+      if (labelLift.has(i)) {
+        doc.setFont(ctx.fonts.body, "normal");
+        doc.setFontSize(6.2);
+        setColor(doc, "setTextColor", TEXT);
+        // Left/right-aligned at the very ends (same reasoning as the x-axis
+        // ticks below) — a centered label on the first/last point would
+        // otherwise overlap the y-axis value labels or run off the margin.
+        const align = i === 0 ? "left" : i === n - 1 ? "right" : "center";
+        doc.text(opts.formatValue(v), px, py - 2 - (labelLift.get(i) ?? 0), { align });
+      }
+    });
+  }
+
   // Sparse x-axis labels: first, middle, last (dense daily labels would overlap in this width).
   setColor(doc, "setTextColor", TEXT_MUTED);
   doc.setFont(ctx.fonts.body, "normal");
