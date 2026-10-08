@@ -117,7 +117,11 @@ const EXECUTIVE_INDICATORS: ReportIndicatorId[] = [
   "cpc",
   "cpm",
   "reach",
-  "trendChart",
+  // Em vez de um único gráfico de evolução, o Executivo organiza seus KPIs
+  // em torno de 3 indicadores-âncora (Investimento, Conversa iniciada,
+  // Custo por conversa iniciada) — cada um com seu próprio gráfico e seu
+  // próprio ranking de campanhas reordenado por ele (a pedido do cliente).
+  "kpiBreakdownByAnchor",
   "compare",
   "strategicInsights",
   "resultsByObjective",

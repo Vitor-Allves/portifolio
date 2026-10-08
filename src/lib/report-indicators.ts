@@ -28,6 +28,7 @@ export type ReportBlockId =
   | "trendChart"
   | "compare"
   | "strategicInsights"
+  | "kpiBreakdownByAnchor"
   | "spendByCampaign"
   | "campaignRanking"
   | "campaignHierarchy"
@@ -47,6 +48,10 @@ export const REPORT_BLOCK_OPTIONS: { id: ReportBlockId; label: string }[] = [
   { id: "trendChart", label: "Evolução no período (gráfico)" },
   { id: "compare", label: "Comparação com o período anterior" },
   { id: "strategicInsights", label: "Análises estratégicas (leitura automática)" },
+  {
+    id: "kpiBreakdownByAnchor",
+    label: "Resumo por indicador (Investimento, Conversa iniciada, Custo/Conversa — gráfico + ranking de cada um)",
+  },
   { id: "spendByCampaign", label: "Investimento por campanha" },
   { id: "campaignRanking", label: "Ranking de campanhas" },
   { id: "campaignHierarchy", label: "Campanha → conjunto → anúncio" },
