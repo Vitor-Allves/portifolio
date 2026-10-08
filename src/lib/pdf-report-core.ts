@@ -1284,6 +1284,122 @@ function drawCampaignRankingTable(doc: jsPDF, ctx: Ctx, y: number, campaigns: Ca
   return (doc as any).lastAutoTable.finalY + 8;
 }
 
+type AnchorMetric = {
+  kpi: "spend" | "conversations" | "costPerConversation";
+  label: string;
+  sortDir: "desc" | "asc";
+  valueOf: (c: CampaignInsight) => number | null;
+};
+
+/** "Investimento" and "Conversa iniciada" rank DESC (more is the headline); "Custo por conversa iniciada" ranks ASC (cheaper is better) — same polarity the live dashboard already uses for this field (deltaPolarity: "lower-better"). */
+const ANCHOR_METRICS: AnchorMetric[] = [
+  { kpi: "spend", label: "Investimento", sortDir: "desc", valueOf: (c) => c.spend },
+  { kpi: "conversations", label: "Conversa iniciada", sortDir: "desc", valueOf: (c) => c.conversations },
+  { kpi: "costPerConversation", label: "Custo por conversa iniciada", sortDir: "asc", valueOf: (c) => costPerConversation(c) },
+];
+
+/**
+ * The Executivo report's own KPI section (a pedido do cliente): em vez de uma
+ * grade única de indicadores, os 3 mais decisivos — Investimento, Conversa
+ * iniciada, Custo por conversa iniciada — cada um com seu próprio gráfico de
+ * evolução e seu próprio ranking de campanhas reordenado por ele. As mesmas
+ * colunas de apoio (os mesmos "indicadores") se repetem nas 3 tabelas — só a
+ * ordenação muda — para que o cliente veja, em sequência: quem recebeu mais
+ * verba, quem trouxe mais resultado e quem foi mais eficiente. Gated by its
+ * own ReportBlockId ("kpiBreakdownByAnchor"), not by the individual
+ * spend/conversations/costPerConversation CampaignColumnId checkboxes —
+ * selecting the block is enough, same reasoning as every other block-only
+ * section (see the `permitted` vs `allowed` note at the top of
+ * buildReportPdf).
+ */
+function drawAnchorBreakdownSections(
+  doc: jsPDF,
+  ctx: Ctx,
+  y: number,
+  campaigns: CampaignInsight[],
+  dailyAgg: { date: string; spend: number; impressions: number; clicks: number; linkClicks: number; conversations: number | null; reach: number }[],
+  comparisonDailyAgg: typeof dailyAgg | null,
+  showComparison: boolean,
+  permitted: AllowedColumns
+): number {
+  const baseMetrics = allowedMetricDefs(permitted, [...METRIC_GROUP_A, ...METRIC_GROUP_B]);
+  const xLabels = dailyAgg.map((d) => formatShortDate(d.date));
+
+  y = sectionTitle(doc, ctx, y, "Resumo por indicador");
+
+  for (const anchor of ANCHOR_METRICS) {
+    if (!isAllowed(permitted, anchor.kpi)) continue;
+    // The anchor's own metric always leads its own table — slice(0, 5) on
+    // the shared METRIC_GROUP order would otherwise cut "Custo por conversa
+    // iniciada" (9th/10th in that list) out of its own ranking entirely.
+    const metrics = [METRIC_DEFS[anchor.kpi], ...baseMetrics.filter((m) => m.id !== anchor.kpi)].slice(0, 5);
+
+    y = ensureSpace(doc, ctx, y, 90);
+    doc.setFont(ctx.fonts.body, "bold");
+    doc.setFontSize(9.5);
+    setColor(doc, "setTextColor", NAVY_DEEP);
+    doc.text(anchor.label, MARGIN_X, y);
+    y += 6;
+
+    if (dailyAgg.length > 1) {
+      const series: LineSeries[] = [{ values: derivedDailySeries(dailyAgg, anchor.kpi), color: NAVY }];
+      const legend: { label: string; color: [number, number, number]; dashed?: boolean }[] = [{ label: "Período atual", color: NAVY }];
+      if (showComparison && comparisonDailyAgg && comparisonDailyAgg.length > 0) {
+        const n = dailyAgg.length;
+        const aligned = Array.from({ length: n }, (_, i) => comparisonDailyAgg[i] ?? null).map((d) =>
+          d ? derivedDailySeries([d], anchor.kpi)[0] : null
+        );
+        series.push({ values: aligned, color: SILVER, dashed: true });
+        legend.push({ label: "Período anterior", color: SILVER, dashed: true });
+      }
+      drawLineChart(doc, ctx, { x: MARGIN_X, y, w: CONTENT_W, h: 52 }, {
+        title: `${anchor.label} ao longo do período`,
+        caption: `Métrica: ${anchor.label} por dia`,
+        xLabels,
+        series,
+        formatValue: KPI_FORMAT[anchor.kpi],
+        legend,
+      });
+      y += 56;
+    }
+
+    const ranked = campaigns
+      .map((c) => ({ c, v: anchor.valueOf(c) }))
+      .filter((r): r is { c: CampaignInsight; v: number } => r.v !== null)
+      .sort((a, b) => (anchor.sortDir === "desc" ? b.v - a.v : a.v - b.v))
+      .slice(0, 10)
+      .map((r) => r.c);
+
+    if (ranked.length > 0 && metrics.length > 0) {
+      y = ensureSpace(doc, ctx, y, 20);
+      const direction = anchor.sortDir === "desc" ? "maior" : "menor";
+      doc.setFont(ctx.fonts.body, "normal");
+      doc.setFontSize(7.4);
+      setColor(doc, "setTextColor", TEXT_MUTED);
+      doc.text(`As ${ranked.length} campanhas com ${direction} ${anchor.label.toLowerCase()} no período.`, MARGIN_X, y + 3);
+      y += 8;
+
+      autoTable(doc, {
+        startY: y,
+        margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+        styles: { font: ctx.fonts.body, ...BODY_STYLES },
+        headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+        alternateRowStyles: { fillColor: SILVER_TINT },
+        columnStyles: { 0: { cellWidth: NAME_COL_W } },
+        head: [["Campanha", ...metrics.map((m) => m.label)]],
+        body: ranked.map((c, i) => [`${i + 1}º · ${c.campaignName}`, ...metrics.map((m) => formatMetricCell(m, c))]),
+        didDrawPage: () => drawHeader(doc, ctx),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      y = (doc as any).lastAutoTable.finalY + 10;
+    } else {
+      y += 4;
+    }
+  }
+
+  return y;
+}
+
 /** One row per objective's own "resultado principal" — the same primaryResultKind/primaryResultFor logic the live dashboard's "Resultados por objetivo" card uses, grouped across every campaign in scope. */
 function drawResultsByObjective(doc: jsPDF, ctx: Ctx, y: number, campaigns: CampaignInsight[]): number {
   const byKind = new Map<string, CampaignInsight[]>();
@@ -2081,6 +2197,11 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
       doc.text(lines, MARGIN_X, y);
       y += lines.length * 4.4 + 2;
     }
+  }
+
+  if (isBlockSelected("kpiBreakdownByAnchor")) {
+    y = ensureSpace(doc, ctx, y, 90);
+    y = drawAnchorBreakdownSections(doc, ctx, y, input.campaigns, dailyAgg, comparisonDailyAgg, showComparison, permitted);
   }
 
   // ---- Evolução e distribuição ----
