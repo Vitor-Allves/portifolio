@@ -3,14 +3,22 @@
 import { useMemo, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
 import { formatCurrencyBRL, formatCompactNumber, formatPercent, formatShortDate } from "@/lib/format";
 
-export type TrendPoint = { date: string; spend: number; impressions: number; clicks: number; linkClicks: number };
-export type TrendMetric = "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "costPerConversation";
+export type TrendPoint = {
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  conversations: number | null;
+};
+export type TrendMetric = "spend" | "impressions" | "clicks" | "ctr" | "cpc" | "cpm" | "linkClicks" | "conversations" | "costPerConversation";
 
 const METRICS: { id: TrendMetric; label: string }[] = [
   { id: "spend", label: "Investimento" },
   { id: "impressions", label: "Impressões" },
   { id: "clicks", label: "Cliques" },
-  { id: "linkClicks", label: "Conversa iniciada" },
+  { id: "linkClicks", label: "Cliques no link" },
+  { id: "conversations", label: "Conversa iniciada" },
   { id: "costPerConversation", label: "Custo/Conversa" },
   { id: "ctr", label: "CTR" },
   { id: "cpc", label: "CPC" },
@@ -27,8 +35,10 @@ function metricValue(p: TrendPoint, metric: TrendMetric): number {
       return p.clicks;
     case "linkClicks":
       return p.linkClicks;
+    case "conversations":
+      return p.conversations ?? 0;
     case "costPerConversation":
-      return p.linkClicks > 0 ? p.spend / p.linkClicks : 0;
+      return p.conversations !== null && p.conversations > 0 ? p.spend / p.conversations : 0;
     case "ctr":
       return p.impressions > 0 ? (p.clicks / p.impressions) * 100 : 0;
     case "cpc":
@@ -48,6 +58,7 @@ function formatMetric(value: number, metric: TrendMetric): string {
     case "impressions":
     case "clicks":
     case "linkClicks":
+    case "conversations":
       return formatCompactNumber(value);
     case "ctr":
       return formatPercent(value);
