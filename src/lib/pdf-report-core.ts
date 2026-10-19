@@ -842,7 +842,15 @@ function derivedDailySeries(
       case "linkClicks":
         return d.linkClicks;
       case "conversations":
-        return d.conversations;
+        // Unlike the campaign-level total (where null must stay "não
+        // disponível" — an objective that can't produce conversations is
+        // indistinguishable from a genuine zero), a single day inside an
+        // already-selected trend has no such ambiguity: no conversation
+        // action that day means zero happened, not "no data". Passing the
+        // raw null through made drawLineChart treat that day as a gap,
+        // breaking the line and stranding the next real point as an
+        // unconnected dot instead of showing the dip to zero.
+        return d.conversations ?? 0;
       case "ctr":
         return d.impressions > 0 ? (d.clicks / d.impressions) * 100 : null;
       case "cpc":
