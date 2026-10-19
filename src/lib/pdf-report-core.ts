@@ -858,7 +858,13 @@ function derivedDailySeries(
       case "cpm":
         return d.impressions > 0 ? (d.spend / d.impressions) * 1000 : null;
       case "costPerConversation":
-        return d.conversations !== null && d.conversations > 0 ? d.spend / d.conversations : null;
+        // Same reasoning as "conversations" above: a day with zero
+        // conversations has an undefined ratio mathematically, but inside
+        // this trend chart it must still render as a point on the line
+        // (0), not a gap — otherwise the exact same broken-line/stranded-dot
+        // bug reappears here even after conversations itself was fixed,
+        // since this case has its own null-producing branch.
+        return d.conversations !== null && d.conversations > 0 ? d.spend / d.conversations : 0;
       case "reach":
         return null; // daily reach isn't part of DailyMetrics' derivable set here
     }
