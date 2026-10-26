@@ -107,6 +107,8 @@ export type CampaignInsight = {
   videoViews: number | null;
   // Meta's `video_p100_watched_actions` — count of views that reached 100%.
   videoCompletions: number | null;
+  // Meta's `video_p25_watched_actions` — count of views that reached 25%.
+  videoPlays25: number | null;
   // Average seconds watched per impression. An AVERAGE, not a count — never
   // sum this across campaigns/rows (that would misrepresent the real
   // per-viewer average); shown only as its own per-row value.
@@ -177,10 +179,11 @@ export type AdSetInsight = {
   dailyBudget: number | null;
   lifetimeBudget: number | null;
   budgetRemaining: number | null;
-  // See CampaignInsight.postEngagement/videoViews/videoCompletions/videoAvgWatchTimeSeconds/outboundClicks/uniqueClicks/estimatedAdRecallRate/estimatedAdRecallers.
+  // See CampaignInsight.postEngagement/videoViews/videoCompletions/videoPlays25/videoAvgWatchTimeSeconds/outboundClicks/uniqueClicks/estimatedAdRecallRate/estimatedAdRecallers.
   postEngagement: number | null;
   videoViews: number | null;
   videoCompletions: number | null;
+  videoPlays25: number | null;
   videoAvgWatchTimeSeconds: number | null;
   outboundClicks: number | null;
   uniqueClicks: number | null;
@@ -225,10 +228,11 @@ export type AdInsight = {
   creativeTitle: string | null;
   creativeBody: string | null;
   callToAction: string | null; // Meta's raw call_to_action_type, e.g. "SHOP_NOW", "LEARN_MORE"
-  // See CampaignInsight.postEngagement/videoViews/videoCompletions/videoAvgWatchTimeSeconds/outboundClicks/uniqueClicks/estimatedAdRecallRate/estimatedAdRecallers.
+  // See CampaignInsight.postEngagement/videoViews/videoCompletions/videoPlays25/videoAvgWatchTimeSeconds/outboundClicks/uniqueClicks/estimatedAdRecallRate/estimatedAdRecallers.
   postEngagement: number | null;
   videoViews: number | null;
   videoCompletions: number | null;
+  videoPlays25: number | null;
   videoAvgWatchTimeSeconds: number | null;
   outboundClicks: number | null;
   uniqueClicks: number | null;

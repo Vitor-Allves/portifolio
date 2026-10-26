@@ -141,6 +141,8 @@ type ExtraEngagementFields = {
   // Meta returns `video_p100_watched_actions`/`video_avg_time_watched_actions`
   // as one-element arrays (same shape as `actions`), not plain numbers.
   videoCompletions: number | null;
+  // Meta's `video_p25_watched_actions` — same one-element-array shape.
+  videoPlays25: number | null;
   // Average seconds watched per impression — an average, not a count, so
   // deliberately kept OUT of Totals/sumTotals (metrics.ts) and out of the
   // CSV export: naively averaging a per-campaign average across campaigns
@@ -167,6 +169,7 @@ function sumActionArray(nodes: ActionNode[] | undefined): number | null {
 function parseExtraEngagement(row: {
   actions?: ActionNode[];
   video_p100_watched_actions?: ActionNode[];
+  video_p25_watched_actions?: ActionNode[];
   video_avg_time_watched_actions?: ActionNode[];
   outbound_clicks?: ActionNode[];
   unique_clicks?: string;
@@ -177,6 +180,7 @@ function parseExtraEngagement(row: {
     postEngagement: parseAction(row.actions, POST_ENGAGEMENT_ACTION_TYPE),
     videoViews: parseAction(row.actions, VIDEO_VIEW_ACTION_TYPE),
     videoCompletions: sumActionArray(row.video_p100_watched_actions),
+    videoPlays25: sumActionArray(row.video_p25_watched_actions),
     videoAvgWatchTimeSeconds: sumActionArray(row.video_avg_time_watched_actions),
     outboundClicks: sumActionArray(row.outbound_clicks),
     uniqueClicks: row.unique_clicks ? Number(row.unique_clicks) : null,
@@ -186,7 +190,7 @@ function parseExtraEngagement(row: {
 }
 
 const EXTRA_ENGAGEMENT_FIELDS =
-  "video_p100_watched_actions,video_avg_time_watched_actions,outbound_clicks,unique_clicks,estimated_ad_recall_rate,estimated_ad_recallers";
+  "video_p100_watched_actions,video_p25_watched_actions,video_avg_time_watched_actions,outbound_clicks,unique_clicks,estimated_ad_recall_rate,estimated_ad_recallers";
 
 /** Graph API date params for either a named preset or a manually picked range. */
 function periodParams(period: Period): Record<string, string> {
@@ -518,6 +522,7 @@ type CampaignInsightNode = {
   action_values?: ActionNode[];
   reach?: string;
   video_p100_watched_actions?: ActionNode[];
+  video_p25_watched_actions?: ActionNode[];
   video_avg_time_watched_actions?: ActionNode[];
   outbound_clicks?: ActionNode[];
   unique_clicks?: string;
@@ -624,6 +629,7 @@ type AdSetInsightNode = {
   action_values?: ActionNode[];
   reach?: string;
   video_p100_watched_actions?: ActionNode[];
+  video_p25_watched_actions?: ActionNode[];
   video_avg_time_watched_actions?: ActionNode[];
   outbound_clicks?: ActionNode[];
   unique_clicks?: string;
@@ -726,6 +732,7 @@ type AdInsightNode = {
   action_values?: ActionNode[];
   reach?: string;
   video_p100_watched_actions?: ActionNode[];
+  video_p25_watched_actions?: ActionNode[];
   video_avg_time_watched_actions?: ActionNode[];
   outbound_clicks?: ActionNode[];
   unique_clicks?: string;

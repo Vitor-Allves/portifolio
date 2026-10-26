@@ -106,6 +106,16 @@ const AUDIENCE_INDICATORS: ReportIndicatorId[] = [
   "topHours",
 ];
 
+// Redesenhado para seguir o formato de referência do cliente: cards de KPI
+// com variação % (já cobertos pelos indicadores abaixo + "compare"), tabela
+// de campanhas em destaque, tabela de anúncios em destaque e público por
+// idade/gênero — deliberadamente SEM os gráficos de indicador-âncora,
+// análises estratégicas, resultado por objetivo e ritmo de verba que o
+// Executivo trazia antes. Por decisão explícita, idade/gênero (exclusivo de
+// "Público e distribuição") e anúncios em destaque (variante de "Melhores
+// anúncios", exclusivo de "Performance por campanha") passam a se repetir
+// aqui — exceção deliberada à regra geral de conteúdo não-duplicado entre
+// os 3 relatórios, só para o Executivo.
 const EXECUTIVE_INDICATORS: ReportIndicatorId[] = [
   "spend",
   "impressions",
@@ -117,24 +127,20 @@ const EXECUTIVE_INDICATORS: ReportIndicatorId[] = [
   "cpc",
   "cpm",
   "reach",
-  // Em vez de um único gráfico de evolução, o Executivo organiza seus KPIs
-  // em torno de 3 indicadores-âncora (Investimento, Conversa iniciada,
-  // Custo por conversa iniciada) — cada um com seu próprio gráfico e seu
-  // próprio ranking de campanhas reordenado por ele (a pedido do cliente).
-  "kpiBreakdownByAnchor",
   "compare",
-  "strategicInsights",
-  "resultsByObjective",
-  "budgetPacing",
+  "campaignHighlights",
+  "adHighlights",
+  "audienceAge",
+  "audienceGender",
 ];
 
-// Deliberadamente SEM kpiBreakdownByAnchor/strategicInsights/resultsByObjective/
-// budgetPacing — esses são o conteúdo exclusivo do Executivo, e repeti-los
-// aqui faria o Executivo perder o sentido de existir como relatório à parte.
-// Também sem os breakdowns de público/distribuição, que são exclusivos de
-// "Público e distribuição". O que sobra é o que só este relatório tem:
-// detalhe campanha a campanha (ranking, investimento por campanha,
-// hierarquia campanha → conjunto → anúncio, melhores anúncios).
+// Deliberadamente SEM strategicInsights/resultsByObjective/budgetPacing (não
+// fazem mais parte de nenhum dos 3 relatórios desde o redesenho do Executivo)
+// nem os breakdowns de público/distribuição, que continuam exclusivos de
+// "Público e distribuição" — a exceção de idade/gênero reaparecendo no
+// Executivo não se estende a este relatório. O que sobra é o que só este
+// relatório tem: detalhe campanha a campanha (ranking, investimento por
+// campanha, hierarquia campanha → conjunto → anúncio, melhores anúncios).
 const CAMPAIGN_PERFORMANCE_INDICATORS: ReportIndicatorId[] = [
   "spend",
   "impressions",
@@ -160,7 +166,7 @@ const PREDEFINED_REPORTS: PredefinedReport[] = [
     id: "executive",
     format: "pdf",
     label: "Executivo",
-    description: "Uma página com os KPIs principais, resumo executivo e evolução — para decisão rápida, sem detalhe campanha a campanha.",
+    description: "KPIs principais com variação, campanhas e anúncios em destaque e público por idade/gênero — para decisão rápida.",
     indicators: EXECUTIVE_INDICATORS,
   },
   {

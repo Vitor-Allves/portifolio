@@ -33,6 +33,8 @@ export type ReportBlockId =
   | "campaignRanking"
   | "campaignHierarchy"
   | "bestAds"
+  | "campaignHighlights"
+  | "adHighlights"
   | "audienceAge"
   | "audienceGender"
   | "audienceRegion"
@@ -56,6 +58,8 @@ export const REPORT_BLOCK_OPTIONS: { id: ReportBlockId; label: string }[] = [
   { id: "campaignRanking", label: "Ranking de campanhas" },
   { id: "campaignHierarchy", label: "Campanha → conjunto → anúncio" },
   { id: "bestAds", label: "Melhores anúncios" },
+  { id: "campaignHighlights", label: "Campanhas em destaque (impressões, cliques, conversa, custo, frequência, investimento)" },
+  { id: "adHighlights", label: "Anúncios em destaque (impressões, conversa, custo, investimento, vídeo 25%)" },
   { id: "audienceAge", label: "Público por idade" },
   { id: "audienceGender", label: "Público por gênero" },
   { id: "audienceRegion", label: "Público por região" },

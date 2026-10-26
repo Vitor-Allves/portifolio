@@ -31,6 +31,7 @@ export type CampaignColumnId =
   | "cpc"
   | "cpm"
   | "reach"
+  | "frequency"
   | "purchases"
   | "purchaseValue"
   | "roas"
@@ -40,6 +41,7 @@ export type CampaignColumnId =
   | "postEngagement"
   | "videoViews"
   | "videoCompletions"
+  | "videoPlays25"
   | "videoAvgWatchTimeSeconds"
   | "outboundClicks"
   | "uniqueClicks"
@@ -62,6 +64,7 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "cpc", label: "CPC" },
   { id: "cpm", label: "CPM" },
   { id: "reach", label: "Alcance" },
+  { id: "frequency", label: "Frequência" },
   { id: "purchases", label: "Compras (Pixel/CAPI)" },
   { id: "purchaseValue", label: "Valor de compra (Pixel/CAPI)" },
   { id: "roas", label: "ROAS (Pixel/CAPI)" },
@@ -71,6 +74,7 @@ export const CAMPAIGN_COLUMN_OPTIONS: { id: CampaignColumnId; label: string }[] 
   { id: "postEngagement", label: "Engajamento com a publicação" },
   { id: "videoViews", label: "Visualizações de vídeo" },
   { id: "videoCompletions", label: "Vídeo assistido até o fim" },
+  { id: "videoPlays25", label: "Reproduções de 25% do vídeo" },
   { id: "videoAvgWatchTimeSeconds", label: "Tempo médio assistido (vídeo)" },
   { id: "outboundClicks", label: "Cliques para fora da plataforma" },
   { id: "uniqueClicks", label: "Cliques únicos" },
