@@ -52,6 +52,7 @@ import {
   cpc,
   cpm,
   costPerConversation,
+  frequency,
   roas,
   pctChange,
   aggregateDailyByDate,
@@ -1617,6 +1618,120 @@ function drawBestAdsSection(doc: jsPDF, ctx: Ctx, y: number, ads: AdInsight[], a
   return (doc as any).lastAutoTable.finalY + 8;
 }
 
+/** "Campanhas em destaque" — Executivo-only table ranked by conversa iniciada (not spend, unlike drawCampaignRankingTable), with Frequência alongside the usual metrics. Null conversations sort last, never dropped. */
+function drawCampaignHighlightsSection(doc: jsPDF, ctx: Ctx, y: number, campaigns: CampaignInsight[], allowed: AllowedColumns): number {
+  const ranked = [...campaigns].sort((a, b) => (b.conversations ?? -1) - (a.conversations ?? -1)).slice(0, 10);
+  if (ranked.length === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, "Campanhas em destaque");
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(`As ${ranked.length} campanhas com maior conversa iniciada no período.`, MARGIN_X, y + 3);
+  y += 8;
+
+  const allCols: { label: string; show: boolean; render: (c: CampaignInsight) => string }[] = [
+    { label: "Impressões", show: isAllowed(allowed, "impressions"), render: (c: CampaignInsight) => formatInteger(c.impressions) },
+    { label: "Cliques no link", show: isAllowed(allowed, "linkClicks"), render: (c: CampaignInsight) => formatInteger(c.linkClicks) },
+    {
+      label: "Conversas iniciadas",
+      show: isAllowed(allowed, "conversations"),
+      render: (c: CampaignInsight) => (c.conversations === null ? "Não disponível" : formatInteger(c.conversations)),
+    },
+    {
+      label: "Custo por conversa",
+      show: isAllowed(allowed, "costPerConversation"),
+      render: (c: CampaignInsight) => {
+        const v = costPerConversation(c);
+        return v === null ? "—" : formatCurrencyBRL(v);
+      },
+    },
+    {
+      label: "Frequência",
+      show: isAllowed(allowed, "frequency"),
+      render: (c: CampaignInsight) => {
+        const v = frequency(c);
+        return v === null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      },
+    },
+    { label: "Valor investido", show: isAllowed(allowed, "spend"), render: (c: CampaignInsight) => formatCurrencyBRL(c.spend) },
+  ];
+  const cols = allCols.filter((c) => c.show);
+  if (cols.length === 0) return y;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    columnStyles: { 0: { cellWidth: NAME_COL_W } },
+    head: [["Campanha", ...cols.map((c) => c.label)]],
+    body: ranked.map((c, i) => [`${i + 1}º · ${c.campaignName}`, ...cols.map((col) => col.render(c))]),
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 10;
+}
+
+/** "Anúncios em destaque" — Executivo-only table ranked by conversa iniciada, distinct from drawBestAdsSection (ranked by spend, with quality rankings instead of vídeo 25%) used by Performance por campanha. */
+function drawAdHighlightsSection(doc: jsPDF, ctx: Ctx, y: number, ads: AdInsight[], allowed: AllowedColumns): number {
+  const ranked = [...ads].sort((a, b) => (b.conversations ?? -1) - (a.conversations ?? -1)).slice(0, 10);
+  if (ranked.length === 0) return y;
+
+  y = sectionTitle(doc, ctx, y, "Anúncios em destaque");
+  doc.setFont(ctx.fonts.body, "normal");
+  doc.setFontSize(7.4);
+  setColor(doc, "setTextColor", TEXT_MUTED);
+  doc.text(
+    `Os ${ranked.length} anúncios com maior conversa iniciada no período. Sem miniatura nesta versão — veja a exportação CSV de criativos e qualidade para a URL da imagem.`,
+    MARGIN_X,
+    y + 3
+  );
+  y += 8;
+
+  const allCols: { label: string; show: boolean; render: (a: AdInsight) => string }[] = [
+    { label: "Impressões", show: isAllowed(allowed, "impressions"), render: (a: AdInsight) => formatInteger(a.impressions) },
+    {
+      label: "Conversas iniciadas",
+      show: isAllowed(allowed, "conversations"),
+      render: (a: AdInsight) => (a.conversations === null ? "Não disponível" : formatInteger(a.conversations)),
+    },
+    {
+      label: "Custo por conversa",
+      show: isAllowed(allowed, "costPerConversation"),
+      render: (a: AdInsight) => {
+        const v = costPerConversation(a);
+        return v === null ? "—" : formatCurrencyBRL(v);
+      },
+    },
+    { label: "Valor investido", show: isAllowed(allowed, "spend"), render: (a: AdInsight) => formatCurrencyBRL(a.spend) },
+    {
+      label: "Reproduções de 25% do vídeo",
+      show: isAllowed(allowed, "videoPlays25"),
+      render: (a: AdInsight) => (a.videoPlays25 === null ? "Não disponível" : formatInteger(a.videoPlays25)),
+    },
+  ];
+  const cols = allCols.filter((c) => c.show);
+  if (cols.length === 0) return y;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: MARGIN_X, right: MARGIN_X, top: HEADER_BOTTOM + 9, bottom: 16 },
+    styles: { font: ctx.fonts.body, ...BODY_STYLES },
+    headStyles: { font: ctx.fonts.body, ...HEAD_STYLES },
+    alternateRowStyles: { fillColor: SILVER_TINT },
+    columnStyles: { 0: { cellWidth: NAME_COL_W } },
+    head: [["Anúncio", ...cols.map((c) => c.label)]],
+    body: ranked.map((a, i) => [`${i + 1}º · ${a.adName}`, ...cols.map((col) => col.render(a))]),
+    didDrawPage: () => drawHeader(doc, ctx),
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
 // ---------------------------------------------------------------------------
 // Simplified report — Parte 3 do "PROMPT — RELATÓRIOS": same numbers as the
 // technical report, different presentation. No Meta field names, no "CTR/
@@ -2400,6 +2515,16 @@ export function buildReportPdf(input: ReportPdfInput, assets: ReportAssets): jsP
   if (isBlockSelected("campaignRanking")) {
     y = ensureSpace(doc, ctx, y, 20);
     y = drawCampaignRankingTable(doc, ctx, y, input.campaigns, permitted);
+  }
+
+  if (isBlockSelected("campaignHighlights") && input.campaigns.length > 0) {
+    y = ensureSpace(doc, ctx, y, 20);
+    y = drawCampaignHighlightsSection(doc, ctx, y, input.campaigns, permitted);
+  }
+
+  if (isBlockSelected("adHighlights") && input.ads.length > 0) {
+    y = ensureSpace(doc, ctx, y, 20);
+    y = drawAdHighlightsSection(doc, ctx, y, input.ads, permitted);
   }
 
   if (isBlockSelected("resultsByObjective")) {

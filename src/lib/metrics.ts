@@ -91,6 +91,12 @@ export function cpm(totals: Pick<Totals, "spend" | "impressions">): number | nul
   return (totals.spend / totals.impressions) * 1000;
 }
 
+/** Frequência = impressões ÷ alcance (quantas vezes, em média, a mesma pessoa viu o anúncio). null only when reach is 0. */
+export function frequency(totals: Pick<Totals, "impressions" | "reach">): number | null {
+  if (totals.reach <= 0) return null;
+  return totals.impressions / totals.reach;
+}
+
 /**
  * Custo por conversa = investimento ÷ conversas efetivamente iniciadas
  * (Meta's onsite_conversion.messaging_conversation_started_7d — never
