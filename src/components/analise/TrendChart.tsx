@@ -88,9 +88,11 @@ type TrendChartProps = {
   comparison: TrendPoint[] | null;
   metric: TrendMetric;
   onMetricChange: (metric: TrendMetric) => void;
+  /** Overrides which metrics the selector offers and how they're labeled — e.g. Google Ads relabels "conversations" as "Conversões" and has no "Cliques no link". */
+  metricOptions?: { id: TrendMetric; label: string }[];
 };
 
-export default function TrendChart({ current, comparison, metric, onMetricChange }: TrendChartProps) {
+export default function TrendChart({ current, comparison, metric, onMetricChange, metricOptions = METRICS }: TrendChartProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
@@ -168,14 +170,14 @@ export default function TrendChart({ current, comparison, metric, onMetricChange
   const active = activeIndex !== null ? points[activeIndex] : null;
   const activeComparison = activeIndex !== null ? comparisonPoints[activeIndex] : null;
   const tooltipRight = active ? active.x > WIDTH - 180 : false;
-  const metricLabel = METRICS.find((m) => m.id === metric)?.label ?? "";
+  const metricLabel = metricOptions.find((m) => m.id === metric)?.label ?? "";
 
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6 h-full flex flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-[13px] font-medium text-intel-text">Evolução no período</h3>
         <div className="flex flex-wrap gap-1" role="group" aria-label="Selecionar métrica">
-          {METRICS.map((m) => (
+          {metricOptions.map((m) => (
             <button
               key={m.id}
               type="button"

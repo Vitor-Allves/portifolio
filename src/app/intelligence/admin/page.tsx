@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { sessionScopeFromCookieStore } from "@/lib/auth-context";
 import { isFullAdmin, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { listAdAccounts, MetaApiError } from "@/lib/meta-ads";
+import { isGoogleAdsConfigured, listGoogleAdsAccounts, GoogleAdsApiError } from "@/lib/google-ads";
 import { listClientAccess } from "@/lib/client-access";
 import { listInternalUsers } from "@/lib/internal-users";
 import { listInternalIndicatorIds } from "@/lib/internal-indicators";
@@ -35,6 +36,21 @@ export default async function AnaliseAdminPage() {
       err instanceof MetaApiError
         ? err.message
         : "Não foi possível carregar as contas de anúncio da Meta.";
+  }
+
+  // Google Ads accounts go in the same selectable list (and the same
+  // account_ids column) as Meta's, prefixed "gads_" — see google-ads-types.ts.
+  // A Google failure never hides the Meta accounts that did load.
+  if (isGoogleAdsConfigured()) {
+    try {
+      const googleAccounts = await listGoogleAdsAccounts();
+      accounts = [...accounts, ...googleAccounts.map((a) => ({ id: a.id, name: `Google Ads · ${a.name}` }))];
+    } catch (err) {
+      console.error("[analise/admin] failed to list Google Ads accounts", err);
+      const googleError =
+        err instanceof GoogleAdsApiError ? err.message : "Não foi possível carregar as contas do Google Ads.";
+      accountsError = accountsError ? `${accountsError} ${googleError}` : googleError;
+    }
   }
 
   let clients: Awaited<ReturnType<typeof listClientAccess>> = [];

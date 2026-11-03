@@ -210,7 +210,7 @@ function shiftDate(iso: string, days: number): string {
 // Meta itself resolves presets in the ad account's own timezone — good
 // enough for display labels and for picking a "previous period" window,
 // not meant to be pixel-exact against what the Graph API returns.
-function resolvePeriodRange(period: Period, now: Date = new Date()): DateRange {
+export function resolvePeriodRange(period: Period, now: Date = new Date()): DateRange {
   if (period.kind === "custom") return period.range;
 
   const today = now.toISOString().slice(0, 10);
@@ -267,7 +267,7 @@ function shiftMonths(iso: string, deltaMonths: number): string {
  * means throughout the dashboard: the literal same date range a month ago,
  * not merely the immediately preceding window of equal length.
  */
-function previousEquivalentRange(range: DateRange): DateRange {
+export function previousEquivalentRange(range: DateRange): DateRange {
   return { since: shiftMonths(range.since, -1), until: shiftMonths(range.until, -1) };
 }
 

@@ -25,6 +25,7 @@ type IntegrationsPanelProps = {
   dbConfigured: boolean;
   /** Internal Legado viewer (admin or analyst) — sees setup/infra detail (System User, Postgres, docs paths). A client only needs a plain connection status. */
   isInternal: boolean;
+  googleAdsConfigured: boolean;
 };
 
 export default function IntegrationsPanel({
@@ -33,6 +34,7 @@ export default function IntegrationsPanel({
   generatedAt,
   dbConfigured,
   isInternal,
+  googleAdsConfigured,
 }: IntegrationsPanelProps) {
   if (!isInternal) {
     return (
@@ -69,6 +71,22 @@ export default function IntegrationsPanel({
         </p>
         <p className="mt-2 text-[12px] text-intel-text-dim/70">
           Configuração e troca de token em <code className="bg-white/[0.06] px-1.5 py-0.5 rounded">docs/meta-ads-setup.md</code>.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-white/[0.07] bg-intel-surface-1 p-6">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <h3 className="text-[13px] font-medium text-intel-text">Google Ads</h3>
+          <StatusBadge tone={googleAdsConfigured ? "ok" : "pending"} label={googleAdsConfigured ? "Credenciais configuradas" : "Não configurado"} />
+        </div>
+        <p className="text-[13px] text-intel-text-dim leading-relaxed">
+          {googleAdsConfigured
+            ? "Developer token e OAuth configurados. As contas do Google Ads aparecem em Usuários e acessos (prefixadas com “Google Ads ·”) para vincular a cada cliente; a aba Google Ads mostra o status de cada conta ao carregar."
+            : "Sem credenciais do Google Ads no servidor ainda — a aba Google Ads fica oculta para clientes até isso ser configurado."}
+        </p>
+        <p className="mt-2 text-[12px] text-intel-text-dim/70">
+          Passo a passo (developer token, OAuth e conta gerenciadora) em{" "}
+          <code className="bg-white/[0.06] px-1.5 py-0.5 rounded">docs/google-ads-setup.md</code>.
         </p>
       </div>
 

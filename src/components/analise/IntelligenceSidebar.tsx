@@ -5,11 +5,12 @@ import Link from "next/link";
 import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
 import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
 
-export type SectionId = "overview" | "campaigns" | "insights" | "reports" | "integrations";
+export type SectionId = "overview" | "campaigns" | "googleAds" | "insights" | "reports" | "integrations";
 
 export const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview", label: "Visão geral" },
   { id: "campaigns", label: "Campanhas" },
+  { id: "googleAds", label: "Google Ads" },
   { id: "insights", label: "Análises estratégicas" },
   { id: "reports", label: "Relatórios" },
   { id: "integrations", label: "Integrações" },
@@ -18,6 +19,9 @@ export const SECTIONS: { id: SectionId; label: string }[] = [
 const ICONS: Record<SectionId, React.ReactNode> = {
   overview: <path d="M3 13h4v7H3v-7Zm7-9h4v16h-4V4Zm7 5h4v11h-4V9Z" />,
   campaigns: <path d="M4 4h16v3H4V4Zm0 6.5h16v3H4v-3ZM4 17h10v3H4v-3Z" />,
+  googleAds: (
+    <path d="M10.5 3.5a3 3 0 0 1 4.1 1.1l5.4 9.4a3 3 0 1 1-5.2 3l-5.4-9.4a3 3 0 0 1 1.1-4.1ZM6.9 13.6a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z" />
+  ),
   insights: (
     <path d="M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2Zm-2 18h4a1 1 0 0 1-1 2h-2a1 1 0 0 1-1-2Z" />
   ),

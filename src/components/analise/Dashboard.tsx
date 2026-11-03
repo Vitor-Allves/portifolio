@@ -42,6 +42,7 @@ import StrategicInsightsCompact from "./StrategicInsightsCompact";
 import IntelligenceBanner from "./IntelligenceBanner";
 import ReportsPanel from "./ReportsPanel";
 import IntegrationsPanel from "./IntegrationsPanel";
+import GoogleAdsPanel from "./GoogleAdsPanel";
 import { MascotTabBanner, MascotState } from "./Mascot";
 import ConsultantWhatsAppButton from "./ConsultantWhatsAppButton";
 import type { ConsultantInfo } from "@/lib/consultant-whatsapp";
@@ -61,6 +62,10 @@ type DashboardProps = {
   reportSettings: ResolvedReportSettings;
   /** The global "uso interno" flag list (admin-set, see internal-indicators.ts) — which indicator ids the Montar relatório drawer must show locked/with a warning. */
   internalIndicatorIds: ReportIndicatorId[];
+  /** GOOGLE_ADS_* credentials are set on the server — drives the Integrações card. */
+  googleAdsConfigured: boolean;
+  /** Configured AND this viewer may see at least one Google Ads account — drives whether the "Google Ads" section exists at all. */
+  googleAdsEnabled: boolean;
 };
 
 const fadeUp: Variants = {
@@ -146,10 +151,16 @@ export default function Dashboard({
   consultant,
   reportSettings,
   internalIndicatorIds,
+  googleAdsConfigured,
+  googleAdsEnabled,
 }: DashboardProps) {
   const hiddenFilterIds = useMemo(() => new Set<string>(clientPermissions?.hiddenFilters ?? []), [clientPermissions]);
   const hiddenColumnIds = useMemo(() => new Set<string>(clientPermissions?.hiddenColumns ?? []), [clientPermissions]);
-  const hiddenSectionIds = useMemo(() => new Set<string>(clientPermissions?.hiddenSections ?? []), [clientPermissions]);
+  const hiddenSectionIds = useMemo(() => {
+    const hidden = new Set<string>(clientPermissions?.hiddenSections ?? []);
+    if (!googleAdsEnabled) hidden.add("googleAds");
+    return hidden;
+  }, [clientPermissions, googleAdsEnabled]);
 
   const [data, setData] = useState(initialData);
   const [period, setPeriod] = useState<Period>(initialData.period);
@@ -158,7 +169,11 @@ export default function Dashboard({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const [section, setSection] = useState<SectionId>("overview");
+  // A client whose only accounts are on Google would otherwise land on the
+  // empty Meta overview.
+  const [section, setSection] = useState<SectionId>(
+    initialData.accounts.length === 0 && googleAdsEnabled ? "googleAds" : "overview"
+  );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>("spend");
@@ -1022,7 +1037,18 @@ export default function Dashboard({
         <main
           className={`flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-[1500px] w-full mx-auto${privacyMode ? " intel-privacy" : ""}`}
         >
-          {data.partialAccounts.length > 0 && (
+          {section === "googleAds" && googleAdsEnabled && (
+            <GoogleAdsPanel
+              period={period}
+              compare={compare}
+              onPeriodChange={(p) => refetch(p, compare)}
+              onCompareChange={(c) => refetch(period, c)}
+              isInternal={isInternal}
+              hideCompare={hiddenFilterIds.has("compare")}
+            />
+          )}
+
+          {section !== "googleAds" && data.partialAccounts.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-[13px] text-amber-300">
               {data.partialAccounts.length === 1 ? "1 conta não pôde" : `${data.partialAccounts.length} contas não puderam`}{" "}
               ser carregada(s) agora ({data.partialAccounts.map((a) => a.name).join(", ")}). Os números acima estão
@@ -1030,7 +1056,7 @@ export default function Dashboard({
             </div>
           )}
 
-          {error && (
+          {section !== "googleAds" && error && (
             <div className="mb-5 rounded-xl border border-intel-red/25 bg-intel-red/[0.06] px-4">
               <MascotState
                 pose="titan-duvida"
@@ -1060,13 +1086,22 @@ export default function Dashboard({
             </div>
           )}
 
-          {data.accounts.length === 0 ? (
+          {section === "googleAds" ? null : data.accounts.length === 0 ? (
             <div className="rounded-2xl border border-white/[0.08] bg-intel-surface-1 p-10 text-center max-w-xl mx-auto">
-              <p className="font-sans text-lg font-semibold text-intel-text mb-2">Nenhuma conta de anúncios disponível</p>
+              <p className="font-sans text-lg font-semibold text-intel-text mb-2">Nenhuma conta de anúncios da Meta disponível</p>
               <p className="text-sm text-intel-text-dim leading-relaxed mb-5">
-                Este acesso não está associado a nenhuma conta de anúncios ativa. Fale com o administrador para
+                Este acesso não está associado a nenhuma conta de anúncios ativa da Meta. Fale com o administrador para
                 verificar as contas liberadas no Business Manager.
               </p>
+              {googleAdsEnabled && (
+                <button
+                  type="button"
+                  onClick={() => goToSection("googleAds")}
+                  className="mb-4 inline-flex items-center justify-center bg-intel-cyan text-[#04121a] text-[13px] tracking-[0.06em] uppercase font-semibold px-5 py-2.5 rounded-full hover:brightness-110 transition-[filter] duration-200"
+                >
+                  Ver dados do Google Ads
+                </button>
+              )}
               <ConsultantWhatsAppButton
                 consultant={consultant}
                 clientLabel={reportClientLabel}
@@ -1364,7 +1399,7 @@ export default function Dashboard({
                       pose="legacy-ola"
                       alt="Legacy, mascote da Legado, acenando nas integrações"
                       title="Integrações"
-                      description="Status das integrações com o Meta Ads e configurações da conta."
+                      description="Status das integrações com o Meta Ads, o Google Ads e configurações da conta."
                     />
                     <IntegrationsPanel
                       accountsCount={data.accounts.length}
@@ -1372,6 +1407,7 @@ export default function Dashboard({
                       generatedAt={data.generatedAt}
                       dbConfigured={dbConfigured}
                       isInternal={isInternal}
+                      googleAdsConfigured={googleAdsConfigured}
                     />
                   </div>
                 )}

@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { sessionScopeFromCookieStore } from "@/lib/auth-context";
 import { isFullAdmin, resolveAllowedAccountIds, STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { getDashboardData, MetaConfigError, MetaApiError, type Period } from "@/lib/meta-ads";
+import { isGoogleAdsConfigured } from "@/lib/google-ads";
+import { isGoogleAccountId } from "@/lib/google-ads-types";
 import { getClientConsultantInfo } from "@/lib/client-access";
 import { resolveReportSettings, type ReportSettingsRoleKind } from "@/lib/client-permissions";
 import { listInternalIndicatorIds } from "@/lib/internal-indicators";
@@ -43,6 +45,12 @@ export default async function AnalisePage() {
 
   const allowedAccountIds = resolveAllowedAccountIds(scope) ?? undefined;
   const clientPermissions = scope.permissions;
+  // The Google Ads section only exists for a viewer who can actually see a
+  // Google account: a full admin (every account) or anyone with a "gads_"
+  // id among their authorized accounts.
+  const googleAdsConfigured = isGoogleAdsConfigured();
+  const googleAdsEnabled =
+    googleAdsConfigured && (allowedAccountIds === undefined || allowedAccountIds.some(isGoogleAccountId));
   // Internal Legado viewer — distinct from isFullAdmin, which gates the
   // admin panel specifically. Used only to decide how much technical/infra
   // detail a viewer is shown, never data access.
@@ -99,6 +107,8 @@ export default async function AnalisePage() {
       consultant={consultant}
       reportSettings={reportSettings}
       internalIndicatorIds={internalIndicatorIds}
+      googleAdsConfigured={googleAdsConfigured}
+      googleAdsEnabled={googleAdsEnabled}
     />
   );
 }
