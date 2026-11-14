@@ -2,8 +2,10 @@
 // Vercel project (Storage tab → Connect Database → a Postgres provider,
 // e.g. Neon) — see docs/client-access-setup.md.
 
+import { randomUUID } from "crypto";
 import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
+import { companyKey as crmCompanyKey } from "./crm-types";
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -39,7 +41,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -356,6 +358,94 @@ async function ensureSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+
+  // v5 — CRM fase 1: empresas, campos do lead, consentimento, descadastro,
+  // arquivamento e importação de planilhas. Additive only: no column is
+  // dropped and the legacy crm_contacts.company text stays as it was.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_imports (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      created_by_name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      row_count INTEGER NOT NULL DEFAULT 0,
+      created_count INTEGER NOT NULL DEFAULT 0,
+      skipped_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      undone_at TIMESTAMPTZ,
+      undone_by_name TEXT
+    )
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_companies (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      -- companyKey(name): accents/case/punctuation/legal suffix ignored
+      name_key TEXT NOT NULL UNIQUE,
+      segment TEXT,
+      city TEXT,
+      website TEXT,
+      notes TEXT,
+      import_id TEXT REFERENCES crm_imports (id) ON DELETE SET NULL,
+      created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      archived_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS company_id TEXT REFERENCES crm_companies (id) ON DELETE SET NULL`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS email TEXT`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS job_title TEXT`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS segment TEXT`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS city TEXT`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS consent_status TEXT NOT NULL DEFAULT 'nao_informado'`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS consent_at TIMESTAMPTZ`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS opted_out_at TIMESTAMPTZ`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+  await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS import_id TEXT REFERENCES crm_imports (id) ON DELETE SET NULL`);
+  // A lead may now arrive with only an e-mail (spreadsheets, events).
+  await db.query(`ALTER TABLE crm_contacts ALTER COLUMN phone DROP NOT NULL`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_contacts_email_key ON crm_contacts (lower(email)) WHERE email IS NOT NULL`);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_contacts_company_idx ON crm_contacts (company_id)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_contacts_import_idx ON crm_contacts (import_id) WHERE import_id IS NOT NULL`);
+  // Backfill 1: whoever already had "como aceitou ser contatado" filled in
+  // agreed to be contacted. Idempotent (only touches untouched rows).
+  await db.query(
+    `UPDATE crm_contacts SET consent_status = 'sim', consent_at = created_at
+     WHERE consent_source IS NOT NULL AND consent_status = 'nao_informado' AND consent_at IS NULL`
+  );
+  // Backfill 1b: leads that wrote to the number first (history says the
+  // contact was created by an inbound WhatsApp message or ad) — same rule as
+  // new inbound leads in recordInbound.
+  await db.query(
+    `UPDATE crm_contacts c
+     SET consent_status = 'sim', consent_source = 'Iniciou a conversa pelo WhatsApp', consent_at = c.created_at
+     WHERE c.consent_status = 'nao_informado' AND c.consent_at IS NULL AND c.consent_source IS NULL
+       AND EXISTS (
+         SELECT 1 FROM crm_events e
+         WHERE e.contact_id = c.id AND e.kind = 'created' AND e.payload->>'via' IN ('whatsapp', 'anuncio')
+       )`
+  );
+  // Backfill 2: every company name typed so far becomes a company record,
+  // spellings of the same name collapsing into one (companyKey). The text
+  // column itself is left untouched. Idempotent: ON CONFLICT + company_id IS NULL.
+  const legacy = await db.query<{ id: string; company: string }>(
+    `SELECT id, company FROM crm_contacts WHERE company_id IS NULL AND company IS NOT NULL AND btrim(company) <> '' ORDER BY created_at`
+  );
+  for (const row of legacy.rows) {
+    const name = row.company.trim().replace(/\s+/g, " ");
+    const key = crmCompanyKey(name);
+    if (!key) continue;
+    await db.query(
+      `INSERT INTO crm_companies (id, name, name_key) VALUES ($1, $2, $3) ON CONFLICT (name_key) DO NOTHING`,
+      [randomUUID(), name, key]
+    );
+    await db.query(
+      `UPDATE crm_contacts SET company_id = (SELECT id FROM crm_companies WHERE name_key = $2) WHERE id = $1 AND company_id IS NULL`,
+      [row.id, key]
+    );
+  }
 
   await db.query(
     `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`,

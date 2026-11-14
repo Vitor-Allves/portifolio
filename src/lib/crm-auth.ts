@@ -8,7 +8,7 @@ import { CrmInputError, type CrmActor } from "./crm";
 import { WhatsAppApiError, WhatsAppConfigError } from "./whatsapp";
 
 /** The acting staff member, or the response to return right away (401/403). */
-export async function crmActorFromRequest(req: NextRequest): Promise<CrmActor | NextResponse> {
+export async function crmActorFromRequest(req: NextRequest): Promise<NonNullable<CrmActor> | NextResponse> {
   const scope = await sessionScopeFromRequest(req);
   if (!hasDataAccess(scope)) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   if (scope.kind !== "staff") return NextResponse.json({ error: "O CRM é exclusivo da equipe Legado." }, { status: 403 });

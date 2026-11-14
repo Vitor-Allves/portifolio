@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { CRM_SOURCES, type CrmSource, type CrmTeamMember } from "@/lib/crm-types";
+import { CRM_CONSENT, CRM_SOURCES, type CrmSource, type CrmTeamMember } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL } from "./crm-styles";
 import { Mascot } from "./crm-brand";
+import CrmCompanyField from "./CrmCompanyField";
 
 type CrmNewContactDialogProps = {
   open: boolean;
@@ -26,7 +27,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewContactDialogProps, "open">) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [company, setCompany] = useState("");
+  const [segment, setSegment] = useState("");
+  const [city, setCity] = useState("");
+  const [consentStatus, setConsentStatus] = useState("nao_informado");
   const [source, setSource] = useState<CrmSource>("indicacao");
   const [referredBy, setReferredBy] = useState("");
   const [consentSource, setConsentSource] = useState("");
@@ -49,7 +55,20 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
     const res = await fetch("/api/crm/contacts/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, company, source, referredBy, consentSource, ownerId: ownerId || null }),
+      body: JSON.stringify({
+        name,
+        phone,
+        email,
+        jobTitle,
+        company,
+        segment,
+        city,
+        source,
+        referredBy,
+        consentStatus,
+        consentSource: consentStatus === "sim" ? consentSource : "",
+        ownerId: ownerId || null,
+      }),
     });
     setSaving(false);
     if (!res.ok) {
@@ -90,11 +109,23 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
           <Field label="Nome *">
             <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus placeholder="Ex.: Ana Ribeiro" className={CRM_INPUT} />
           </Field>
-          <Field label="WhatsApp *">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} required inputMode="tel" placeholder="(15) 99999-8888" className={CRM_INPUT} />
+          <Field label="WhatsApp">
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="(15) 99999-8888" className={CRM_INPUT} />
+          </Field>
+          <Field label="E-mail">
+            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="nome@empresa.com.br" className={CRM_INPUT} />
+          </Field>
+          <Field label="Cargo">
+            <input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="Ex.: Sócia, Gerente comercial" className={CRM_INPUT} />
           </Field>
           <Field label="Empresa">
-            <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Ex.: Clínica Ribeiro" className={CRM_INPUT} />
+            <CrmCompanyField value={company} onChange={setCompany} />
+          </Field>
+          <Field label="Segmento">
+            <input value={segment} onChange={(e) => setSegment(e.target.value)} placeholder="Ex.: Saúde, Imobiliário" className={CRM_INPUT} />
+          </Field>
+          <Field label="Cidade">
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ex.: Sorocaba" className={CRM_INPUT} />
           </Field>
           <Field label="Origem">
             <select value={source} onChange={(e) => setSource(e.target.value as CrmSource)} className={`${CRM_INPUT}`}>
@@ -119,16 +150,30 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
             </select>
           </Field>
         </div>
-        <Field label="Como aceitou ser contatado">
-          <input
-            value={consentSource}
-            onChange={(e) => setConsentSource(e.target.value)}
-            placeholder="Ex.: pediu contato no evento, formulário do site"
-            className={CRM_INPUT}
-          />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Consentimento">
+            <select value={consentStatus} onChange={(e) => setConsentStatus(e.target.value)} className={CRM_INPUT}>
+              {CRM_CONSENT.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {consentStatus === "sim" && (
+            <Field label="Como aceitou ser contatado">
+              <input
+                value={consentSource}
+                onChange={(e) => setConsentSource(e.target.value)}
+                placeholder="Ex.: pediu contato no evento"
+                className={CRM_INPUT}
+              />
+            </Field>
+          )}
+        </div>
         <p className="text-[11.5px] text-crm-dim leading-relaxed">
-          O WhatsApp só permite iniciar conversa com quem aceitou ser contatado, e a primeira mensagem precisa ser um modelo aprovado.
+          Informe o WhatsApp ou o e-mail (ou os dois). O WhatsApp só permite iniciar conversa com quem aceitou ser contatado, e a primeira
+          mensagem precisa ser um modelo aprovado.
         </p>
 
         {error && (

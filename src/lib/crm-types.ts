@@ -40,6 +40,39 @@ export function sourceLabel(id: string): string {
   return CRM_SOURCES.find((s) => s.id === id)?.label ?? id;
 }
 
+/** Whether the lead agreed to be contacted. "descadastrado" is derived from opted_out_at, never stored here. */
+export const CRM_CONSENT = [
+  { id: "sim", label: "Aceitou contato" },
+  { id: "nao_informado", label: "Não informado" },
+] as const;
+
+export type CrmConsentStatus = (typeof CRM_CONSENT)[number]["id"];
+
+export function isCrmConsentStatus(value: unknown): value is CrmConsentStatus {
+  return CRM_CONSENT.some((c) => c.id === value);
+}
+
+/**
+ * Dedupe key for company names: "Clínica Ribeiro LTDA." and "  clinica
+ * ribeiro " are the same company. Accents, case, punctuation, extra spaces
+ * and the usual legal suffixes are ignored.
+ */
+export function companyKey(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s(ltda|me|epp|eireli|s a|sa|s s|ss)$/, "")
+    .trim();
+}
+
+/** Light e-mail sanity check — the real proof is a reply. */
+export function isPlausibleEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
+}
+
 /** What a Click-to-WhatsApp ad hands over in the first inbound message's `referral` object. */
 export type CrmAdReferral = {
   sourceId: string | null;
@@ -52,9 +85,16 @@ export type CrmAdReferral = {
 
 export type CrmContactCard = {
   id: string;
-  phone: string;
+  /** null for a lead imported/created with only an e-mail. */
+  phone: string | null;
   name: string;
+  email: string | null;
+  jobTitle: string | null;
+  companyId: string | null;
   company: string | null;
+  /** The company's segment/city when linked, else the contact's own. */
+  segment: string | null;
+  city: string | null;
   source: CrmSource;
   referredBy: string | null;
   stage: CrmStage;
@@ -69,6 +109,11 @@ export type CrmContactCard = {
   hasAdReferral: boolean;
   /** When the card last changed stage — "won this month" counts use it. */
   stageChangedAt: string;
+  consentStatus: CrmConsentStatus;
+  /** Set when the lead asked not to be contacted — campaigns must skip them. */
+  optedOutAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
 };
 
 export type CrmMessage = {
@@ -85,7 +130,17 @@ export type CrmMessage = {
   createdAt: string;
 };
 
-export type CrmEventKind = "created" | "stage" | "owner" | "next_action" | "note";
+export type CrmEventKind =
+  | "created"
+  | "stage"
+  | "owner"
+  | "next_action"
+  | "note"
+  | "edited"
+  | "consent"
+  | "opt_out"
+  | "archived"
+  | "restored";
 
 export type CrmEvent = {
   id: string;
@@ -97,10 +152,87 @@ export type CrmEvent = {
 
 export type CrmContactDetail = CrmContactCard & {
   consentSource: string | null;
+  consentAt: string | null;
   adReferral: CrmAdReferral | null;
-  createdAt: string;
   messages: CrmMessage[];
   events: CrmEvent[];
+};
+
+export type CrmCompanyRow = {
+  id: string;
+  name: string;
+  segment: string | null;
+  city: string | null;
+  website: string | null;
+  notes: string | null;
+  contactCount: number;
+  /** Contacts still in the funnel (not won/lost/archived). */
+  openCount: number;
+  wonCount: number;
+  lastActivityAt: string | null;
+  createdAt: string;
+};
+
+export type CrmCompanyDetail = CrmCompanyRow & { contacts: CrmContactCard[] };
+
+export type CrmPage<T> = { rows: T[]; total: number; page: number; pageSize: number };
+
+/** Values offered in the segment/city filters — whatever the team has typed so far. */
+export type CrmFacets = { segments: string[]; cities: string[] };
+
+/** Fields a spreadsheet column can be mapped to on import. */
+export const CRM_IMPORT_FIELDS = [
+  { id: "name", label: "Nome", required: true },
+  { id: "phone", label: "WhatsApp / telefone" },
+  { id: "email", label: "E-mail" },
+  { id: "company", label: "Empresa" },
+  { id: "jobTitle", label: "Cargo" },
+  { id: "segment", label: "Segmento" },
+  { id: "city", label: "Cidade" },
+  { id: "source", label: "Origem" },
+  { id: "referredBy", label: "Indicado por" },
+  { id: "consent", label: "Consentimento (sim/não)" },
+  { id: "consentSource", label: "Como aceitou ser contatado" },
+  { id: "notes", label: "Observações" },
+] as const;
+
+export type CrmImportField = (typeof CRM_IMPORT_FIELDS)[number]["id"];
+
+/** One spreadsheet line after the column mapping; `line` is the row number as the user sees it in Excel. */
+export type CrmImportRow = { line: number } & Partial<Record<CrmImportField, string>>;
+
+export type CrmImportDefaults = {
+  source?: string;
+  ownerId?: string | null;
+  consentStatus?: string;
+  consentSource?: string;
+};
+
+export type CrmImportRowResult = {
+  line: number;
+  name: string | null;
+  status: "novo" | "duplicado" | "erro";
+  message: string | null;
+};
+
+export type CrmImportPreview = {
+  results: CrmImportRowResult[];
+  counts: { novo: number; duplicado: number; erro: number };
+  newCompanies: number;
+};
+
+export const CRM_IMPORT_MAX_ROWS = 5000;
+
+export type CrmImportSummary = {
+  id: string;
+  fileName: string;
+  createdByName: string;
+  createdAt: string;
+  rowCount: number;
+  createdCount: number;
+  skippedCount: number;
+  errorCount: number;
+  undoneAt: string | null;
 };
 
 export type CrmTeamMember = { id: string; name: string };

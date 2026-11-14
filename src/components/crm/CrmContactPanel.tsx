@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  CRM_CONSENT,
   CRM_SOURCES,
   CRM_STAGES,
   formatPhone,
@@ -17,6 +18,7 @@ import {
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
 import { dateTime, initials, shortDate, spDate, windowLabel } from "./crm-format";
 import { Mascot } from "./crm-brand";
+import CrmCompanyField from "./CrmCompanyField";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -33,6 +35,19 @@ type CrmContactPanelProps = {
 };
 
 const PANEL_REFRESH_MS = 5_000;
+
+type ContactForm = {
+  name: string;
+  phone: string;
+  email: string;
+  jobTitle: string;
+  company: string;
+  segment: string;
+  city: string;
+  source: string;
+  referredBy: string;
+  consentSource: string;
+};
 
 const STATUS_LABEL: Record<string, string> = { sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou" };
 
@@ -81,6 +96,7 @@ function describeEvent(e: CrmEvent): string {
   const p = e.payload;
   switch (e.kind) {
     case "created":
+      if (p.via === "importacao") return `Contato importado da planilha "${String(p.fileName ?? "planilha")}"`;
       return p.via === "anuncio" ? "Contato criado por um anúncio de clique para o WhatsApp" : p.via === "whatsapp" ? "Contato criado ao mandar mensagem" : "Contato criado";
     case "stage":
       return `Etapa: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${p.auto ? " (automático, o lead respondeu)" : ""}`;
@@ -90,6 +106,18 @@ function describeEvent(e: CrmEvent): string {
       return p.text || p.at ? `Próxima ação: ${p.text ?? "sem descrição"}${p.at ? ` · ${shortDate(String(p.at))}` : ""}` : "Próxima ação removida";
     case "note":
       return String(p.text ?? "");
+    case "edited": {
+      const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
+      return changes.map((c) => `${c.field}: ${c.from ?? "vazio"} → ${c.to ?? "vazio"}`).join(" · ") || "Dados editados";
+    }
+    case "consent":
+      return p.to === "sim" ? "Consentimento: aceitou ser contatado" : "Consentimento: não informado";
+    case "opt_out":
+      return p.value ? "Marcado como descadastrado (não quer mais contato)" : "Descadastro removido";
+    case "archived":
+      return "Contato arquivado";
+    case "restored":
+      return p.auto ? "Voltou ao funil (mandou mensagem)" : "Contato restaurado";
   }
 }
 
@@ -281,7 +309,7 @@ export default function CrmContactPanel({
   const [sending, setSending] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [note, setNote] = useState("");
-  const [form, setForm] = useState<{ name: string; company: string; source: string; referredBy: string; consentSource: string } | null>(null);
+  const [form, setForm] = useState<ContactForm | null>(null);
   const [nextAction, setNextAction] = useState<{ text: string; date: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const messagesRef = useRef<HTMLDivElement | null>(null);
@@ -387,9 +415,23 @@ export default function CrmContactPanel({
 
   const windowOpen = detail ? serviceWindowRemainingMs(detail.lastInboundAt, now) > 0 : false;
   const win = detail ? windowLabel(detail.lastInboundAt, now) : null;
-  const fields = form ?? (detail
-    ? { name: detail.name, company: detail.company ?? "", source: detail.source, referredBy: detail.referredBy ?? "", consentSource: detail.consentSource ?? "" }
-    : null);
+  const fields: ContactForm | null =
+    form ??
+    (detail
+      ? {
+          name: detail.name,
+          phone: detail.phone ? formatPhone(detail.phone) : "",
+          email: detail.email ?? "",
+          jobTitle: detail.jobTitle ?? "",
+          company: detail.company ?? "",
+          segment: detail.segment ?? "",
+          city: detail.city ?? "",
+          source: detail.source,
+          referredBy: detail.referredBy ?? "",
+          consentSource: detail.consentSource ?? "",
+        }
+      : null);
+  const edit = (changes: Partial<ContactForm>) => fields && setForm({ ...fields, ...changes });
   const next = nextAction ?? (detail ? { text: detail.nextAction ?? "", date: detail.nextActionAt ? spDate(detail.nextActionAt) : "" } : null);
 
   return (
@@ -416,15 +458,25 @@ export default function CrmContactPanel({
             <header className="px-5 pt-4 pb-3 border-b border-crm-line space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="h-10 w-10 shrink-0 rounded-full bg-crm-navy text-white text-[13px] font-semibold flex items-center justify-center ring-2 ring-crm-gold/50">
+                  <span className="h-10 w-10 shrink-0 rounded-full bg-crm-navy text-white text-[13px] font-semibold flex items-center justify-center ring-2 ring-crm-silver/60">
                     {initials(detail.name)}
                   </span>
                   <div className="min-w-0">
                     <h2 className="text-[16px] font-semibold text-crm-text truncate">{detail.name}</h2>
                     <p className="text-[12px] text-crm-dim truncate">
-                      {formatPhone(detail.phone)}
+                      {detail.phone ? formatPhone(detail.phone) : detail.email ?? "Sem contato"}
                       {detail.company ? ` · ${detail.company}` : ""}
                     </p>
+                    {(detail.optedOutAt || detail.archivedAt) && (
+                      <p className="mt-1 flex flex-wrap gap-1.5">
+                        {detail.optedOutAt && (
+                          <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-crm-red/10 text-crm-red border border-crm-red/25">Descadastrado</span>
+                        )}
+                        {detail.archivedAt && (
+                          <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-crm-sunken text-crm-dim border border-crm-line">Arquivado</span>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button type="button" onClick={onClose} aria-label="Fechar painel" className="text-crm-dim hover:text-crm-text text-[20px] leading-none px-1">
@@ -518,7 +570,11 @@ export default function CrmContactPanel({
                   )}
                 </div>
                 <div className="border-t border-crm-line px-5 py-3 space-y-2.5">
-                  {!whatsappConfigured ? (
+                  {!detail.phone ? (
+                    <p className="text-[12px] text-crm-dim">
+                      Este contato não tem WhatsApp cadastrado. Adicione o número em <strong>Detalhes e histórico</strong> para conversar por aqui.
+                    </p>
+                  ) : !whatsappConfigured ? (
                     <p className="text-[12px] text-crm-dim">O WhatsApp ainda não está conectado — enviar mensagens começa quando o número for ligado ao CRM.</p>
                   ) : windowOpen && !showTemplates ? (
                     <form onSubmit={sendText} className="space-y-2">
@@ -620,17 +676,24 @@ export default function CrmContactPanel({
                 {fields && (
                   <section className="space-y-2">
                     <h3 className={CRM_LABEL}>Dados do contato</h3>
-                    <input value={fields.name} onChange={(e) => setForm({ ...fields, name: e.target.value })} aria-label="Nome" placeholder="Nome" className={CRM_INPUT} />
-                    <input value={fields.company} onChange={(e) => setForm({ ...fields, company: e.target.value })} aria-label="Empresa" placeholder="Empresa" className={CRM_INPUT} />
-                    <select value={fields.source} onChange={(e) => setForm({ ...fields, source: e.target.value })} aria-label="Origem" className={`${CRM_INPUT}`}>
-                      {CRM_SOURCES.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input value={fields.referredBy} onChange={(e) => setForm({ ...fields, referredBy: e.target.value })} aria-label="Indicado por" placeholder="Indicado por (ex.: Carlos, BNI)" className={CRM_INPUT} />
-                    <input value={fields.consentSource} onChange={(e) => setForm({ ...fields, consentSource: e.target.value })} aria-label="Como deu o consentimento" placeholder="Como aceitou ser contatado (ex.: formulário do site)" className={CRM_INPUT} />
+                    <input value={fields.name} onChange={(e) => edit({ name: e.target.value })} aria-label="Nome" placeholder="Nome" className={CRM_INPUT} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input value={fields.phone} onChange={(e) => edit({ phone: e.target.value })} inputMode="tel" aria-label="WhatsApp" placeholder="WhatsApp" className={CRM_INPUT} />
+                      <input value={fields.email} onChange={(e) => edit({ email: e.target.value })} type="email" aria-label="E-mail" placeholder="E-mail" className={CRM_INPUT} />
+                      <CrmCompanyField value={fields.company} onChange={(v) => edit({ company: v })} ariaLabel="Empresa" placeholder="Empresa" />
+                      <input value={fields.jobTitle} onChange={(e) => edit({ jobTitle: e.target.value })} aria-label="Cargo" placeholder="Cargo" className={CRM_INPUT} />
+                      <input value={fields.segment} onChange={(e) => edit({ segment: e.target.value })} aria-label="Segmento" placeholder={detail.companyId ? "Segmento (da empresa)" : "Segmento"} className={CRM_INPUT} />
+                      <input value={fields.city} onChange={(e) => edit({ city: e.target.value })} aria-label="Cidade" placeholder={detail.companyId ? "Cidade (da empresa)" : "Cidade"} className={CRM_INPUT} />
+                      <select value={fields.source} onChange={(e) => edit({ source: e.target.value })} aria-label="Origem" className={CRM_INPUT}>
+                        {CRM_SOURCES.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input value={fields.referredBy} onChange={(e) => edit({ referredBy: e.target.value })} aria-label="Indicado por" placeholder="Indicado por (ex.: Carlos, BNI)" className={CRM_INPUT} />
+                    </div>
+                    {detail.companyId && <p className="text-[11.5px] text-crm-faint">Segmento e cidade ficam na empresa e valem para todos os contatos dela.</p>}
                     <button
                       type="button"
                       disabled={!form}
@@ -641,6 +704,67 @@ export default function CrmContactPanel({
                     >
                       Salvar dados
                     </button>
+                  </section>
+                )}
+
+                {fields && (
+                  <section className="space-y-2">
+                    <h3 className={CRM_LABEL}>Consentimento e situação</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <select
+                        value={detail.consentStatus}
+                        onChange={(e) => void patch({ consentStatus: e.target.value })}
+                        aria-label="Consentimento"
+                        className={CRM_INPUT}
+                      >
+                        {CRM_CONSENT.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={fields.consentSource}
+                        onChange={(e) => edit({ consentSource: e.target.value })}
+                        aria-label="Como aceitou ser contatado"
+                        placeholder="Como aceitou (ex.: formulário do site)"
+                        className={CRM_INPUT}
+                      />
+                    </div>
+                    {detail.consentAt && detail.consentStatus === "sim" && (
+                      <p className="text-[11.5px] text-crm-faint">Registrado em {shortDate(detail.consentAt)}.</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {detail.optedOutAt ? (
+                        <>
+                          <span className="text-[12px] text-crm-red">Descadastrado em {shortDate(detail.optedOutAt)}: não recebe campanhas.</span>
+                          <button type="button" onClick={() => void patch({ optedOut: false })} className={CRM_BTN_OUTLINE}>
+                            Remover descadastro
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => void patch({ optedOut: true })} className={CRM_BTN_OUTLINE}>
+                          Marcar descadastro
+                        </button>
+                      )}
+                      {detail.archivedAt ? (
+                        <button type="button" onClick={() => void patch({ archived: false })} className={CRM_BTN_OUTLINE}>
+                          Restaurar contato
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm(`Arquivar ${detail.name}? Ele sai do funil, mas nada é apagado e dá para restaurar em Contatos → Arquivados.`)) {
+                              if (await patch({ archived: true })) onClose();
+                            }
+                          }}
+                          className={`${CRM_BTN_OUTLINE} hover:!text-crm-red hover:!border-crm-red/40`}
+                        >
+                          Arquivar contato
+                        </button>
+                      )}
+                    </div>
                   </section>
                 )}
 

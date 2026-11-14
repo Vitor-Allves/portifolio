@@ -15,10 +15,15 @@ import { CRM_INPUT, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-style
 import type { CrmTheme } from "./crm-theme";
 import CrmThemeToggle from "./CrmThemeToggle";
 import CrmWelcome from "./CrmWelcome";
+import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { LegadoLockup, Mascot } from "./crm-brand";
 import { followUpState, initials, relativeTime, shortDate, spDate, windowLabel, type FollowUpState } from "./crm-format";
 import CrmContactPanel from "./CrmContactPanel";
 import CrmNewContactDialog from "./CrmNewContactDialog";
+import CrmContactsView from "./CrmContactsView";
+import CrmCompaniesView from "./CrmCompaniesView";
+import CrmCompanyPanel from "./CrmCompanyPanel";
+import CrmImportDialog from "./CrmImportDialog";
 
 type CrmAppProps = {
   initialContacts: CrmContactCard[];
@@ -37,27 +42,6 @@ async function fetchContacts(): Promise<CrmContactCard[]> {
   const res = await fetch("/api/crm/contacts/");
   if (!res.ok) throw new Error("fetch failed");
   return ((await res.json()) as { contacts: CrmContactCard[] }).contacts;
-}
-
-export function OwnerAvatar({ name }: { name: string | null }) {
-  if (!name) {
-    return (
-      <span
-        title="Sem responsável"
-        className="h-6 w-6 shrink-0 rounded-full border border-dashed border-crm-line-strong text-[10px] text-crm-faint flex items-center justify-center"
-      >
-        ?
-      </span>
-    );
-  }
-  return (
-    <span
-      title={`Responsável: ${name}`}
-      className="h-6 w-6 shrink-0 rounded-full bg-crm-ink text-[10px] font-semibold text-crm-on-ink flex items-center justify-center"
-    >
-      {initials(name)}
-    </span>
-  );
 }
 
 const FOLLOW_UP_TONE: Record<FollowUpState, string> = {
@@ -165,7 +149,11 @@ export default function CrmApp({
 }: CrmAppProps) {
   const [contacts, setContacts] = useState(initialContacts);
   const [quickReplies, setQuickReplies] = useState(initialQuickReplies);
-  const [view, setView] = useState<"board" | "today">("board");
+  const [view, setView] = useState<"board" | "today" | "contacts" | "companies">("board");
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  // Bumped after any change so the Contatos/Empresas lists refetch.
+  const [dataVersion, setDataVersion] = useState(0);
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [followUpOnly, setFollowUpOnly] = useState(false);
@@ -191,6 +179,7 @@ export default function CrmApp({
   const refresh = useCallback(async () => {
     try {
       setContacts(await fetchContacts());
+      setDataVersion((v) => v + 1);
       setError(null);
     } catch {
       setError("Não foi possível atualizar o quadro agora.");
@@ -220,8 +209,9 @@ export default function CrmApp({
         if (s !== "overdue" && s !== "today") return false;
       }
       if (q) {
-        const inText = c.name.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q);
-        const inPhone = digits.length >= 3 && c.phone.includes(digits);
+        const inText =
+          c.name.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q) || (c.email ?? "").includes(q);
+        const inPhone = digits.length >= 3 && (c.phone ?? "").includes(digits);
         if (!inText && !inPhone) return false;
       }
       return true;
@@ -302,18 +292,18 @@ export default function CrmApp({
               type="button"
               onClick={() => setNewOpen(true)}
               aria-label="Novo contato"
-              className="inline-flex items-center gap-1 bg-white text-black text-[12.5px] font-semibold px-3.5 sm:px-4 py-2 rounded-full hover:bg-zinc-200 transition-colors duration-200"
+              className="inline-flex items-center gap-1 bg-white text-[#1f3a63] text-[12.5px] font-semibold px-3.5 sm:px-4 py-2 rounded-full hover:bg-[#e8ebf0] transition-colors duration-200"
             >
               <span aria-hidden="true">+</span>
               <span className="hidden sm:inline">Novo contato</span>
             </button>
           </div>
         </div>
-        <div className="crm-gold-rule h-px opacity-80" aria-hidden="true" />
+        <div className="crm-silver-rule h-px opacity-70" aria-hidden="true" />
       </header>
 
       <div className="px-4 sm:px-6 py-5 space-y-4">
-        <CrmWelcome userName={currentUserName} contacts={contacts} now={now} />
+        {(view === "board" || view === "today") && <CrmWelcome userName={currentUserName} contacts={contacts} now={now} />}
 
         {!whatsappConfigured && (
           <p className="text-[12.5px] text-crm-dim max-w-3xl">
@@ -323,27 +313,30 @@ export default function CrmApp({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className={CRM_SEGMENT_TRACK} role="tablist" aria-label="Visualização">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === "board"}
-              onClick={() => setView("board")}
-              className={crmSegment(view === "board")}
-            >
-              Quadro
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === "today"}
-              onClick={() => setView("today")}
-              className={crmSegment(view === "today")}
-            >
-              Hoje{dueContacts.length > 0 ? ` · ${dueContacts.length}` : ""}
-            </button>
+          <div className={`${CRM_SEGMENT_TRACK} max-w-full overflow-x-auto`} role="tablist" aria-label="Seções do CRM">
+            {(
+              [
+                ["board", "Funil"],
+                ["today", `Hoje${dueContacts.length > 0 ? ` · ${dueContacts.length}` : ""}`],
+                ["contacts", "Contatos"],
+                ["companies", "Empresas"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => setView(id)}
+                className={`${crmSegment(view === id)} whitespace-nowrap`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
+          {(view === "board" || view === "today") && (
+          <>
           <input
             type="search"
             value={search}
@@ -393,6 +386,8 @@ export default function CrmApp({
           >
             Precisa de follow-up
           </button>
+          </>
+          )}
         </div>
 
         {error && (
@@ -404,7 +399,17 @@ export default function CrmApp({
           </div>
         )}
 
-        {view === "board" ? (
+        {view === "contacts" ? (
+          <CrmContactsView
+            team={team}
+            version={dataVersion}
+            onOpenContact={setSelectedId}
+            onImport={() => setImportOpen(true)}
+            onNew={() => setNewOpen(true)}
+          />
+        ) : view === "companies" ? (
+          <CrmCompaniesView version={dataVersion} onOpenCompany={setCompanyId} />
+        ) : view === "board" ? (
           <>
             {contacts.length === 0 && (
               <div className="flex items-end gap-4 rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] px-6 pt-5 max-w-xl overflow-hidden">
@@ -506,6 +511,24 @@ export default function CrmApp({
         )}
       </div>
 
+      {companyId && !selectedId && (
+        <CrmCompanyPanel
+          key={companyId}
+          companyId={companyId}
+          onClose={() => setCompanyId(null)}
+          onOpenContact={setSelectedId}
+          onChanged={() => setDataVersion((v) => v + 1)}
+        />
+      )}
+
+      <CrmImportDialog
+        open={importOpen}
+        team={team}
+        currentUserId={currentUserId}
+        onClose={() => setImportOpen(false)}
+        onImported={() => void refresh()}
+      />
+
       {selectedId && (
         <CrmContactPanel
           key={selectedId}
@@ -524,11 +547,11 @@ export default function CrmApp({
       {celebration && (
         <div
           role="status"
-          className="crm-toast-in fixed bottom-5 right-5 z-[60] flex items-end gap-3 rounded-2xl border border-crm-gold/40 bg-crm-raised pl-2 pr-5 pt-2 shadow-[var(--crm-shadow-lg)] max-w-[calc(100vw-40px)]"
+          className="crm-toast-in fixed bottom-5 right-5 z-[60] flex items-end gap-3 rounded-2xl border border-crm-silver/50 bg-crm-raised pl-2 pr-5 pt-2 shadow-[var(--crm-shadow-lg)] max-w-[calc(100vw-40px)]"
         >
           <Mascot name={celebration.mascot} decorative className="h-24 w-auto shrink-0" />
           <div className="pb-4 min-w-0">
-            <p className="crm-display text-[18px] text-crm-gold">Conquista!</p>
+            <p className="crm-display text-[18px] text-crm-accent">Conquista!</p>
             <p className="text-[12.5px] text-crm-text">
               <strong>{celebration.name}</strong> virou cliente. Parabéns, time!
             </p>

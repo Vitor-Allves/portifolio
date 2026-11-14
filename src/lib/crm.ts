@@ -1,39 +1,47 @@
 // Server-only data layer for the CRM (área /crm). Every function here
 // assumes the caller already checked the session is internal staff — see
-// src/lib/crm-auth.ts.
+// src/lib/crm-auth.ts. Companies live in crm-companies.ts, spreadsheet
+// imports in crm-import.ts; the shared pieces are in crm-core.ts.
 
 import { randomUUID } from "crypto";
-import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import {
+  CRM_SOURCES,
   formatPhone,
+  isCrmConsentStatus,
   isCrmSource,
   isCrmStage,
+  isPlausibleEmail,
   normalizePhone,
   phoneVariants,
   type CrmAdReferral,
+  type CrmConsentStatus,
   type CrmContactCard,
   type CrmContactDetail,
   type CrmEvent,
   type CrmEventKind,
+  type CrmFacets,
   type CrmMessage,
+  type CrmPage,
   type CrmQuickReply,
   type CrmSource,
   type CrmTeamMember,
 } from "./crm-types";
+import { CrmInputError, addEvent, cleanText, escapeLike, iso, resolveCompanyId, type CrmActor } from "./crm-core";
 import type { InboundMessage, StatusUpdate } from "./whatsapp";
 
-/** Who did it — null for things the system did on its own (an inbound message creating a contact, an automatic stage move). */
-export type CrmActor = { userId: string; userName: string } | null;
-
-/** A validation failure worth showing the user as-is (pt-BR), unlike an unexpected error. */
-export class CrmInputError extends Error {}
+export { CrmInputError, type CrmActor } from "./crm-core";
 
 type CardRow = {
   id: string;
-  phone: string;
+  phone: string | null;
   name: string;
+  email: string | null;
+  job_title: string | null;
+  company_id: string | null;
   company: string | null;
+  segment: string | null;
+  city: string | null;
   source: string;
   referred_by: string | null;
   stage: string;
@@ -47,26 +55,40 @@ type CardRow = {
   unread_count: number;
   ad_referral: CrmAdReferral | null;
   stage_changed_at: Date;
+  consent_status: string;
+  consent_source: string | null;
+  consent_at: Date | null;
+  opted_out_at: Date | null;
+  archived_at: Date | null;
+  created_at: Date;
 };
 
+// Company name, segment and city come from the linked company when there is
+// one (the legacy free-text column is only a fallback for unmigrated rows).
 const CARD_SELECT = `
-  SELECT c.id, c.phone, c.name, c.company, c.source, c.referred_by, c.stage, c.owner_id, u.name AS owner_name,
+  SELECT c.id, c.phone, c.name, c.email, c.job_title, c.company_id,
+         COALESCE(co.name, c.company) AS company,
+         COALESCE(co.segment, c.segment) AS segment,
+         COALESCE(co.city, c.city) AS city,
+         c.source, c.referred_by, c.stage, c.owner_id, u.name AS owner_name,
          c.next_action, c.next_action_at, c.last_message_at, c.last_message_preview, c.last_inbound_at,
-         c.unread_count, c.ad_referral, c.stage_changed_at, c.consent_source, c.created_at
+         c.unread_count, c.ad_referral, c.stage_changed_at, c.consent_status, c.consent_source, c.consent_at,
+         c.opted_out_at, c.archived_at, c.created_at
   FROM crm_contacts c
+  LEFT JOIN crm_companies co ON co.id = c.company_id
   LEFT JOIN internal_users u ON u.id = c.owner_id`;
-
-function iso(d: Date | string | null): string | null {
-  if (!d) return null;
-  return d instanceof Date ? d.toISOString() : new Date(d).toISOString();
-}
 
 function mapCard(r: CardRow): CrmContactCard {
   return {
     id: r.id,
     phone: r.phone,
     name: r.name,
+    email: r.email,
+    jobTitle: r.job_title,
+    companyId: r.company_id,
     company: r.company,
+    segment: r.segment,
+    city: r.city,
     source: isCrmSource(r.source) ? r.source : "outro",
     referredBy: r.referred_by,
     stage: isCrmStage(r.stage) ? r.stage : "novo",
@@ -80,13 +102,139 @@ function mapCard(r: CardRow): CrmContactCard {
     unreadCount: r.unread_count,
     hasAdReferral: r.ad_referral !== null,
     stageChangedAt: iso(r.stage_changed_at)!,
+    consentStatus: isCrmConsentStatus(r.consent_status) ? r.consent_status : "nao_informado",
+    optedOutAt: iso(r.opted_out_at),
+    archivedAt: iso(r.archived_at),
+    createdAt: iso(r.created_at)!,
   };
 }
 
+/** Everything on the Kanban board — archived leads stay out of it. */
 export async function listContacts(): Promise<CrmContactCard[]> {
   const db = await getDb();
-  const { rows } = await db.query<CardRow>(`${CARD_SELECT} ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`);
+  const { rows } = await db.query<CardRow>(
+    `${CARD_SELECT} WHERE c.archived_at IS NULL ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`
+  );
   return rows.map(mapCard);
+}
+
+export type ContactFilters = {
+  q?: string;
+  stage?: string;
+  /** "mine" needs currentUserId; "none" = no owner; anything else = that user's id. */
+  owner?: string;
+  currentUserId?: string;
+  source?: string;
+  segment?: string;
+  city?: string;
+  /** "sim" | "nao_informado" | "descadastrado" */
+  consent?: string;
+  companyId?: string;
+  /** true = only archived; default = only active. */
+  archived?: boolean;
+};
+
+export type ContactSort = "recent" | "name" | "created";
+
+function contactWhere(f: ContactFilters): { sql: string; values: unknown[] } {
+  const where: string[] = [f.archived ? "c.archived_at IS NOT NULL" : "c.archived_at IS NULL"];
+  const values: unknown[] = [];
+  const add = (sql: (n: number) => string, value: unknown) => {
+    values.push(value);
+    where.push(sql(values.length));
+  };
+  const q = f.q?.trim();
+  if (q) {
+    values.push(`%${escapeLike(q)}%`);
+    const n = values.length;
+    const digits = q.replace(/\D/g, "");
+    let phoneSql = "";
+    if (digits.length >= 4) {
+      values.push(`%${digits}%`);
+      phoneSql = ` OR c.phone LIKE $${values.length}`;
+    }
+    where.push(`(c.name ILIKE $${n} OR c.email ILIKE $${n} OR COALESCE(co.name, c.company, '') ILIKE $${n}${phoneSql})`);
+  }
+  if (f.stage && isCrmStage(f.stage)) add((n) => `c.stage = $${n}`, f.stage);
+  if (f.owner === "mine" && f.currentUserId) add((n) => `c.owner_id = $${n}`, f.currentUserId);
+  else if (f.owner === "none") where.push("c.owner_id IS NULL");
+  else if (f.owner && f.owner !== "all" && f.owner !== "mine") add((n) => `c.owner_id = $${n}`, f.owner);
+  if (f.source && isCrmSource(f.source)) add((n) => `c.source = $${n}`, f.source);
+  if (f.segment) add((n) => `COALESCE(co.segment, c.segment) = $${n}`, f.segment);
+  if (f.city) add((n) => `COALESCE(co.city, c.city) = $${n}`, f.city);
+  if (f.consent === "descadastrado") where.push("c.opted_out_at IS NOT NULL");
+  else if (f.consent && isCrmConsentStatus(f.consent)) add((n) => `c.consent_status = $${n} AND c.opted_out_at IS NULL`, f.consent);
+  if (f.companyId) add((n) => `c.company_id = $${n}`, f.companyId);
+  return { sql: `WHERE ${where.join(" AND ")}`, values };
+}
+
+/** List/export filters from a request's query string (?q=&stage=&owner=…). */
+export function contactFiltersFromSearch(params: URLSearchParams, currentUserId: string): ContactFilters {
+  const get = (k: string) => params.get(k)?.trim() || undefined;
+  return {
+    q: get("q"),
+    stage: get("stage"),
+    owner: get("owner"),
+    currentUserId,
+    source: get("source"),
+    segment: get("segment"),
+    city: get("city"),
+    consent: get("consent"),
+    companyId: get("company"),
+    archived: params.get("archived") === "1",
+  };
+}
+
+export function pageFromSearch(params: URLSearchParams, maxSize = 100): { page: number; pageSize: number; sort: ContactSort } {
+  const page = Math.max(1, Math.floor(Number(params.get("page")) || 1));
+  const pageSize = Math.min(maxSize, Math.max(1, Math.floor(Number(params.get("pageSize")) || 25)));
+  const s = params.get("sort");
+  const sort: ContactSort = s === "name" || s === "created" ? s : "recent";
+  return { page, pageSize, sort };
+}
+
+const SORT_SQL: Record<ContactSort, string> = {
+  recent: "COALESCE(c.last_message_at, c.updated_at) DESC, c.id",
+  name: "lower(c.name), c.id",
+  created: "c.created_at DESC, c.id",
+};
+
+export async function listContactsPage(filters: ContactFilters, page: number, pageSize: number, sort: ContactSort = "recent"): Promise<CrmPage<CrmContactCard>> {
+  const { sql, values } = contactWhere(filters);
+  const db = await getDb();
+  const [total, rows] = await Promise.all([
+    db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id ${sql}`, values),
+    db.query<CardRow>(`${CARD_SELECT} ${sql} ORDER BY ${SORT_SQL[sort]} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [
+      ...values,
+      pageSize,
+      (page - 1) * pageSize,
+    ]),
+  ]);
+  return { rows: rows.rows.map(mapCard), total: Number(total.rows[0].n), page, pageSize };
+}
+
+/** Rows for the CSV export (same filters as the list), capped so one click can't pull the whole base by accident. */
+export async function listContactsForExport(filters: ContactFilters, limit = 10_000): Promise<CrmContactCard[]> {
+  const { sql, values } = contactWhere(filters);
+  const db = await getDb();
+  const { rows } = await db.query<CardRow>(`${CARD_SELECT} ${sql} ORDER BY lower(c.name), c.id LIMIT $${values.length + 1}`, [...values, limit]);
+  return rows.map(mapCard);
+}
+
+export async function listFacets(): Promise<CrmFacets> {
+  const db = await getDb();
+  const { rows } = await db.query<{ kind: string; value: string }>(
+    `SELECT DISTINCT 'segment' AS kind, segment AS value FROM crm_companies WHERE segment IS NOT NULL
+     UNION SELECT DISTINCT 'segment', segment FROM crm_contacts WHERE segment IS NOT NULL
+     UNION SELECT DISTINCT 'city', city FROM crm_companies WHERE city IS NOT NULL
+     UNION SELECT DISTINCT 'city', city FROM crm_contacts WHERE city IS NOT NULL`
+  );
+  const pick = (kind: string) =>
+    rows
+      .filter((r) => r.kind === kind)
+      .map((r) => r.value)
+      .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return { segments: pick("segment"), cities: pick("city") };
 }
 
 export async function listTeam(): Promise<CrmTeamMember[]> {
@@ -99,7 +247,7 @@ export async function listTeam(): Promise<CrmTeamMember[]> {
 
 export async function getContactDetail(id: string): Promise<CrmContactDetail | null> {
   const db = await getDb();
-  const { rows } = await db.query<CardRow & { consent_source: string | null; created_at: Date }>(`${CARD_SELECT} WHERE c.id = $1`, [id]);
+  const { rows } = await db.query<CardRow>(`${CARD_SELECT} WHERE c.id = $1`, [id]);
   const row = rows[0];
   if (!row) return null;
 
@@ -135,8 +283,8 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
   return {
     ...mapCard(row),
     consentSource: row.consent_source,
+    consentAt: iso(row.consent_at),
     adReferral: row.ad_referral,
-    createdAt: iso(row.created_at)!,
     messages: messages.rows.map(
       (m): CrmMessage => ({
         id: m.id,
@@ -158,19 +306,6 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
   };
 }
 
-async function addEvent(client: PoolClient, contactId: string, kind: CrmEventKind, payload: Record<string, unknown>, actor: CrmActor) {
-  await client.query(
-    `INSERT INTO crm_events (id, contact_id, kind, payload, user_id, user_name) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [randomUUID(), contactId, kind, JSON.stringify(payload), actor?.userId ?? null, actor?.userName ?? "Sistema"]
-  );
-}
-
-function cleanText(value: unknown, max: number): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, max) : null;
-}
-
 /** "2026-11-14" (a date input) → noon in Brasília, so the stored instant never drifts into the previous/next day in either timezone. null clears it. */
 function parseNextActionDate(value: unknown): Date | null {
   if (value === null || value === "") return null;
@@ -178,12 +313,56 @@ function parseNextActionDate(value: unknown): Date | null {
   return new Date(`${value}T12:00:00-03:00`);
 }
 
+/** Normalized phone, or null when empty. Throws on something that can't be a phone. */
+export function parsePhone(value: unknown): string | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
+  if (typeof value !== "string") throw new CrmInputError("Telefone inválido.");
+  const phone = normalizePhone(value);
+  if (phone.length < 10 || phone.length > 15) throw new CrmInputError("Telefone inválido — use DDD + número, ex.: (15) 99999-8888.");
+  return phone;
+}
+
+export function parseEmail(value: unknown): string | null {
+  const email = cleanText(value, 160)?.toLowerCase() ?? null;
+  if (email && !isPlausibleEmail(email)) throw new CrmInputError("E-mail inválido.");
+  return email;
+}
+
+type Queryable = { query: (sql: string, values?: unknown[]) => Promise<{ rows: { id: string; name: string }[] }> };
+
+/** The contact already using this phone (either spelling of a BR mobile) or e-mail — archived ones included, so an archived lead is restored rather than duplicated. */
+export async function findDuplicate(
+  db: Queryable,
+  phone: string | null,
+  email: string | null,
+  exceptId?: string
+): Promise<{ id: string; name: string; by: "phone" | "email" } | null> {
+  if (phone) {
+    const { rows } = await db.query(`SELECT id, name FROM crm_contacts WHERE phone = ANY($1) AND id <> $2 LIMIT 1`, [phoneVariants(phone), exceptId ?? ""]);
+    if (rows[0]) return { ...rows[0], by: "phone" };
+  }
+  if (email) {
+    const { rows } = await db.query(`SELECT id, name FROM crm_contacts WHERE lower(email) = $1 AND id <> $2 LIMIT 1`, [email, exceptId ?? ""]);
+    if (rows[0]) return { ...rows[0], by: "email" };
+  }
+  return null;
+}
+
+export function duplicateMessage(dup: { name: string; by: "phone" | "email" }): string {
+  return `Já existe um contato com esse ${dup.by === "phone" ? "telefone" : "e-mail"}: ${dup.name}.`;
+}
+
 export type NewContactInput = {
   name: unknown;
-  phone: unknown;
+  phone?: unknown;
+  email?: unknown;
+  jobTitle?: unknown;
   company?: unknown;
+  segment?: unknown;
+  city?: unknown;
   source?: unknown;
   referredBy?: unknown;
+  consentStatus?: unknown;
   consentSource?: unknown;
   ownerId?: unknown;
 };
@@ -191,19 +370,43 @@ export type NewContactInput = {
 export async function createContact(input: NewContactInput, actor: CrmActor): Promise<string> {
   const name = cleanText(input.name, 120);
   if (!name) throw new CrmInputError("Informe o nome do contato.");
-  const phone = typeof input.phone === "string" ? normalizePhone(input.phone) : "";
-  if (phone.length < 10 || phone.length > 15) throw new CrmInputError("Telefone inválido — use DDD + número, ex.: (15) 99999-8888.");
+  const phone = parsePhone(input.phone);
+  const email = parseEmail(input.email);
+  if (!phone && !email) throw new CrmInputError("Informe o WhatsApp ou o e-mail do contato.");
   const source: CrmSource = isCrmSource(input.source) ? input.source : "outro";
   const ownerId = typeof input.ownerId === "string" && input.ownerId ? input.ownerId : null;
+  const consentSource = cleanText(input.consentSource, 200);
+  // Filling in "como aceitou" is itself a yes; otherwise use what was picked.
+  const consentStatus: CrmConsentStatus = isCrmConsentStatus(input.consentStatus) ? input.consentStatus : consentSource ? "sim" : "nao_informado";
+  const segment = cleanText(input.segment, 80);
+  const city = cleanText(input.city, 80);
 
   return withTransaction(async (client) => {
-    const existing = await client.query(`SELECT id FROM crm_contacts WHERE phone = ANY($1)`, [phoneVariants(phone)]);
-    if (existing.rows.length > 0) throw new CrmInputError("Já existe um contato com esse telefone.");
+    const dup = await findDuplicate(client, phone, email);
+    if (dup) throw new CrmInputError(duplicateMessage(dup));
+    const companyId = await resolveCompanyId(client, input.company, { segment, city }, actor);
     const id = randomUUID();
     await client.query(
-      `INSERT INTO crm_contacts (id, phone, name, company, source, referred_by, consent_source, owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [id, phone, name, cleanText(input.company, 120), source, cleanText(input.referredBy, 120), cleanText(input.consentSource, 200), ownerId]
+      `INSERT INTO crm_contacts (id, phone, name, email, job_title, company_id, segment, city, source, referred_by,
+                                 consent_status, consent_source, consent_at, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        id,
+        phone,
+        name,
+        email,
+        cleanText(input.jobTitle, 80),
+        companyId,
+        // linked to a company → segment/city live there (resolveCompanyId filled the gaps)
+        companyId ? null : segment,
+        companyId ? null : city,
+        source,
+        cleanText(input.referredBy, 120),
+        consentStatus,
+        consentSource,
+        consentStatus === "sim" ? new Date() : null,
+        ownerId,
+      ]
     );
     await addEvent(client, id, "created", { via: "manual" }, actor);
     return id;
@@ -212,26 +415,48 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
 
 export type ContactPatch = {
   name?: unknown;
+  phone?: unknown;
+  email?: unknown;
+  jobTitle?: unknown;
   company?: unknown;
+  segment?: unknown;
+  city?: unknown;
   source?: unknown;
   referredBy?: unknown;
+  consentStatus?: unknown;
   consentSource?: unknown;
+  optedOut?: unknown;
+  archived?: unknown;
   stage?: unknown;
   ownerId?: unknown;
   nextAction?: unknown;
   nextActionAt?: unknown;
 };
 
-/** Applies whatever fields are present; stage, owner and next-action changes also land in the contact's history. false = no such contact. */
+const FIELD_LABEL: Record<string, string> = {
+  name: "Nome",
+  phone: "WhatsApp",
+  email: "E-mail",
+  job_title: "Cargo",
+  company: "Empresa",
+  segment: "Segmento",
+  city: "Cidade",
+  source: "Origem",
+  referred_by: "Indicado por",
+  consent_source: "Como aceitou",
+};
+
+/** Applies whatever fields are present; every meaningful change lands in the contact's history. false = no such contact. */
 export async function updateContact(id: string, patch: ContactPatch, actor: CrmActor): Promise<boolean> {
   return withTransaction(async (client) => {
-    const { rows } = await client.query<{
-      stage: string;
-      owner_id: string | null;
-      next_action: string | null;
-      next_action_at: Date | null;
-    }>(`SELECT stage, owner_id, next_action, next_action_at FROM crm_contacts WHERE id = $1 FOR UPDATE`, [id]);
-    const current = rows[0];
+    const { rows } = await client.query<CardRow & { own_segment: string | null; own_city: string | null }>(
+      `SELECT c.*, c.segment AS own_segment, c.city AS own_city, COALESCE(co.name, c.company) AS company,
+              co.segment AS co_segment, co.city AS co_city
+       FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id
+       WHERE c.id = $1 FOR UPDATE OF c`,
+      [id]
+    );
+    const current = rows[0] as (CardRow & { own_segment: string | null; own_city: string | null; co_segment: string | null; co_city: string | null }) | undefined;
     if (!current) return false;
 
     const sets: string[] = [];
@@ -240,18 +465,105 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
       values.push(value);
       sets.push(`${column} = $${values.length}`);
     };
+    const changes: { field: string; from: string | null; to: string | null }[] = [];
+    const change = (key: string, from: string | null, to: string | null) => {
+      if ((from ?? null) !== (to ?? null)) changes.push({ field: FIELD_LABEL[key] ?? key, from: from ?? null, to: to ?? null });
+    };
+    const text = (key: keyof ContactPatch, column: keyof CardRow, max: number) => {
+      if (patch[key] === undefined) return;
+      const value = cleanText(patch[key], max);
+      change(column, current[column] as string | null, value);
+      set(column, value);
+    };
 
     if (patch.name !== undefined) {
       const name = cleanText(patch.name, 120);
       if (!name) throw new CrmInputError("O nome não pode ficar vazio.");
+      change("name", current.name, name);
       set("name", name);
     }
-    if (patch.company !== undefined) set("company", cleanText(patch.company, 120));
-    if (patch.referredBy !== undefined) set("referred_by", cleanText(patch.referredBy, 120));
-    if (patch.consentSource !== undefined) set("consent_source", cleanText(patch.consentSource, 200));
+    let nextPhone = current.phone;
+    let nextEmail = current.email;
+    if (patch.phone !== undefined) nextPhone = parsePhone(patch.phone);
+    if (patch.email !== undefined) nextEmail = parseEmail(patch.email);
+    if (patch.phone !== undefined || patch.email !== undefined) {
+      if (!nextPhone && !nextEmail) throw new CrmInputError("O contato precisa ter WhatsApp ou e-mail.");
+      const dup = await findDuplicate(
+        client,
+        nextPhone !== current.phone ? nextPhone : null,
+        nextEmail !== current.email ? nextEmail : null,
+        id
+      );
+      if (dup) throw new CrmInputError(duplicateMessage(dup));
+      if (patch.phone !== undefined) {
+        change("phone", current.phone, nextPhone);
+        set("phone", nextPhone);
+      }
+      if (patch.email !== undefined) {
+        change("email", current.email, nextEmail);
+        set("email", nextEmail);
+      }
+    }
+    text("jobTitle", "job_title", 80);
+    text("referredBy", "referred_by", 120);
+    text("consentSource", "consent_source", 200);
     if (patch.source !== undefined) {
       if (!isCrmSource(patch.source)) throw new CrmInputError("Origem inválida.");
+      change("source", CRM_SOURCES.find((s) => s.id === current.source)?.label ?? current.source, CRM_SOURCES.find((s) => s.id === patch.source)!.label);
       set("source", patch.source);
+    }
+
+    // Company first, then segment/city: they belong to the company when there is one.
+    let companyId = current.company_id;
+    let companySegment = current.co_segment;
+    let companyCity = current.co_city;
+    if (patch.company !== undefined) {
+      const segmentHint = cleanText(patch.segment, 80) ?? current.own_segment;
+      const cityHint = cleanText(patch.city, 80) ?? current.own_city;
+      companyId = await resolveCompanyId(client, patch.company, { segment: segmentHint, city: cityHint }, actor);
+      if (companyId !== current.company_id) {
+        const name = companyId ? (await client.query<{ name: string; segment: string | null; city: string | null }>(`SELECT name, segment, city FROM crm_companies WHERE id = $1`, [companyId])).rows[0] : null;
+        companySegment = name?.segment ?? null;
+        companyCity = name?.city ?? null;
+        change("company", current.company, name?.name ?? null);
+        set("company_id", companyId);
+      }
+    }
+    for (const field of ["segment", "city"] as const) {
+      if (patch[field] === undefined) continue;
+      const value = cleanText(patch[field], 80);
+      if (companyId) {
+        const before = field === "segment" ? companySegment : companyCity;
+        if ((before ?? null) !== value) {
+          await client.query(`UPDATE crm_companies SET ${field} = $2, updated_at = now() WHERE id = $1`, [companyId, value]);
+          change(field, before, value);
+        }
+      } else {
+        const before = field === "segment" ? current.own_segment : current.own_city;
+        change(field, before, value);
+        set(field, value);
+      }
+    }
+
+    if (patch.consentStatus !== undefined && patch.consentStatus !== current.consent_status) {
+      if (!isCrmConsentStatus(patch.consentStatus)) throw new CrmInputError("Consentimento inválido.");
+      set("consent_status", patch.consentStatus);
+      set("consent_at", patch.consentStatus === "sim" ? new Date() : null);
+      await addEvent(client, id, "consent", { to: patch.consentStatus }, actor);
+    }
+    if (patch.optedOut !== undefined) {
+      const optedOut = patch.optedOut === true;
+      if (optedOut !== (current.opted_out_at !== null)) {
+        set("opted_out_at", optedOut ? new Date() : null);
+        await addEvent(client, id, "opt_out", { value: optedOut }, actor);
+      }
+    }
+    if (patch.archived !== undefined) {
+      const archived = patch.archived === true;
+      if (archived !== (current.archived_at !== null)) {
+        set("archived_at", archived ? new Date() : null);
+        await addEvent(client, id, archived ? "archived" : "restored", {}, actor);
+      }
     }
 
     if (patch.stage !== undefined && patch.stage !== current.stage) {
@@ -283,7 +595,11 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
       await addEvent(client, id, "next_action", { text: nextAction, at: nextActionAt ? nextActionAt.toISOString() : null }, actor);
     }
 
-    if (sets.length === 0) return true;
+    if (changes.length > 0) await addEvent(client, id, "edited", { changes }, actor);
+    if (sets.length === 0) {
+      if (changes.length > 0) await client.query(`UPDATE crm_contacts SET updated_at = now() WHERE id = $1`, [id]);
+      return true;
+    }
     sets.push("updated_at = now()");
     values.push(id);
     await client.query(`UPDATE crm_contacts SET ${sets.join(", ")} WHERE id = $${values.length}`, values);
@@ -308,13 +624,16 @@ export async function markRead(id: string): Promise<void> {
   await db.query(`UPDATE crm_contacts SET unread_count = 0 WHERE id = $1 AND unread_count <> 0`, [id]);
 }
 
+/** null = no such contact. A contact without a phone (e-mail-only lead) can't be messaged on WhatsApp. */
 export async function getContactForSending(id: string): Promise<{ phone: string; lastInboundAt: string | null } | null> {
   const db = await getDb();
-  const { rows } = await db.query<{ phone: string; last_inbound_at: Date | null }>(
+  const { rows } = await db.query<{ phone: string | null; last_inbound_at: Date | null }>(
     `SELECT phone, last_inbound_at FROM crm_contacts WHERE id = $1`,
     [id]
   );
-  return rows[0] ? { phone: rows[0].phone, lastInboundAt: iso(rows[0].last_inbound_at) } : null;
+  if (!rows[0]) return null;
+  if (!rows[0].phone) throw new CrmInputError("Este contato não tem WhatsApp cadastrado.");
+  return { phone: rows[0].phone, lastInboundAt: iso(rows[0].last_inbound_at) };
 }
 
 const MEDIA_LABEL: Record<string, string> = {
@@ -353,20 +672,23 @@ export async function recordOutbound(
  * a Brazilian mobile) or creates it, saves the message once (WhatsApp
  * retries deliveries, so a repeated wa_message_id is ignored), bumps the
  * unread counter and reopens the 24h window. A lead still in "Novo" that
- * answers a message the team sent moves to "Em conversa" on its own.
+ * answers a message the team sent moves to "Em conversa" on its own; an
+ * archived lead that writes again comes back to the board.
  */
 export async function recordInbound(msg: InboundMessage): Promise<void> {
   await withTransaction(async (client) => {
-    const found = await client.query<{ id: string; stage: string }>(
-      `SELECT id, stage FROM crm_contacts WHERE phone = ANY($1) ORDER BY created_at LIMIT 1 FOR UPDATE`,
+    const found = await client.query<{ id: string; stage: string; archived_at: Date | null }>(
+      `SELECT id, stage, archived_at FROM crm_contacts WHERE phone = ANY($1) ORDER BY created_at LIMIT 1 FOR UPDATE`,
       [phoneVariants(msg.from)]
     );
     let contactId = found.rows[0]?.id;
     const isNew = !contactId;
     if (!contactId) {
       contactId = randomUUID();
+      // Writing to the number first is the lead's own opt-in to this conversation.
       await client.query(
-        `INSERT INTO crm_contacts (id, phone, name, source, ad_referral) VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO crm_contacts (id, phone, name, source, ad_referral, consent_status, consent_source, consent_at)
+         VALUES ($1, $2, $3, $4, $5, 'sim', 'Iniciou a conversa pelo WhatsApp', now())`,
         [contactId, msg.from, msg.profileName?.trim() || formatPhone(msg.from), msg.referral ? "anuncio" : "outro", msg.referral ? JSON.stringify(msg.referral) : null]
       );
       await addEvent(client, contactId, "created", { via: msg.referral ? "anuncio" : "whatsapp" }, null);
@@ -388,10 +710,14 @@ export async function recordInbound(msg: InboundMessage): Promise<void> {
            last_message_preview = CASE WHEN last_message_at IS NULL OR $2 >= last_message_at THEN $3 ELSE last_message_preview END,
            unread_count = unread_count + 1,
            ad_referral = COALESCE(ad_referral, $4),
+           archived_at = NULL,
            updated_at = now()
        WHERE id = $1`,
       [contactId, msg.timestamp, preview(msg.type, msg.body, null), msg.referral ? JSON.stringify(msg.referral) : null]
     );
+    if (!isNew && found.rows[0].archived_at) {
+      await addEvent(client, contactId, "restored", { auto: true }, null);
+    }
 
     if (!isNew && found.rows[0].stage === "novo") {
       const outbound = await client.query(`SELECT 1 FROM crm_messages WHERE contact_id = $1 AND direction = 'out' LIMIT 1`, [contactId]);

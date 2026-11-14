@@ -36,6 +36,19 @@ export const STAGE_DOT: Record<CrmStage, string> = {
   conversa: "bg-crm-accent",
   reuniao: "bg-crm-violet",
   proposta: "bg-crm-amber",
-  ganho: "bg-crm-gold",
+  ganho: "bg-crm-green",
   perdido: "bg-crm-red",
 };
+
+/** Compact pill-shaped filter select/input for toolbars. */
+export const CRM_FILTER = `${CRM_INPUT} !w-auto !rounded-full !py-1.5`;
+
+export const CRM_TH = "px-3 py-2.5 text-left text-[10.5px] font-semibold tracking-[0.08em] uppercase text-crm-faint whitespace-nowrap";
+export const CRM_TD = "px-3 py-2.5 align-top";
+
+/** Consent badge tones: accepted, unknown, opted out. */
+export const CONSENT_BADGE = {
+  sim: "bg-crm-green/10 text-crm-green border-crm-green/25",
+  nao_informado: "bg-crm-sunken text-crm-dim border-crm-line",
+  descadastrado: "bg-crm-red/10 text-crm-red border-crm-red/25",
+} as const;
