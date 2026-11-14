@@ -39,7 +39,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -281,6 +281,81 @@ async function ensureSchema(): Promise<void> {
   // viewer's own default selection, exactly as before this column existed.
   await db.query(`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS report_type TEXT NOT NULL DEFAULT 'tecnico'`);
   await db.query(`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS indicators JSONB`);
+
+  // CRM de prospecção (área /crm) — one row per WhatsApp contact. `phone` is
+  // digits only with country code, the same shape WhatsApp's own wa_id uses.
+  // The last_* / unread_count columns are denormalized from crm_messages so
+  // the Kanban board loads with one query instead of aggregating messages.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_contacts (
+      id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      company TEXT,
+      source TEXT NOT NULL DEFAULT 'outro',
+      referred_by TEXT,
+      consent_source TEXT,
+      stage TEXT NOT NULL DEFAULT 'novo',
+      owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      next_action TEXT,
+      next_action_at TIMESTAMPTZ,
+      ad_referral JSONB,
+      last_message_at TIMESTAMPTZ,
+      last_message_preview TEXT,
+      last_inbound_at TIMESTAMPTZ,
+      unread_count INTEGER NOT NULL DEFAULT 0,
+      stage_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_messages (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+      wa_message_id TEXT UNIQUE,
+      direction TEXT NOT NULL,
+      type TEXT NOT NULL,
+      body TEXT,
+      media_id TEXT,
+      media_mime TEXT,
+      template_name TEXT,
+      status TEXT,
+      error TEXT,
+      sent_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      -- Arrival order: WhatsApp timestamps are whole seconds and leads often
+      -- send several messages in the same second.
+      seq BIGSERIAL
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_messages_contact_idx ON crm_messages (contact_id, created_at, seq)`);
+  // Timeline of everything that happened to a contact besides messages
+  // (created, stage/owner/next-action changes, notes). user_name is kept
+  // alongside user_id so history still reads right after a user is removed.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_events (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      user_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      user_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      -- Events written in one transaction share now(); seq keeps their order.
+      seq BIGSERIAL
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_events_contact_idx ON crm_events (contact_id, created_at, seq)`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_quick_replies (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 
   await db.query(
     `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`,

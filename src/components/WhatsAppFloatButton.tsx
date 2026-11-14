@@ -27,7 +27,8 @@ export default function WhatsAppFloatButton() {
     };
   }, [pathname]);
 
-  if (pathname?.startsWith("/intelligence")) return null;
+  // Internal apps — the public "fale conosco" button would cover their UI.
+  if (pathname?.startsWith("/intelligence") || pathname?.startsWith("/crm")) return null;
 
   const href = `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(
     CONTACT.whatsappMessage

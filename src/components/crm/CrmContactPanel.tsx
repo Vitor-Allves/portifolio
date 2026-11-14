@@ -1,0 +1,691 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  CRM_SOURCES,
+  CRM_STAGES,
+  formatPhone,
+  serviceWindowRemainingMs,
+  stageLabel,
+  type CrmContactDetail,
+  type CrmEvent,
+  type CrmMessage,
+  type CrmQuickReply,
+  type CrmTeamMember,
+  type CrmTemplate,
+} from "@/lib/crm-types";
+import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
+import { dateTime, initials, shortDate, spDate, windowLabel } from "./crm-format";
+import { Mascot } from "./crm-brand";
+
+type CrmContactPanelProps = {
+  contactId: string;
+  team: CrmTeamMember[];
+  quickReplies: CrmQuickReply[];
+  onQuickRepliesChange: (next: CrmQuickReply[]) => void;
+  whatsappConfigured: boolean;
+  templatesConfigured: boolean;
+  onClose: () => void;
+  /** Something about this contact changed — the board should refetch. */
+  onChanged: () => void;
+  /** The contact was just moved to Ganho from this panel. */
+  onWon?: (name: string) => void;
+};
+
+const PANEL_REFRESH_MS = 5_000;
+
+const STATUS_LABEL: Record<string, string> = { sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou" };
+
+async function errorFrom(res: Response, fallback: string): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
+  return body?.error ?? fallback;
+}
+
+function MessageBubble({ message }: { message: CrmMessage }) {
+  const out = message.direction === "out";
+  const mediaUrl = message.mediaId ? `/api/crm/media/${encodeURIComponent(message.mediaId)}/` : null;
+  return (
+    <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[85%] rounded-2xl border px-3.5 py-2 ${
+          out
+            ? "bg-crm-bubble-out text-crm-bubble-out-text border-transparent rounded-br-md"
+            : "bg-crm-bubble-in text-crm-text border-crm-line rounded-bl-md shadow-[var(--crm-shadow)]"
+        }`}
+      >
+        {message.templateName && <p className="text-[10.5px] tracking-[0.06em] uppercase opacity-60 mb-1">Modelo · {message.templateName}</p>}
+        {mediaUrl && message.type === "image" && (
+          // eslint-disable-next-line @next/next/no-img-element -- streamed from the authenticated media proxy, not a static asset
+          <img src={mediaUrl} alt="Imagem enviada pelo contato" className="max-h-64 rounded-lg mb-1" />
+        )}
+        {mediaUrl && message.type === "audio" && <audio controls src={mediaUrl} className="max-w-full mb-1" />}
+        {mediaUrl && message.type === "video" && <video controls src={mediaUrl} className="max-h-64 rounded-lg mb-1" />}
+        {mediaUrl && !["image", "audio", "video"].includes(message.type) && (
+          <a href={mediaUrl} target="_blank" rel="noreferrer" className="block text-[12.5px] underline mb-1">
+            Abrir arquivo
+          </a>
+        )}
+        {message.body && <p className="text-[13px] whitespace-pre-wrap break-words">{message.body}</p>}
+        <p className="mt-1 text-[10.5px] opacity-60 text-right">
+          {dateTime(message.createdAt)}
+          {out && message.sentByName ? ` · ${message.sentByName}` : ""}
+          {out && message.status ? ` · ${STATUS_LABEL[message.status] ?? message.status}` : ""}
+        </p>
+        {message.error && <p className={`mt-0.5 text-[11px] font-medium ${out ? "text-red-400" : "text-crm-red"}`}>{message.error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function describeEvent(e: CrmEvent): string {
+  const p = e.payload;
+  switch (e.kind) {
+    case "created":
+      return p.via === "anuncio" ? "Contato criado por um anúncio de clique para o WhatsApp" : p.via === "whatsapp" ? "Contato criado ao mandar mensagem" : "Contato criado";
+    case "stage":
+      return `Etapa: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${p.auto ? " (automático, o lead respondeu)" : ""}`;
+    case "owner":
+      return `Responsável: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}`;
+    case "next_action":
+      return p.text || p.at ? `Próxima ação: ${p.text ?? "sem descrição"}${p.at ? ` · ${shortDate(String(p.at))}` : ""}` : "Próxima ação removida";
+    case "note":
+      return String(p.text ?? "");
+  }
+}
+
+function QuickReplies({
+  quickReplies,
+  onPick,
+  onChange,
+}: {
+  quickReplies: CrmQuickReply[];
+  onPick: (body: string) => void;
+  onChange: (next: CrmQuickReply[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    const res = await fetch("/api/crm/quick-replies/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body }),
+    });
+    if (!res.ok) return setError(await errorFrom(res, "Não foi possível salvar."));
+    const { quickReply } = (await res.json()) as { quickReply: CrmQuickReply };
+    onChange([...quickReplies, quickReply].sort((a, b) => a.title.localeCompare(b.title)));
+    setTitle("");
+    setBody("");
+    setError(null);
+  }
+
+  async function remove(id: string) {
+    const res = await fetch(`/api/crm/quick-replies/${id}/`, { method: "DELETE" });
+    if (res.ok) onChange(quickReplies.filter((q) => q.id !== id));
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={CRM_BTN_OUTLINE}
+      >
+        Respostas rápidas
+      </button>
+      {open && (
+        <div className={`absolute bottom-full left-0 mb-2 w-80 max-w-[85vw] z-10 p-3 ${CRM_POPOVER}`}>
+          {quickReplies.length === 0 ? (
+            <p className="text-[12px] text-crm-dim mb-3">Nenhuma resposta rápida ainda.</p>
+          ) : (
+            <ul className="mb-3 max-h-48 overflow-y-auto space-y-1">
+              {quickReplies.map((q) => (
+                <li key={q.id} className="flex items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPick(q.body);
+                      setOpen(false);
+                    }}
+                    className="flex-1 text-left rounded-lg px-2 py-1.5 hover:bg-crm-hover"
+                  >
+                    <span className="block text-[12.5px] font-semibold text-crm-text">{q.title}</span>
+                    <span className="block text-[11.5px] text-crm-dim line-clamp-2">{q.body}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void remove(q.id)}
+                    aria-label={`Excluir ${q.title}`}
+                    className="text-crm-dim hover:text-crm-red px-1.5 py-1"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form onSubmit={add} className="space-y-2 border-t border-crm-line pt-3">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título (ex.: Boas-vindas)" aria-label="Título da resposta rápida" className={CRM_INPUT} />
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} placeholder="Texto" aria-label="Texto da resposta rápida" className={CRM_INPUT} />
+            {error && <p className="text-[11.5px] text-crm-red">{error}</p>}
+            <button type="submit" className="text-[12px] font-semibold text-crm-accent hover:opacity-80">
+              + Salvar resposta rápida
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TemplatePicker({ templatesConfigured, onSend }: { templatesConfigured: boolean; onSend: (t: CrmTemplate, params: string[]) => Promise<void> }) {
+  const [templates, setTemplates] = useState<CrmTemplate[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [chosen, setChosen] = useState("");
+  const [params, setParams] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (!templatesConfigured) return;
+    let cancelled = false;
+    fetch("/api/crm/templates/")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await errorFrom(res, "Não foi possível carregar os modelos."));
+        return ((await res.json()) as { templates: CrmTemplate[] }).templates;
+      })
+      .then((list) => !cancelled && setTemplates(list))
+      .catch((err: Error) => !cancelled && setLoadError(err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [templatesConfigured]);
+
+  if (!templatesConfigured) {
+    return <p className="text-[12px] text-crm-dim">Para listar os modelos aprovados, configure WHATSAPP_BUSINESS_ACCOUNT_ID no servidor.</p>;
+  }
+  if (loadError) return <p className="text-[12px] text-crm-red">{loadError}</p>;
+  if (!templates) return <p className="text-[12px] text-crm-dim">Carregando modelos...</p>;
+  if (templates.length === 0) return <p className="text-[12px] text-crm-dim">Nenhum modelo aprovado ainda. Crie e envie para aprovação no WhatsApp Manager.</p>;
+
+  const template = templates.find((t) => `${t.name}|${t.language}` === chosen) ?? null;
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={chosen}
+        onChange={(e) => {
+          setChosen(e.target.value);
+          const t = templates.find((x) => `${x.name}|${x.language}` === e.target.value);
+          setParams(Array.from({ length: t?.bodyParamCount ?? 0 }, () => ""));
+        }}
+        aria-label="Modelo de mensagem"
+        className={`${CRM_INPUT}`}
+      >
+        <option value="">Escolha um modelo aprovado</option>
+        {templates.map((t) => (
+          <option key={`${t.name}|${t.language}`} value={`${t.name}|${t.language}`}>
+            {t.name} ({t.language})
+          </option>
+        ))}
+      </select>
+      {template?.bodyText && <p className="text-[12px] text-crm-dim whitespace-pre-wrap rounded-lg bg-crm-sunken border border-crm-line px-3 py-2">{template.bodyText}</p>}
+      {params.map((value, i) => (
+        <input
+          key={i}
+          value={value}
+          onChange={(e) => setParams((ps) => ps.map((p, j) => (j === i ? e.target.value : p)))}
+          placeholder={`Valor para {{${i + 1}}}`}
+          aria-label={`Valor para o campo ${i + 1} do modelo`}
+          className={CRM_INPUT}
+        />
+      ))}
+      <button
+        type="button"
+        disabled={!template || sending || params.some((p) => !p.trim())}
+        onClick={async () => {
+          if (!template) return;
+          setSending(true);
+          await onSend(template, params);
+          setSending(false);
+          setChosen("");
+          setParams([]);
+        }}
+        className={CRM_BTN_PRIMARY}
+      >
+        {sending ? "Enviando..." : "Enviar modelo"}
+      </button>
+    </div>
+  );
+}
+
+export default function CrmContactPanel({
+  contactId,
+  team,
+  quickReplies,
+  onQuickRepliesChange,
+  whatsappConfigured,
+  templatesConfigured,
+  onClose,
+  onChanged,
+  onWon,
+}: CrmContactPanelProps) {
+  const [detail, setDetail] = useState<CrmContactDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"conversa" | "detalhes">("conversa");
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [note, setNote] = useState("");
+  const [form, setForm] = useState<{ name: string; company: string; source: string; referredBy: string; consentSource: string } | null>(null);
+  const [nextAction, setNextAction] = useState<{ text: string; date: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/crm/contacts/${contactId}/`);
+    if (!res.ok) {
+      setLoadError(await errorFrom(res, "Não foi possível abrir o contato."));
+      return;
+    }
+    const { contact } = (await res.json()) as { contact: CrmContactDetail };
+    setDetail(contact);
+    setLoadError(null);
+    setNow(Date.now());
+  }, [contactId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (!cancelled) void load();
+    };
+    tick();
+    const timer = setInterval(tick, PANEL_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [load]);
+
+  // Opening the panel already marked the messages as read server-side.
+  useEffect(() => {
+    if (detail) onChanged();
+    // only once, when the contact first loads
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.id]);
+
+  const messageCount = detail?.messages.length ?? 0;
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messageCount, tab]);
+
+  useEffect(() => {
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function patch(body: Record<string, unknown>) {
+    const res = await fetch(`/api/crm/contacts/${contactId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      setActionError(await errorFrom(res, "Não foi possível salvar."));
+      return false;
+    }
+    setActionError(null);
+    await load();
+    onChanged();
+    return true;
+  }
+
+  async function send(body: Record<string, unknown>) {
+    setSending(true);
+    const res = await fetch(`/api/crm/contacts/${contactId}/messages/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setSending(false);
+    if (!res.ok) {
+      setActionError(await errorFrom(res, "Não foi possível enviar."));
+      return false;
+    }
+    setActionError(null);
+    await load();
+    onChanged();
+    return true;
+  }
+
+  async function sendText(e?: FormEvent) {
+    e?.preventDefault();
+    if (!text.trim()) return;
+    if (await send({ kind: "text", body: text })) setText("");
+  }
+
+  async function addNote(e: FormEvent) {
+    e.preventDefault();
+    const res = await fetch(`/api/crm/contacts/${contactId}/notes/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: note }),
+    });
+    if (!res.ok) return setActionError(await errorFrom(res, "Não foi possível salvar a nota."));
+    setNote("");
+    setActionError(null);
+    await load();
+  }
+
+  const windowOpen = detail ? serviceWindowRemainingMs(detail.lastInboundAt, now) > 0 : false;
+  const win = detail ? windowLabel(detail.lastInboundAt, now) : null;
+  const fields = form ?? (detail
+    ? { name: detail.name, company: detail.company ?? "", source: detail.source, referredBy: detail.referredBy ?? "", consentSource: detail.consentSource ?? "" }
+    : null);
+  const next = nextAction ?? (detail ? { text: detail.nextAction ?? "", date: detail.nextActionAt ? spDate(detail.nextActionAt) : "" } : null);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden="true" />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={detail ? `Contato ${detail.name}` : "Contato"}
+        className="fixed inset-y-0 right-0 z-40 w-full sm:w-[540px] bg-crm-raised text-crm-text border-l border-crm-line shadow-[var(--crm-shadow-lg)] flex flex-col"
+      >
+        {!detail ? (
+          <div className="p-6 flex-1 flex flex-col">
+            <button type="button" onClick={onClose} className="self-start text-[12.5px] text-crm-dim hover:text-crm-text">
+              ← Fechar
+            </button>
+            <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
+              <Mascot name={loadError ? "titanDoubt" : "titanLoading"} decorative className={`h-36 w-auto ${loadError ? "" : "animate-pulse"}`} />
+              <p className={`text-[13px] ${loadError ? "text-crm-red" : "text-crm-dim"}`}>{loadError ?? "Carregando contato..."}</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <header className="px-5 pt-4 pb-3 border-b border-crm-line space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="h-10 w-10 shrink-0 rounded-full bg-crm-navy text-white text-[13px] font-semibold flex items-center justify-center ring-2 ring-crm-gold/50">
+                    {initials(detail.name)}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-[16px] font-semibold text-crm-text truncate">{detail.name}</h2>
+                    <p className="text-[12px] text-crm-dim truncate">
+                      {formatPhone(detail.phone)}
+                      {detail.company ? ` · ${detail.company}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <button type="button" onClick={onClose} aria-label="Fechar painel" className="text-crm-dim hover:text-crm-text text-[20px] leading-none px-1">
+                  ×
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className={`${CRM_LABEL} flex items-center gap-1.5`}>
+                    <span className={`h-2 w-2 rounded-full ${STAGE_DOT[detail.stage]}`} aria-hidden="true" />
+                    Etapa
+                  </span>
+                  <select
+                    value={detail.stage}
+                    onChange={async (e) => {
+                      const stage = e.target.value;
+                      if ((await patch({ stage })) && stage === "ganho") onWon?.(detail.name);
+                    }}
+                    className={`${CRM_INPUT} mt-1`}
+                  >
+                    {CRM_STAGES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className={`${CRM_LABEL} flex items-center gap-1.5`}>Responsável</span>
+                  <select
+                    value={detail.ownerId ?? ""}
+                    onChange={(e) => void patch({ ownerId: e.target.value || null })}
+                    className={`${CRM_INPUT} mt-1`}
+                  >
+                    <option value="">Sem responsável</option>
+                    {team.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
+                {win ? (
+                  <span className="px-2.5 py-1 rounded-full bg-crm-green/10 text-crm-green border border-crm-green/25 font-medium">Janela de 24h: {win}</span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-crm-sunken text-crm-dim border border-crm-line">Janela de 24h fechada</span>
+                )}
+                {detail.nextAction || detail.nextActionAt ? (
+                  <span className="text-crm-dim">
+                    Próxima ação: <span className="text-crm-text">{detail.nextAction ?? "—"}</span>
+                    {detail.nextActionAt ? ` · ${shortDate(detail.nextActionAt)}` : ""}
+                  </span>
+                ) : null}
+              </div>
+              <div className={`${CRM_SEGMENT_TRACK} w-fit`} role="tablist">
+                {(["conversa", "detalhes"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t}
+                    onClick={() => setTab(t)}
+                    className={crmSegment(tab === t)}
+                  >
+                    {t === "conversa" ? "Conversa" : "Detalhes e histórico"}
+                  </button>
+                ))}
+              </div>
+            </header>
+
+            {actionError && (
+              <div className={`mx-5 mt-3 ${CRM_ALERT}`} role="alert">
+                {actionError}
+              </div>
+            )}
+
+            {tab === "conversa" ? (
+              <>
+                <div ref={messagesRef} className="flex-1 overflow-y-auto bg-crm-sunken px-5 py-4 space-y-2.5">
+                  {detail.messages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-6">
+                      <Mascot name="legacyDoubt" decorative className="h-32 w-auto" />
+                      <p className="text-[12.5px] text-crm-dim max-w-xs">
+                        Nenhuma mensagem ainda. O primeiro contato precisa ser um modelo aprovado: use &quot;Enviar modelo&quot; abaixo.
+                      </p>
+                    </div>
+                  ) : (
+                    detail.messages.map((m) => <MessageBubble key={m.id} message={m} />)
+                  )}
+                </div>
+                <div className="border-t border-crm-line px-5 py-3 space-y-2.5">
+                  {!whatsappConfigured ? (
+                    <p className="text-[12px] text-crm-dim">O WhatsApp ainda não está conectado — enviar mensagens começa quando o número for ligado ao CRM.</p>
+                  ) : windowOpen && !showTemplates ? (
+                    <form onSubmit={sendText} className="space-y-2">
+                      <textarea
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void sendText();
+                        }}
+                        rows={3}
+                        placeholder="Escreva a resposta (Ctrl+Enter envia)"
+                        aria-label="Mensagem"
+                        className={CRM_INPUT}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <QuickReplies quickReplies={quickReplies} onPick={(b) => setText((t) => (t ? `${t}\n${b}` : b))} onChange={onQuickRepliesChange} />
+                        <button
+                          type="button"
+                          onClick={() => setShowTemplates(true)}
+                          className={CRM_BTN_OUTLINE}
+                        >
+                          Enviar modelo
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={sending || !text.trim()}
+                          className={`ml-auto ${CRM_BTN_PRIMARY}`}
+                        >
+                          {sending ? "Enviando..." : "Enviar"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="space-y-2">
+                      {!windowOpen && (
+                        <p className="text-[12px] font-medium text-crm-amber">
+                          A janela de 24h está fechada: para falar com este contato, envie um modelo aprovado (cobrado por mensagem).
+                        </p>
+                      )}
+                      <TemplatePicker
+                        templatesConfigured={templatesConfigured}
+                        onSend={async (t, params) => {
+                          if (await send({ kind: "template", name: t.name, language: t.language, params })) setShowTemplates(false);
+                        }}
+                      />
+                      {windowOpen && (
+                        <button type="button" onClick={() => setShowTemplates(false)} className="text-[12px] text-crm-dim hover:text-crm-text">
+                          ← Voltar para mensagem livre
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+                {next && (
+                  <section className="space-y-2">
+                    <h3 className={CRM_LABEL}>Próxima ação</h3>
+                    <input
+                      value={next.text}
+                      onChange={(e) => setNextAction({ ...next, text: e.target.value })}
+                      placeholder="Ex.: Ligar para confirmar a reunião"
+                      aria-label="Descrição da próxima ação"
+                      className={CRM_INPUT}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="date"
+                        value={next.date}
+                        onChange={(e) => setNextAction({ ...next, date: e.target.value })}
+                        aria-label="Data da próxima ação"
+                        className={`${CRM_INPUT} !w-auto`}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (await patch({ nextAction: next.text, nextActionAt: next.date || null })) setNextAction(null);
+                        }}
+                        className={CRM_LINK_BTN}
+                      >
+                        Salvar
+                      </button>
+                      {(detail.nextAction || detail.nextActionAt) && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (await patch({ nextAction: null, nextActionAt: null })) setNextAction(null);
+                          }}
+                          className="text-[12.5px] text-crm-dim hover:text-crm-text"
+                        >
+                          Concluir / limpar
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {fields && (
+                  <section className="space-y-2">
+                    <h3 className={CRM_LABEL}>Dados do contato</h3>
+                    <input value={fields.name} onChange={(e) => setForm({ ...fields, name: e.target.value })} aria-label="Nome" placeholder="Nome" className={CRM_INPUT} />
+                    <input value={fields.company} onChange={(e) => setForm({ ...fields, company: e.target.value })} aria-label="Empresa" placeholder="Empresa" className={CRM_INPUT} />
+                    <select value={fields.source} onChange={(e) => setForm({ ...fields, source: e.target.value })} aria-label="Origem" className={`${CRM_INPUT}`}>
+                      {CRM_SOURCES.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input value={fields.referredBy} onChange={(e) => setForm({ ...fields, referredBy: e.target.value })} aria-label="Indicado por" placeholder="Indicado por (ex.: Carlos, BNI)" className={CRM_INPUT} />
+                    <input value={fields.consentSource} onChange={(e) => setForm({ ...fields, consentSource: e.target.value })} aria-label="Como deu o consentimento" placeholder="Como aceitou ser contatado (ex.: formulário do site)" className={CRM_INPUT} />
+                    <button
+                      type="button"
+                      disabled={!form}
+                      onClick={async () => {
+                        if (form && (await patch(form))) setForm(null);
+                      }}
+                      className={CRM_LINK_BTN}
+                    >
+                      Salvar dados
+                    </button>
+                  </section>
+                )}
+
+                {detail.adReferral && (
+                  <section className="space-y-1">
+                    <h3 className={CRM_LABEL}>Veio de um anúncio</h3>
+                    {detail.adReferral.headline && <p className="text-[13px] text-crm-text">{detail.adReferral.headline}</p>}
+                    <p className="text-[12px] text-crm-dim">
+                      {detail.adReferral.sourceId ? `ID do anúncio: ${detail.adReferral.sourceId}` : "ID do anúncio não informado"}
+                      {detail.adReferral.sourceUrl && /^https?:\/\//i.test(detail.adReferral.sourceUrl) && (
+                        <>
+                          {" · "}
+                          <a href={detail.adReferral.sourceUrl} target="_blank" rel="noreferrer" className="text-crm-accent underline">
+                            ver anúncio
+                          </a>
+                        </>
+                      )}
+                    </p>
+                  </section>
+                )}
+
+                <section className="space-y-2">
+                  <h3 className={CRM_LABEL}>Notas e histórico</h3>
+                  <form onSubmit={addNote} className="space-y-2">
+                    <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Nota interna (só a equipe vê)" aria-label="Nova nota" className={CRM_INPUT} />
+                    <button type="submit" disabled={!note.trim()} className={CRM_LINK_BTN}>
+                      Adicionar nota
+                    </button>
+                  </form>
+                  <ol className="space-y-2.5 pt-1">
+                    {[...detail.events].reverse().map((e) => (
+                      <li key={e.id} className={e.kind === "note" ? "rounded-lg border border-crm-amber/30 bg-crm-amber/[0.08] px-3 py-2" : "px-1"}>
+                        <p className={`text-[12.5px] whitespace-pre-wrap break-words ${e.kind === "note" ? "text-crm-text" : "text-crm-dim"}`}>{describeEvent(e)}</p>
+                        <p className="text-[10.5px] text-crm-dim mt-0.5">
+                          {e.userName ?? "Sistema"} · {dateTime(e.createdAt)}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              </div>
+            )}
+          </>
+        )}
+      </aside>
+    </>
+  );
+}
