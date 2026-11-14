@@ -21,7 +21,10 @@ export type AuditAction =
   | "auth.2fa_disable"
   | "auth.2fa_reset_by_admin"
   | "auth.login_failed"
-  | "consultant.whatsapp_click";
+  | "consultant.whatsapp_click"
+  | "crm.import"
+  | "crm.import_undo"
+  | "crm.export";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

@@ -56,7 +56,7 @@ export default function CrmWelcome({ userName, contacts, now }: { userName: stri
       <div className="relative z-10 p-5 sm:p-6 md:pr-[300px]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-crm-gold">{dateLabel}</p>
+            <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-crm-silver">{dateLabel}</p>
             <h2 className="crm-display mt-1 text-[22px] sm:text-[26px] leading-tight text-crm-text">
               {greeting(now)}, {firstName}
             </h2>
@@ -68,7 +68,7 @@ export default function CrmWelcome({ userName, contacts, now }: { userName: stri
           <Kpi label="Em andamento" value={open.length} />
           <Kpi label="Follow-ups hoje" value={dueToday + overdue} tone="text-crm-accent" note={overdue > 0 ? `${overdue} atrasado${overdue === 1 ? "" : "s"}` : null} />
           <Kpi label="Reuniões" value={meetings} tone="text-crm-violet" />
-          <Kpi label="Conquistas no mês" value={wonThisMonth} tone="text-crm-gold" />
+          <Kpi label="Conquistas no mês" value={wonThisMonth} tone="text-crm-green" />
         </div>
       </div>
       <div className="hidden md:flex absolute bottom-0 right-6 items-end" aria-hidden="true">

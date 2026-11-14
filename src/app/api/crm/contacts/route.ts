@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { createContact, listContacts, type NewContactInput } from "@/lib/crm";
+import {
+  contactFiltersFromSearch,
+  createContact,
+  listContacts,
+  listContactsPage,
+  pageFromSearch,
+  type NewContactInput,
+} from "@/lib/crm";
 
 export const runtime = "nodejs";
 
+/**
+ * Without ?page: every active contact, for the Kanban board.
+ * With ?page: one page of the contact list, filtered (?q, stage, owner,
+ * source, segment, city, consent, company, archived=1, sort, pageSize).
+ */
 export async function GET(req: NextRequest) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
+  const params = req.nextUrl.searchParams;
   try {
-    return NextResponse.json({ contacts: await listContacts() });
+    if (!params.has("page")) return NextResponse.json({ contacts: await listContacts() });
+    const { page, pageSize, sort } = pageFromSearch(params);
+    return NextResponse.json(await listContactsPage(contactFiltersFromSearch(params, actor.userId), page, pageSize, sort));
   } catch (err) {
     return crmErrorResponse(err, "api/crm/contacts GET");
   }

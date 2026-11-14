@@ -359,7 +359,7 @@ select:focus-visible {
   --color-crm-amber: var(--crm-amber);
   --color-crm-red: var(--crm-red);
   --color-crm-violet: var(--crm-violet);
-  --color-crm-gold: var(--crm-gold);
+  --color-crm-silver: var(--crm-silver);
   --color-crm-navy: var(--crm-navy);
   --color-crm-bubble-out: var(--crm-bubble-out);
   --color-crm-bubble-out-text: var(--crm-bubble-out-text);
@@ -369,9 +369,9 @@ select:focus-visible {
 .crm-theme {
   color-scheme: light;
   --crm-bg: #f4f4f5;
-  --crm-header: #0a0a0b;
+  --crm-header: #1f3a63;
   --crm-header-text: #fafafa;
-  --crm-header-dim: #a1a1aa;
+  --crm-header-dim: #bfc3c9;
   --crm-column: #e9e9ec;
   --crm-card: #ffffff;
   --crm-raised: #ffffff;
@@ -382,20 +382,20 @@ select:focus-visible {
   --crm-text: #0a0a0b;
   --crm-dim: #52525b;
   --crm-faint: #8e8e97;
-  --crm-ink: #0a0a0b;
+  --crm-ink: #1f3a63;
   --crm-on-ink: #ffffff;
-  --crm-accent: #1c3b72;
+  --crm-accent: #1f3a63;
   --crm-on-accent: #ffffff;
   --crm-green: #15803d;
   --crm-amber: #b45309;
   --crm-red: #dc2626;
   --crm-violet: #6d28d9;
-  --crm-gold: #a67c1b;
-  --crm-navy: #0b1838;
-  --crm-bubble-out: #1c3b72;
+  --crm-silver: #6b727c;
+  --crm-navy: #1f3a63;
+  --crm-bubble-out: #1f3a63;
   --crm-bubble-out-text: #ffffff;
-  --crm-hero-glow-1: rgba(28, 59, 114, 0.1);
-  --crm-hero-glow-2: rgba(201, 162, 39, 0.14);
+  --crm-hero-glow-1: rgba(31, 58, 99, 0.1);
+  --crm-hero-glow-2: rgba(191, 195, 201, 0.35);
   --crm-bubble-in: #ffffff;
   --crm-shadow: 0 1px 2px rgba(10, 10, 11, 0.06), 0 1px 1px rgba(10, 10, 11, 0.03);
   --crm-shadow-lg: 0 24px 60px -20px rgba(10, 10, 11, 0.35);
@@ -406,9 +406,9 @@ select:focus-visible {
 .crm-theme[data-theme="dark"] {
   color-scheme: dark;
   --crm-bg: #09090b;
-  --crm-header: #000000;
+  --crm-header: #0b1526;
   --crm-header-text: #fafafa;
-  --crm-header-dim: #a1a1aa;
+  --crm-header-dim: #bfc3c9;
   --crm-column: #111113;
   --crm-card: #18181b;
   --crm-raised: #141416;
@@ -419,20 +419,20 @@ select:focus-visible {
   --crm-text: #fafafa;
   --crm-dim: #a1a1aa;
   --crm-faint: #6b6b74;
-  --crm-ink: #fafafa;
-  --crm-on-ink: #09090b;
-  --crm-accent: #7faee8;
-  --crm-on-accent: #0b1838;
+  --crm-ink: #f4f5f7;
+  --crm-on-ink: #0b1526;
+  --crm-accent: #a9c1e8;
+  --crm-on-accent: #0b1526;
   --crm-green: #4ade80;
   --crm-amber: #fbbf24;
   --crm-red: #f87171;
   --crm-violet: #a78bfa;
-  --crm-gold: #dcb862;
-  --crm-navy: #0b1838;
-  --crm-bubble-out: #1c3b72;
+  --crm-silver: #bfc3c9;
+  --crm-navy: #1f3a63;
+  --crm-bubble-out: #1f3a63;
   --crm-bubble-out-text: #ffffff;
-  --crm-hero-glow-1: rgba(127, 174, 232, 0.16);
-  --crm-hero-glow-2: rgba(220, 184, 98, 0.1);
+  --crm-hero-glow-1: rgba(169, 193, 232, 0.14);
+  --crm-hero-glow-2: rgba(191, 195, 201, 0.08);
   --crm-bubble-in: #18181b;
   --crm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   --crm-shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
@@ -442,9 +442,9 @@ select:focus-visible {
   .crm-theme:not([data-theme="light"]) {
     color-scheme: dark;
     --crm-bg: #09090b;
-    --crm-header: #000000;
+    --crm-header: #0b1526;
     --crm-header-text: #fafafa;
-    --crm-header-dim: #a1a1aa;
+    --crm-header-dim: #bfc3c9;
     --crm-column: #111113;
     --crm-card: #18181b;
     --crm-raised: #141416;
@@ -455,35 +455,35 @@ select:focus-visible {
     --crm-text: #fafafa;
     --crm-dim: #a1a1aa;
     --crm-faint: #6b6b74;
-    --crm-ink: #fafafa;
-    --crm-on-ink: #09090b;
-    --crm-accent: #7faee8;
-    --crm-on-accent: #0b1838;
+    --crm-ink: #f4f5f7;
+    --crm-on-ink: #0b1526;
+    --crm-accent: #a9c1e8;
+    --crm-on-accent: #0b1526;
     --crm-green: #4ade80;
     --crm-amber: #fbbf24;
     --crm-red: #f87171;
     --crm-violet: #a78bfa;
-    --crm-gold: #dcb862;
-    --crm-navy: #0b1838;
-    --crm-bubble-out: #1c3b72;
+    --crm-silver: #bfc3c9;
+    --crm-navy: #1f3a63;
+    --crm-bubble-out: #1f3a63;
     --crm-bubble-out-text: #ffffff;
-    --crm-hero-glow-1: rgba(127, 174, 232, 0.16);
-    --crm-hero-glow-2: rgba(220, 184, 98, 0.1);
+    --crm-hero-glow-1: rgba(169, 193, 232, 0.14);
+    --crm-hero-glow-2: rgba(191, 195, 201, 0.08);
     --crm-bubble-in: #18181b;
     --crm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
     --crm-shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
   }
 }
 
-/* Brand touches: Cinzel display titles, the gold hairline under the header
+/* Brand touches: Cinzel display titles, the silver (prata) hairline under the header
    and the soft glow behind the mascots in the welcome band. */
 .crm-display {
   font-family: "Cinzel Intel", "Cinzel", serif;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-.crm-gold-rule {
-  background: linear-gradient(90deg, transparent, var(--crm-gold) 20%, var(--crm-gold) 80%, transparent);
+.crm-silver-rule {
+  background: linear-gradient(90deg, transparent, #bfc3c9 20%, #bfc3c9 80%, transparent);
 }
 .crm-hero {
   background-image:
