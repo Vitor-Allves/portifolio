@@ -329,3 +329,174 @@ select:focus-visible {
   background-size: 200% 100%;
   animation: var(--animate-intel-shimmer);
 }
+
+/* ---------------------------------------------------------------------------
+   CRM (/crm) — its own neutral palette with a light and a dark theme.
+   Utilities are bg-crm-*, text-crm-*, border-crm-*; each one reads a CSS
+   variable set on .crm-theme, so switching data-theme on that root swaps
+   every color at once. No data-theme → follows the OS preference.
+   ------------------------------------------------------------------------ */
+@theme inline {
+  --color-crm-bg: var(--crm-bg);
+  --color-crm-header: var(--crm-header);
+  --color-crm-header-text: var(--crm-header-text);
+  --color-crm-header-dim: var(--crm-header-dim);
+  --color-crm-column: var(--crm-column);
+  --color-crm-card: var(--crm-card);
+  --color-crm-raised: var(--crm-raised);
+  --color-crm-sunken: var(--crm-sunken);
+  --color-crm-hover: var(--crm-hover);
+  --color-crm-line: var(--crm-line);
+  --color-crm-line-strong: var(--crm-line-strong);
+  --color-crm-text: var(--crm-text);
+  --color-crm-dim: var(--crm-dim);
+  --color-crm-faint: var(--crm-faint);
+  --color-crm-ink: var(--crm-ink);
+  --color-crm-on-ink: var(--crm-on-ink);
+  --color-crm-accent: var(--crm-accent);
+  --color-crm-on-accent: var(--crm-on-accent);
+  --color-crm-green: var(--crm-green);
+  --color-crm-amber: var(--crm-amber);
+  --color-crm-red: var(--crm-red);
+  --color-crm-violet: var(--crm-violet);
+  --color-crm-gold: var(--crm-gold);
+  --color-crm-navy: var(--crm-navy);
+  --color-crm-bubble-out: var(--crm-bubble-out);
+  --color-crm-bubble-out-text: var(--crm-bubble-out-text);
+  --color-crm-bubble-in: var(--crm-bubble-in);
+}
+
+.crm-theme {
+  color-scheme: light;
+  --crm-bg: #f4f4f5;
+  --crm-header: #0a0a0b;
+  --crm-header-text: #fafafa;
+  --crm-header-dim: #a1a1aa;
+  --crm-column: #e9e9ec;
+  --crm-card: #ffffff;
+  --crm-raised: #ffffff;
+  --crm-sunken: #f4f4f5;
+  --crm-hover: #f0f0f2;
+  --crm-line: #e4e4e7;
+  --crm-line-strong: #c9c9cf;
+  --crm-text: #0a0a0b;
+  --crm-dim: #52525b;
+  --crm-faint: #8e8e97;
+  --crm-ink: #0a0a0b;
+  --crm-on-ink: #ffffff;
+  --crm-accent: #1c3b72;
+  --crm-on-accent: #ffffff;
+  --crm-green: #15803d;
+  --crm-amber: #b45309;
+  --crm-red: #dc2626;
+  --crm-violet: #6d28d9;
+  --crm-gold: #a67c1b;
+  --crm-navy: #0b1838;
+  --crm-bubble-out: #1c3b72;
+  --crm-bubble-out-text: #ffffff;
+  --crm-hero-glow-1: rgba(28, 59, 114, 0.1);
+  --crm-hero-glow-2: rgba(201, 162, 39, 0.14);
+  --crm-bubble-in: #ffffff;
+  --crm-shadow: 0 1px 2px rgba(10, 10, 11, 0.06), 0 1px 1px rgba(10, 10, 11, 0.03);
+  --crm-shadow-lg: 0 24px 60px -20px rgba(10, 10, 11, 0.35);
+  background-color: var(--crm-bg);
+  color: var(--crm-text);
+}
+
+.crm-theme[data-theme="dark"] {
+  color-scheme: dark;
+  --crm-bg: #09090b;
+  --crm-header: #000000;
+  --crm-header-text: #fafafa;
+  --crm-header-dim: #a1a1aa;
+  --crm-column: #111113;
+  --crm-card: #18181b;
+  --crm-raised: #141416;
+  --crm-sunken: #0d0d0f;
+  --crm-hover: #1f1f23;
+  --crm-line: #27272a;
+  --crm-line-strong: #3f3f46;
+  --crm-text: #fafafa;
+  --crm-dim: #a1a1aa;
+  --crm-faint: #6b6b74;
+  --crm-ink: #fafafa;
+  --crm-on-ink: #09090b;
+  --crm-accent: #7faee8;
+  --crm-on-accent: #0b1838;
+  --crm-green: #4ade80;
+  --crm-amber: #fbbf24;
+  --crm-red: #f87171;
+  --crm-violet: #a78bfa;
+  --crm-gold: #dcb862;
+  --crm-navy: #0b1838;
+  --crm-bubble-out: #1c3b72;
+  --crm-bubble-out-text: #ffffff;
+  --crm-hero-glow-1: rgba(127, 174, 232, 0.16);
+  --crm-hero-glow-2: rgba(220, 184, 98, 0.1);
+  --crm-bubble-in: #18181b;
+  --crm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --crm-shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+}
+
+@media (prefers-color-scheme: dark) {
+  .crm-theme:not([data-theme="light"]) {
+    color-scheme: dark;
+    --crm-bg: #09090b;
+    --crm-header: #000000;
+    --crm-header-text: #fafafa;
+    --crm-header-dim: #a1a1aa;
+    --crm-column: #111113;
+    --crm-card: #18181b;
+    --crm-raised: #141416;
+    --crm-sunken: #0d0d0f;
+    --crm-hover: #1f1f23;
+    --crm-line: #27272a;
+    --crm-line-strong: #3f3f46;
+    --crm-text: #fafafa;
+    --crm-dim: #a1a1aa;
+    --crm-faint: #6b6b74;
+    --crm-ink: #fafafa;
+    --crm-on-ink: #09090b;
+    --crm-accent: #7faee8;
+    --crm-on-accent: #0b1838;
+    --crm-green: #4ade80;
+    --crm-amber: #fbbf24;
+    --crm-red: #f87171;
+    --crm-violet: #a78bfa;
+    --crm-gold: #dcb862;
+    --crm-navy: #0b1838;
+    --crm-bubble-out: #1c3b72;
+    --crm-bubble-out-text: #ffffff;
+    --crm-hero-glow-1: rgba(127, 174, 232, 0.16);
+    --crm-hero-glow-2: rgba(220, 184, 98, 0.1);
+    --crm-bubble-in: #18181b;
+    --crm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+    --crm-shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* Brand touches: Cinzel display titles, the gold hairline under the header
+   and the soft glow behind the mascots in the welcome band. */
+.crm-display {
+  font-family: "Cinzel Intel", "Cinzel", serif;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.crm-gold-rule {
+  background: linear-gradient(90deg, transparent, var(--crm-gold) 20%, var(--crm-gold) 80%, transparent);
+}
+.crm-hero {
+  background-image:
+    radial-gradient(ellipse 38% 90% at 88% 100%, var(--crm-hero-glow-1), transparent 70%),
+    radial-gradient(ellipse 30% 70% at 100% 0%, var(--crm-hero-glow-2), transparent 70%);
+}
+@keyframes crm-toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.crm-toast-in {
+  animation: crm-toast-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .crm-toast-in { animation: none; }
+}

@@ -33,6 +33,8 @@ type IntelligenceSidebarProps = {
   active: SectionId;
   onSelect: (section: SectionId) => void;
   isAdmin: boolean;
+  /** Internal team — shows the shortcut to the prospecting CRM. */
+  showCrmLink?: boolean;
   mobileOpen: boolean;
   onCloseMobile: () => void;
   collapsed: boolean;
@@ -131,6 +133,7 @@ function SidebarContent({
   active,
   onSelect,
   isAdmin,
+  showCrmLink,
   onNavigate,
   collapsed,
   onToggleCollapsed,
@@ -144,6 +147,7 @@ function SidebarContent({
   active: SectionId;
   onSelect: (section: SectionId) => void;
   isAdmin: boolean;
+  showCrmLink?: boolean;
   onNavigate: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -199,6 +203,23 @@ function SidebarContent({
 
       {!collapsed && <SidebarTipCard />}
 
+      {showCrmLink && (
+        <div className="px-2.5 pb-0.5">
+          <Link
+            href="/crm/"
+            title={collapsed ? "CRM · Prospecção" : undefined}
+            className={`w-full flex items-center gap-3 rounded-lg py-2.5 text-[13px] text-intel-text-dim hover:bg-white/[0.04] hover:text-intel-text transition-colors duration-200 ${
+              collapsed ? "justify-center px-0" : "px-3"
+            }`}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="shrink-0">
+              <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />
+            </svg>
+            {!collapsed && <span>CRM · Prospecção</span>}
+          </Link>
+        </div>
+      )}
+
       {isAdmin && (
         <div className="px-2.5 pb-2">
           <Link
@@ -248,6 +269,7 @@ export default function IntelligenceSidebar({
   active,
   onSelect,
   isAdmin,
+  showCrmLink,
   mobileOpen,
   onCloseMobile,
   collapsed,
@@ -277,6 +299,7 @@ export default function IntelligenceSidebar({
           active={active}
           onSelect={onSelect}
           isAdmin={isAdmin}
+          showCrmLink={showCrmLink}
           onNavigate={() => {}}
           collapsed={collapsed}
           onToggleCollapsed={onToggleCollapsed}
@@ -308,6 +331,7 @@ export default function IntelligenceSidebar({
               active={active}
               onSelect={onSelect}
               isAdmin={isAdmin}
+              showCrmLink={showCrmLink}
               onNavigate={onCloseMobile}
               collapsed={false}
               onToggleCollapsed={onToggleCollapsed}

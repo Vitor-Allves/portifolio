@@ -993,6 +993,7 @@ export default function Dashboard({
         active={section}
         onSelect={setSection}
         isAdmin={isAdmin}
+        showCrmLink={isInternal}
         mobileOpen={mobileNavOpen}
         onCloseMobile={() => setMobileNavOpen(false)}
         collapsed={sidebarCollapsed}

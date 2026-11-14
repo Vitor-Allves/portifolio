@@ -47,5 +47,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/intelligence/:path*", "/api/analise/:path*", "/api/meta-ads/:path*"],
+  // /api/whatsapp/webhook is deliberately NOT here: Meta calls it with no
+  // session, and it authenticates itself by signature.
+  matcher: ["/intelligence/:path*", "/api/analise/:path*", "/api/meta-ads/:path*", "/crm/:path*", "/api/crm/:path*"],
 };
