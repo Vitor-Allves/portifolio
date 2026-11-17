@@ -58,7 +58,7 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
   );
 }
 
-function PendingTask({ task, now, send, deals }: { task: CrmTask; now: number; send: Send; deals: CrmDeal[] }) {
+function PendingTask({ task, now, send, deals, readOnly }: { task: CrmTask; now: number; send: Send; deals: CrmDeal[]; readOnly: boolean }) {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState("");
   const [date, setDate] = useState(task.dueAt ? spDate(task.dueAt) : "");
@@ -68,14 +68,16 @@ function PendingTask({ task, now, send, deals }: { task: CrmTask; now: number; s
   return (
     <li className="rounded-xl border border-crm-line bg-crm-card">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={() => void send(`/api/crm/tasks/${task.id}/`, "PATCH", { done: true })}
-          aria-label={`Concluir: ${task.title}`}
-          title="Concluir"
-          className="mt-0.5 h-5 w-5 shrink-0 rounded-md border-2 border-crm-line-strong hover:border-crm-green hover:bg-crm-green/10 transition-colors"
-        />
-        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="min-w-0 flex-1 text-left">
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => void send(`/api/crm/tasks/${task.id}/`, "PATCH", { done: true })}
+            aria-label={`Concluir: ${task.title}`}
+            title="Concluir"
+            className="mt-0.5 h-5 w-5 shrink-0 rounded-md border-2 border-crm-line-strong hover:border-crm-green hover:bg-crm-green/10 transition-colors"
+          />
+        )}
+        <button type="button" onClick={() => setOpen((v) => !v)} disabled={readOnly} aria-expanded={open} className="min-w-0 flex-1 text-left">
           <span className="block text-[13px] font-semibold truncate">
             <span aria-hidden="true" className="text-crm-faint mr-1">
               {TASK_KIND_ICON[task.kind]}
@@ -220,6 +222,7 @@ function NewTaskForm({
 
 export default function CrmDealsTasksTab({
   detail,
+  readOnly,
   team,
   currentUserId,
   selectedDealId,
@@ -228,6 +231,8 @@ export default function CrmDealsTasksTab({
   onReload,
 }: {
   detail: CrmContactDetail;
+  /** Profiles that can't touch the funnel (Marketing) see opportunities and tasks without editing them. */
+  readOnly: boolean;
   team: CrmTeamMember[];
   currentUserId: string;
   selectedDealId: string | null;
@@ -264,7 +269,7 @@ export default function CrmDealsTasksTab({
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h3 className={CRM_LABEL}>Oportunidades</h3>
-          {!newDeal && (
+          {!newDeal && !readOnly && (
             <button type="button" onClick={() => setNewDeal({ title: "", value: "" })} className={CRM_LINK_BTN}>
               + Nova oportunidade
             </button>
@@ -333,25 +338,27 @@ export default function CrmDealsTasksTab({
             ))}
           </ul>
         )}
-        {selected && <DealEditor key={selected.id} deal={selected} send={send} />}
+        {selected && !readOnly && <DealEditor key={selected.id} deal={selected} send={send} />}
       </section>
 
       <section className="space-y-2">
         <h3 className={CRM_LABEL}>Tarefas</h3>
-        <NewTaskForm
-          contactId={detail.id}
-          deals={detail.deals.filter((d) => !isClosedStage(d.stage) || d.id === selectedDealId)}
-          defaultDealId={selectedDealId}
-          team={team}
-          defaultOwnerId={team.some((m) => m.id === currentUserId) ? currentUserId : ""}
-          send={send}
-        />
+        {!readOnly && (
+          <NewTaskForm
+            contactId={detail.id}
+            deals={detail.deals.filter((d) => !isClosedStage(d.stage) || d.id === selectedDealId)}
+            defaultDealId={selectedDealId}
+            team={team}
+            defaultOwnerId={team.some((m) => m.id === currentUserId) ? currentUserId : ""}
+            send={send}
+          />
+        )}
         {pending.length === 0 ? (
           <p className="text-[12.5px] text-crm-dim">Nenhuma tarefa pendente. Agende o próximo passo acima.</p>
         ) : (
           <ul className="space-y-1.5">
             {pending.map((t) => (
-              <PendingTask key={t.id} task={t} now={now} send={send} deals={detail.deals} />
+              <PendingTask key={t.id} task={t} now={now} send={send} deals={detail.deals} readOnly={readOnly} />
             ))}
           </ul>
         )}

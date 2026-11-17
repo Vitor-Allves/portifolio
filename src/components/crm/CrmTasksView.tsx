@@ -71,6 +71,7 @@ export default function CrmTasksView({
   team,
   currentUserId,
   now,
+  canComplete,
   onOpenContact,
   onChanged,
 }: {
@@ -79,6 +80,8 @@ export default function CrmTasksView({
   team: CrmTeamMember[];
   currentUserId: string;
   now: number;
+  /** Profiles that can't touch the funnel (Marketing) see tasks without the "concluir" box. */
+  canComplete: boolean;
   onOpenContact: (contactId: string, tab?: "conversa" | "negocio") => void;
   onChanged: () => void;
 }) {
@@ -173,7 +176,7 @@ export default function CrmTasksView({
               <ul className="divide-y divide-crm-line">
                 {items.map((t) => (
                   <li key={t.id} className="hover:bg-crm-hover transition-colors">
-                    <TaskRow task={t} now={now} busy={busy === t.id} onDone={() => void complete(t)} onOpen={() => onOpenContact(t.contactId, "negocio")} />
+                    <TaskRow task={t} now={now} busy={busy === t.id} onDone={canComplete ? () => void complete(t) : undefined} onOpen={() => onOpenContact(t.contactId, "negocio")} />
                   </li>
                 ))}
               </ul>

@@ -11,7 +11,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 | Tela | `src/app/crm/page.tsx`, componentes em `src/components/crm/` |
 | Dados (servidor) | `src/lib/crm.ts` (contatos, mensagens), `crm-deals.ts` (oportunidades), `crm-tasks.ts` (tarefas e atividades), `crm-companies.ts`, `crm-import.ts`, `crm-core.ts` (peças comuns) |
 | Tipos e regras puras | `src/lib/crm-types.ts` (etapas, origens, consentimento, telefone, chave de empresa, valores em R$, motivos de perda, tipos de tarefa) |
-| APIs | `src/app/api/crm/**` — todas exigem sessão da equipe (`src/lib/crm-auth.ts`) |
+| APIs | `src/app/api/crm/**` — todas exigem sessão da equipe e conferem o perfil do CRM (`src/lib/crm-auth.ts`, `crm-access.ts`) |
+| Perfis | `src/lib/crm-permissions.ts` (tabela do que cada perfil pode) + `crm-access.ts` (checagem por registro e Equipe) |
 | WhatsApp | `src/lib/whatsapp.ts` + webhook público assinado em `src/app/api/whatsapp/webhook/` |
 | Banco | Postgres; tabelas `crm_*` criadas/migradas por `ensureSchema` em `src/lib/db.ts` |
 
@@ -44,6 +45,28 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   desfeita). `crm_quick_replies` — respostas rápidas.
 
 ### Regras que o sistema garante
+
+- **Perfis do CRM** (coluna `internal_users.crm_role`, separada do perfil do
+  Intelligence): Administrador, Gestor, Comercial, Marketing ou Sem acesso.
+  O servidor confere o perfil em toda rota; a tela só esconde o que não pode.
+
+  | | Administrador | Gestor | Comercial | Marketing |
+  |---|---|---|---|---|
+  | O que vê | tudo | tudo | só os próprios leads e os sem responsável | tudo |
+  | Funil, oportunidades e tarefas | edita | edita | edita os seus | só vê |
+  | WhatsApp e respostas rápidas | envia | envia | envia (nos seus) | só vê |
+  | Trocar responsável | qualquer um | qualquer um | só assumir sem dono / soltar o seu | não |
+  | Contatos, empresas, notas, consentimento, arquivar | sim | sim | nos seus | sim |
+  | Importar / desfazer importação | sim | sim | não | sim |
+  | Exportar CSV | sim | sim | não | sim |
+  | Equipe (definir perfis) | sim | não | não | não |
+
+  Lead de outra pessoa, para o Comercial, responde como "não encontrado".
+  O Administrador geral do Intelligence é sempre Administrador do CRM; ninguém
+  muda o próprio perfil. Quem nunca teve perfil definido segue o do
+  Intelligence (administrador geral/administrador → Administrador, gestor →
+  Gestor, analista → Comercial). Toda troca de perfil vai para a auditoria
+  (`crm.role_change`, com de → para).
 
 - **Sem duplicidade:** telefone (as duas grafias de celular BR, com e sem o 9)
   e e-mail (sem diferenciar maiúsculas) são únicos — no cadastro, na edição e
@@ -81,6 +104,19 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Fase 3 — Usuários e permissões (schema v7)
+
+- Perfis do CRM (Administrador, Gestor, Comercial, Marketing, Sem acesso) com
+  as regras acima, aplicadas no servidor em todas as rotas `/api/crm/**`
+  (lista, detalhe e cada alteração) e refletidas na tela.
+- Seção **Equipe** no menu (só Administrador): perfil de cada pessoa, com
+  registro na auditoria. Login, senha e desativação continuam no Intelligence.
+- O menu mostra o perfil de quem está usando; quem está "Sem acesso" vê uma
+  mensagem em vez do CRM.
+- **Migração:** só acrescenta `internal_users.crm_role`, preenchida a partir
+  do perfil do Intelligence. Nenhum dado de contatos, oportunidades ou tarefas
+  muda.
 
 ### Layout com menu lateral e aba Conversas
 

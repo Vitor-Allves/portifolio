@@ -6,7 +6,7 @@ import CrmThemeToggle from "./CrmThemeToggle";
 import { LegadoLockup, Mascot, type MascotName } from "./crm-brand";
 import { initials } from "./crm-format";
 
-export type CrmView = "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies";
+export type CrmView = "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies" | "team";
 
 /** Every CRM section: the menu label, a one-line hint, what the page is for, and a practical tip. */
 export const CRM_SECTIONS: { id: CrmView; label: string; hint: string; description: string; tip: string; mascot: MascotName }[] = [
@@ -58,6 +58,14 @@ export const CRM_SECTIONS: { id: CrmView; label: string; hint: string; descripti
     tip: "Contatos com o mesmo nome de empresa ficam juntos aqui, mesmo escritos de jeitos diferentes.",
     mascot: "legacyDoubt",
   },
+  {
+    id: "team",
+    label: "Equipe",
+    hint: "Perfis de acesso",
+    description: "Quem usa o CRM e o que cada pessoa pode fazer. Cada troca de perfil fica registrada na auditoria.",
+    tip: "Comercial vê só os próprios leads e os sem responsável. Marketing cadastra e importa, mas não mexe no funil.",
+    mascot: "titanWelcome",
+  },
 ];
 
 const ICONS: Record<CrmView, React.ReactNode> = {
@@ -70,6 +78,9 @@ const ICONS: Record<CrmView, React.ReactNode> = {
     <path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2ZM5 9v10h14V9H5Zm2 2h3v3H7v-3Z" />
   ),
   contacts: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-8 1.66-8 5v1h16v-1c0-3.34-4.7-5-8-5Z" />,
+  team: (
+    <path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.5 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 19c0-3 3.1-5 7-5s7 2 7 5v1H2v-1Zm15.5 1v-1c0-1.6-.6-3-1.7-4 3.2.1 6.2 1.6 6.2 4v1h-4.5Z" />
+  ),
   companies: (
     <path d="M4 21V3h10v4h6v14h-7v-4h-2v4H4Zm3-15v2h2V6H7Zm0 4v2h2v-2H7Zm0 4v2h2v-2H7Zm4-8v2h2V6h-2Zm0 4v2h2v-2h-2Zm0 4v2h2v-2h-2Zm5-4v2h2v-2h-2Zm0 4v2h2v-2h-2Z" />
   ),
@@ -93,6 +104,10 @@ type SidebarProps = {
   mobileOpen: boolean;
   onCloseMobile: () => void;
   currentUserName: string;
+  /** Shown under the name, e.g. "Comercial". */
+  roleLabel: string;
+  /** Sections this profile may open (Equipe is for Administrador only). */
+  sections: CrmView[];
   whatsappConfigured: boolean;
   initialTheme: CrmTheme | null;
 };
@@ -108,6 +123,8 @@ function SidebarContent({
   onToggleCollapsed,
   showCollapseToggle,
   currentUserName,
+  roleLabel,
+  sections,
   whatsappConfigured,
   initialTheme,
 }: Omit<SidebarProps, "mobileOpen" | "onCloseMobile"> & { showCollapseToggle: boolean }) {
@@ -127,7 +144,7 @@ function SidebarContent({
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-2.5 space-y-1" aria-label="Seções do CRM">
-        {CRM_SECTIONS.map((s) => {
+        {CRM_SECTIONS.filter((s) => sections.includes(s.id)).map((s) => {
           const isActive = s.id === active;
           const badge = badges[s.id] ?? 0;
           return (
@@ -192,7 +209,12 @@ function SidebarContent({
           >
             {initials(currentUserName)}
           </span>
-          {!collapsed && <span className="min-w-0 flex-1 truncate text-[12.5px] text-crm-header-text">{currentUserName}</span>}
+          {!collapsed && (
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12.5px] text-crm-header-text">{currentUserName}</span>
+              <span className="block truncate text-[10.5px] text-crm-header-dim">{roleLabel}</span>
+            </span>
+          )}
           <CrmThemeToggle initialTheme={initialTheme} />
         </div>
         {!collapsed && (

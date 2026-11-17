@@ -24,6 +24,8 @@ import { Mascot } from "./crm-brand";
 import { TASK_STATE_TONE, relativeTime, shortDate, taskDueLabel, taskState, windowLabel } from "./crm-format";
 import CrmSidebar, { CRM_SECTIONS, CrmSectionIcon, type CrmView } from "./CrmSidebar";
 import CrmConversationsView from "./CrmConversationsView";
+import CrmTeamView from "./CrmTeamView";
+import { crmAccessLabel, crmCapabilities, type CrmRole } from "@/lib/crm-permissions";
 import CrmContactPanel from "./CrmContactPanel";
 import CrmNewContactDialog from "./CrmNewContactDialog";
 import CrmContactsView from "./CrmContactsView";
@@ -48,6 +50,8 @@ type CrmAppProps = {
   currentUserName: string;
   initialTheme: CrmTheme | null;
   initialSidebarCollapsed: boolean;
+  /** The CRM profile — the server enforces it; the screens hide what it can't do. */
+  role: CrmRole;
 };
 
 type PanelTab = "conversa" | "negocio" | "detalhes";
@@ -75,11 +79,13 @@ async function getJson<T>(url: string): Promise<T> {
 function DealCard({
   deal,
   selected,
+  canDrag,
   now,
   onOpen,
 }: {
   deal: CrmDealCard;
   selected: boolean;
+  canDrag: boolean;
   now: number;
   onOpen: (deal: CrmDealCard) => void;
 }) {
@@ -106,7 +112,7 @@ function DealCard({
     <div
       role="button"
       tabIndex={0}
-      draggable
+      draggable={canDrag}
       onDragStart={handleDragStart}
       onClick={() => onOpen(deal)}
       onKeyDown={handleKeyDown}
@@ -185,7 +191,11 @@ export default function CrmApp({
   currentUserName,
   initialTheme,
   initialSidebarCollapsed,
+  role,
 }: CrmAppProps) {
+  const caps = crmCapabilities(role);
+  // Without the right to reassign, owner pickers offer only oneself (Comercial) or no one (Marketing).
+  const ownerChoices = caps.assignAnyOwner ? team : caps.editPipeline ? team.filter((m) => m.id === currentUserId) : [];
   const [deals, setDeals] = useState(initialDeals);
   const [tasks, setTasks] = useState(initialTasks);
   const [inbox, setInbox] = useState(initialInbox);
@@ -357,6 +367,8 @@ export default function CrmApp({
         mobileOpen={mobileNavOpen}
         onCloseMobile={() => setMobileNavOpen(false)}
         currentUserName={currentUserName}
+        roleLabel={crmAccessLabel(role)}
+        sections={["board", "conversations", "tasks", "agenda", "contacts", "companies", ...(caps.manageTeam ? (["team"] as const) : [])]}
         whatsappConfigured={whatsappConfigured}
         initialTheme={initialTheme}
       />
@@ -471,6 +483,7 @@ export default function CrmApp({
                   embedded
                   contactId={conversationId}
                   currentUserId={currentUserId}
+                  caps={caps}
                   team={team}
                   quickReplies={quickReplies}
                   onQuickRepliesChange={setQuickReplies}
@@ -488,9 +501,12 @@ export default function CrmApp({
             team={team}
             version={dataVersion}
             onOpenContact={(id) => openContact(id)}
-            onImport={() => setImportOpen(true)}
+            onImport={caps.importContacts ? () => setImportOpen(true) : undefined}
+            canExport={caps.exportContacts}
             onNew={() => setNewOpen(true)}
           />
+        ) : view === "team" && caps.manageTeam ? (
+          <CrmTeamView currentUserId={currentUserId} onChanged={() => void refresh()} />
         ) : view === "companies" ? (
           <CrmCompaniesView version={dataVersion} onOpenCompany={setCompanyId} />
         ) : view === "tasks" ? (
@@ -500,6 +516,7 @@ export default function CrmApp({
             team={team}
             currentUserId={currentUserId}
             now={now}
+            canComplete={caps.editPipeline}
             onOpenContact={(id, tab) => openContact(id, tab)}
             onChanged={() => void refresh()}
           />
@@ -571,13 +588,14 @@ export default function CrmApp({
                           key={d.id}
                           deal={d}
                           selected={selected?.contactId === d.contactId && (!selected.dealId || selected.dealId === d.id)}
+                          canDrag={caps.editPipeline}
                           now={now}
                           onOpen={(deal) => openContact(deal.contactId, undefined, deal.id)}
                         />
                       ))}
                       {items.length === 0 && (
                         <p className="rounded-xl border border-dashed border-crm-line-strong/70 px-3 py-6 text-center text-[11.5px] text-crm-faint">
-                          Arraste um card para cá
+                          {caps.editPipeline ? "Arraste um card para cá" : "Nenhuma oportunidade"}
                         </p>
                       )}
                     </div>
@@ -615,6 +633,7 @@ export default function CrmApp({
           initialDealId={selected.dealId ?? null}
           initialTab={selected.tab}
           currentUserId={currentUserId}
+          caps={caps}
           team={team}
           quickReplies={quickReplies}
           onQuickRepliesChange={setQuickReplies}
@@ -658,7 +677,7 @@ export default function CrmApp({
 
       <CrmNewContactDialog
         open={newOpen}
-        team={team}
+        team={ownerChoices}
         currentUserId={currentUserId}
         onClose={() => setNewOpen(false)}
         onCreated={(id) => {

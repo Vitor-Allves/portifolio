@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
+import { requireCap } from "@/lib/crm-access";
 import { createQuickReply, listQuickReplies } from "@/lib/crm";
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest) {
   if (actor instanceof NextResponse) return actor;
   const body = (await req.json().catch(() => null)) as { title?: unknown; body?: unknown } | null;
   try {
+    requireCap(actor, "sendWhatsApp");
     const quickReply = await createQuickReply(body?.title, body?.body, actor);
     return NextResponse.json({ quickReply }, { status: 201 });
   } catch (err) {

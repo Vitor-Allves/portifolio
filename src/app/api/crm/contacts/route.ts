@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
+import { requireCap, requireOwnerChange, visibleTo } from "@/lib/crm-access";
 import {
   contactFiltersFromSearch,
   createContact,
@@ -21,9 +22,9 @@ export async function GET(req: NextRequest) {
   if (actor instanceof NextResponse) return actor;
   const params = req.nextUrl.searchParams;
   try {
-    if (!params.has("page")) return NextResponse.json({ contacts: await listContacts() });
+    if (!params.has("page")) return NextResponse.json({ contacts: await listContacts(visibleTo(actor)) });
     const { page, pageSize, sort } = pageFromSearch(params);
-    return NextResponse.json(await listContactsPage(contactFiltersFromSearch(params, actor.userId), page, pageSize, sort));
+    return NextResponse.json(await listContactsPage({ ...contactFiltersFromSearch(params, actor.userId), visibleTo: visibleTo(actor) }, page, pageSize, sort));
   } catch (err) {
     return crmErrorResponse(err, "api/crm/contacts GET");
   }
@@ -35,6 +36,8 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as NewContactInput | null;
   if (!body) return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   try {
+    requireCap(actor, "editContacts");
+    requireOwnerChange(actor, body.ownerId ?? undefined, null);
     const id = await createContact(body, actor);
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {

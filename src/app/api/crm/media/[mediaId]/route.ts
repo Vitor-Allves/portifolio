@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
+import { requireMedia } from "@/lib/crm-access";
 import { isKnownMedia } from "@/lib/crm";
 import { fetchMedia } from "@/lib/whatsapp";
 
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ medi
   if (actor instanceof NextResponse) return actor;
   const { mediaId } = await params;
   try {
+    await requireMedia(actor, mediaId);
     if (!(await isKnownMedia(mediaId))) return NextResponse.json({ error: "Mídia não encontrada." }, { status: 404 });
     const media = await fetchMedia(mediaId);
     return new NextResponse(media.body, {

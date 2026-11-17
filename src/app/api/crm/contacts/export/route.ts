@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { writeAudit } from "@/lib/audit-log";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
+import { requireCap } from "@/lib/crm-access";
 import { contactFiltersFromSearch, listContactsForExport } from "@/lib/crm";
 import { nextTasksByContact } from "@/lib/crm-tasks";
 import { CRM_CONSENT, formatPhone, sourceLabel, stageLabel } from "@/lib/crm-types";
@@ -16,6 +17,7 @@ export async function GET(req: NextRequest) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
   try {
+    requireCap(actor, "exportContacts");
     const filters = contactFiltersFromSearch(req.nextUrl.searchParams, actor.userId);
     const contacts = await listContactsForExport(filters);
     const nextTasks = await nextTasksByContact(contacts.map((c) => c.id));

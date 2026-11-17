@@ -41,7 +41,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -517,6 +517,21 @@ async function ensureSchema(): Promise<void> {
      FROM crm_contacts c
      WHERE c.next_action IS NOT NULL OR c.next_action_at IS NOT NULL
      ON CONFLICT (id) DO NOTHING`
+  );
+
+  // v7 — CRM profiles (Fase 3): each staff member's access to the CRM,
+  // separate from the Intelligence role. Backfilled once from that role
+  // (administrador_geral/administrador → administrador, gestor → gestor,
+  // analista → comercial); only rows never set are touched, so a rerun
+  // keeps whatever an administrator chose since. See crm-permissions.ts.
+  await db.query(`ALTER TABLE internal_users ADD COLUMN IF NOT EXISTS crm_role TEXT`);
+  await db.query(
+    `UPDATE internal_users SET crm_role = CASE role
+       WHEN 'administrador_geral' THEN 'administrador'
+       WHEN 'administrador' THEN 'administrador'
+       WHEN 'gestor' THEN 'gestor'
+       ELSE 'comercial' END
+     WHERE crm_role IS NULL`
   );
 
   await db.query(
