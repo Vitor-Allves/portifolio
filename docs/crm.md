@@ -82,6 +82,25 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
 ## Registro de alterações
 
+### Layout com menu lateral e aba Conversas
+
+- **Menu lateral** (azul Legado) com as seções Funil, Conversas, Tarefas,
+  Agenda, Contatos e Empresas. Cada uma traz uma linha dizendo para que
+  serve, contadores (conversas não lidas, tarefas de hoje/atrasadas) e uma
+  dica com o Titan ou o Legacy. Recolhe para só os ícones (fica lembrado no
+  navegador) e vira um menu de gaveta no celular.
+- O topo de cada página mostra o nome da seção e o que se faz nela, com o
+  botão **+ Novo contato**.
+- Aba **Conversas**: todas as conversas do WhatsApp, da mais recente para a
+  mais antiga, com a **etiqueta da etapa** de cada oportunidade do lead no
+  funil, não lidas, janela de 24h, responsável e "Você:" quando a última
+  mensagem foi nossa. Filtros: busca, não lidas, etapa e responsável. No
+  computador a conversa abre ao lado da lista (com etapa, oportunidades e
+  tarefas); no celular, em tela cheia. API: `GET /api/crm/conversations`.
+- No funil, arrastar um card até a borda rola o quadro, para alcançar as
+  colunas que ficam fora da tela.
+- Sem mudança no banco.
+
 ### Fase 2 — Funil com oportunidades, tarefas e agenda (schema v6)
 
 - O funil agora mostra **oportunidades**: valor em R$, responsável, previsão

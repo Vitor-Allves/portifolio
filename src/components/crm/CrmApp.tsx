@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from "react";
 import {
   CRM_SOURCES,
   CRM_STAGES,
@@ -17,13 +16,14 @@ import {
   type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_INPUT, CRM_SEGMENT_TRACK, STAGE_DOT, TASK_KIND_ICON, crmSegment } from "./crm-styles";
-import type { CrmTheme } from "./crm-theme";
-import CrmThemeToggle from "./CrmThemeToggle";
+import { CRM_BTN_PRIMARY, CRM_INPUT, STAGE_DOT, TASK_KIND_ICON } from "./crm-styles";
+import { CRM_SIDEBAR_COOKIE, type CrmTheme } from "./crm-theme";
 import CrmWelcome from "./CrmWelcome";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
-import { LegadoLockup, Mascot } from "./crm-brand";
-import { TASK_STATE_TONE, initials, relativeTime, shortDate, taskDueLabel, taskState, windowLabel } from "./crm-format";
+import { Mascot } from "./crm-brand";
+import { TASK_STATE_TONE, relativeTime, shortDate, taskDueLabel, taskState, windowLabel } from "./crm-format";
+import CrmSidebar, { CRM_SECTIONS, CrmSectionIcon, type CrmView } from "./CrmSidebar";
+import CrmConversationsView from "./CrmConversationsView";
 import CrmContactPanel from "./CrmContactPanel";
 import CrmNewContactDialog from "./CrmNewContactDialog";
 import CrmContactsView from "./CrmContactsView";
@@ -47,13 +47,24 @@ type CrmAppProps = {
   currentUserId: string;
   currentUserName: string;
   initialTheme: CrmTheme | null;
+  initialSidebarCollapsed: boolean;
 };
 
-type View = "board" | "tasks" | "agenda" | "contacts" | "companies";
 type PanelTab = "conversa" | "negocio" | "detalhes";
 type Selection = { contactId: string; dealId?: string | null; tab?: PanelTab };
 
 const BOARD_REFRESH_MS = 10_000;
+
+const BOARD_EDGE = 96;
+const BOARD_SCROLL_STEP = 22;
+
+// Wide enough for the Conversas list and the open chat side by side.
+const WIDE_QUERY = "(min-width: 1024px)";
+function subscribeWide(onChange: () => void) {
+  const mq = window.matchMedia(WIDE_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -173,12 +184,18 @@ export default function CrmApp({
   currentUserId,
   currentUserName,
   initialTheme,
+  initialSidebarCollapsed,
 }: CrmAppProps) {
   const [deals, setDeals] = useState(initialDeals);
   const [tasks, setTasks] = useState(initialTasks);
   const [inbox, setInbox] = useState(initialInbox);
   const [quickReplies, setQuickReplies] = useState(initialQuickReplies);
-  const [view, setView] = useState<View>("board");
+  const [view, setView] = useState<CrmView>("board");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // The conversation open beside the Conversas list (wide screens only).
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const isWide = useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   // Bumped after any change so the Agenda/Contatos/Empresas lists refetch.
@@ -195,6 +212,7 @@ export default function CrmApp({
   const [now, setNow] = useState(() => Date.now());
   const [celebration, setCelebration] = useState<{ name: string; mascot: "titanWin" | "legacyWin" } | null>(null);
   const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   // "Conquista!" toast when a deal is won — Titan and Legacy take turns.
   const celebrate = useCallback((name: string) => {
@@ -315,91 +333,66 @@ export default function CrmApp({
     if (id) moveTo(id, stage);
   }
 
-  const showBoardTools = view === "board";
+  const section = CRM_SECTIONS.find((s) => s.id === view) ?? CRM_SECTIONS[0];
+  const unreadContacts = inbox.length;
+
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    document.cookie = `${CRM_SIDEBAR_COOKIE}=${next ? "collapsed" : "open"}; path=/crm; max-age=31536000; samesite=lax`;
+  }
+
+  // In Conversas on a wide screen the chat opens beside the list; anywhere
+  // else (and on phones) a contact opens in the slide-over panel.
+  const conversationsBeside = view === "conversations" && isWide;
 
   return (
-    <div className="min-h-screen bg-crm-bg text-crm-text">
-      <header className="sticky top-0 z-20 bg-crm-header text-crm-header-text">
-        <div className="h-14 px-4 sm:px-6 flex items-center gap-3 sm:gap-4">
-          <Link href="/intelligence/" title="Voltar ao Legado Intelligence" className="shrink-0 opacity-95 hover:opacity-100 transition-opacity">
-            <LegadoLockup />
-          </Link>
-          <span className="h-6 w-px bg-white/15" aria-hidden="true" />
-          <h1 className="flex items-baseline gap-2 min-w-0">
-            <span className="crm-display text-[17px] tracking-[0.08em]">CRM</span>
-            <span className="hidden sm:inline text-[12.5px] text-crm-header-dim truncate">Prospecção</span>
-          </h1>
-          {!whatsappConfigured && (
-            <span className="hidden lg:inline text-[11px] px-2.5 py-1 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25">
-              WhatsApp ainda não conectado
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              href="/intelligence/"
-              className="hidden md:inline-flex items-center gap-1.5 text-[12px] text-crm-header-dim hover:text-crm-header-text px-2.5 py-1.5 rounded-full transition-colors duration-200"
-            >
-              Intelligence
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <path d="M7 17 17 7M8 7h9v9" />
-              </svg>
-            </Link>
-            <span
-              title={currentUserName}
-              className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold"
-            >
-              {initials(currentUserName)}
-            </span>
-            <CrmThemeToggle initialTheme={initialTheme} />
+    <div className="min-h-screen bg-crm-bg text-crm-text lg:flex">
+      <CrmSidebar
+        active={view}
+        onSelect={setView}
+        badges={{ conversations: unreadContacts, tasks: dueCount }}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebar}
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
+        currentUserName={currentUserName}
+        whatsappConfigured={whatsappConfigured}
+        initialTheme={initialTheme}
+      />
+
+      <div className="flex-1 min-w-0">
+        <header className="sticky top-0 z-20 bg-crm-bg/90 backdrop-blur border-b border-crm-line">
+          <div className="px-4 sm:px-6 py-3 flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setNewOpen(true)}
-              aria-label="Novo contato"
-              className="inline-flex items-center gap-1 bg-white text-[#1f3a63] text-[12.5px] font-semibold px-3.5 sm:px-4 py-2 rounded-full hover:bg-[#e8ebf0] transition-colors duration-200"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Abrir menu"
+              className="lg:hidden h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-xl bg-crm-header text-crm-header-text"
             >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </button>
+            <span className="hidden sm:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-crm-accent/[0.1] text-crm-accent">
+              <CrmSectionIcon id={view} />
+            </span>
+            <div className="min-w-0">
+              <h1 className="crm-display text-[19px] leading-tight">{section.label}</h1>
+              <p className="hidden sm:block text-[12.5px] text-crm-dim truncate">{section.description}</p>
+            </div>
+            <button type="button" onClick={() => setNewOpen(true)} aria-label="Novo contato" className={`${CRM_BTN_PRIMARY} ml-auto shrink-0 gap-1`}>
               <span aria-hidden="true">+</span>
               <span className="hidden sm:inline">Novo contato</span>
             </button>
           </div>
-        </div>
-        <div className="crm-silver-rule h-px opacity-70" aria-hidden="true" />
-      </header>
+        </header>
 
       <div className="px-4 sm:px-6 py-5 space-y-4">
-        {(view === "board" || view === "tasks") && <CrmWelcome userName={currentUserName} deals={deals} tasks={tasks} unread={unread} now={now} />}
+        {view === "board" && <CrmWelcome userName={currentUserName} deals={deals} tasks={tasks} unread={unread} now={now} />}
 
-        {!whatsappConfigured && (
-          <p className="text-[12.5px] text-crm-dim max-w-3xl">
-            Os contatos, o funil e o histórico já funcionam. Enviar e receber mensagens começa quando o número de prospecção for
-            conectado (passo a passo em <code className="bg-crm-card border border-crm-line px-1.5 py-0.5 rounded">docs/whatsapp-crm-setup.md</code>).
-          </p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className={`${CRM_SEGMENT_TRACK} max-w-full overflow-x-auto`} role="tablist" aria-label="Seções do CRM">
-            {(
-              [
-                ["board", "Funil"],
-                ["tasks", `Tarefas${dueCount > 0 ? ` · ${dueCount}` : ""}`],
-                ["agenda", "Agenda"],
-                ["contacts", "Contatos"],
-                ["companies", "Empresas"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={view === id}
-                onClick={() => setView(id)}
-                className={`${crmSegment(view === id)} whitespace-nowrap`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {showBoardTools && (
+        {view === "board" && (
+          <div className="flex flex-wrap items-center gap-2">
             <>
               <input
                 type="search"
@@ -451,8 +444,8 @@ export default function CrmApp({
                 <option value="none">Sem próxima tarefa</option>
               </select>
             </>
-          )}
-        </div>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-crm-red/30 bg-crm-red/[0.07] px-4 py-2.5 text-[12.5px] text-crm-red" role="alert">
@@ -463,7 +456,34 @@ export default function CrmApp({
           </div>
         )}
 
-        {view === "contacts" ? (
+        {view === "conversations" ? (
+          <CrmConversationsView
+            team={team}
+            version={dataVersion}
+            now={now}
+            selectedId={conversationsBeside ? conversationId : selected?.contactId ?? null}
+            onOpen={(id) => (conversationsBeside ? setConversationId(id) : openContact(id, "conversa"))}
+            whatsappConfigured={whatsappConfigured}
+            panel={
+              conversationsBeside && conversationId ? (
+                <CrmContactPanel
+                  key={conversationId}
+                  embedded
+                  contactId={conversationId}
+                  currentUserId={currentUserId}
+                  team={team}
+                  quickReplies={quickReplies}
+                  onQuickRepliesChange={setQuickReplies}
+                  whatsappConfigured={whatsappConfigured}
+                  templatesConfigured={templatesConfigured}
+                  onClose={() => setConversationId(null)}
+                  onChanged={() => void refresh()}
+                  onWon={celebrate}
+                />
+              ) : null
+            }
+          />
+        ) : view === "contacts" ? (
           <CrmContactsView
             team={team}
             version={dataVersion}
@@ -499,7 +519,19 @@ export default function CrmApp({
                 <Mascot name="legacyHello" decorative className="h-28 w-auto shrink-0" />
               </div>
             )}
-            <div className="flex gap-3 overflow-x-auto pb-4 items-start">
+            <div
+              ref={boardRef}
+              className="flex gap-3 overflow-x-auto pb-4 items-start"
+              onDragOver={(e) => {
+                // Dragging a card near the board's edge scrolls it, so the
+                // columns off screen (Ganho, Perdido) can still take the drop.
+                const el = boardRef.current;
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                if (e.clientX > r.right - BOARD_EDGE) el.scrollLeft += BOARD_SCROLL_STEP;
+                else if (e.clientX < r.left + BOARD_EDGE) el.scrollLeft -= BOARD_SCROLL_STEP;
+              }}
+            >
               {CRM_STAGES.map((stage) => {
                 const items = visible.filter((d) => d.stage === stage.id);
                 const total = items.reduce((sum, d) => sum + (d.valueCents ?? 0), 0);
@@ -555,6 +587,7 @@ export default function CrmApp({
             </div>
           </>
         )}
+      </div>
       </div>
 
       {companyId && !selected && (

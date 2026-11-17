@@ -42,6 +42,8 @@ type CrmContactPanelProps = {
   initialDealId?: string | null;
   initialTab?: "conversa" | "negocio" | "detalhes";
   currentUserId: string;
+  /** Rendered inside a page column (Conversas, desktop) instead of as a slide-over dialog. */
+  embedded?: boolean;
 };
 
 const PANEL_REFRESH_MS = 5_000;
@@ -343,6 +345,7 @@ export default function CrmContactPanel({
   initialDealId = null,
   initialTab = "conversa",
   currentUserId,
+  embedded = false,
 }: CrmContactPanelProps) {
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -396,13 +399,15 @@ export default function CrmContactPanel({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messageCount, tab]);
 
+  // Escape closes the slide-over; an embedded panel is part of the page.
   useEffect(() => {
+    if (embedded) return;
     function onKey(e: globalThis.KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   async function patch(body: Record<string, unknown>) {
     const res = await fetch(`/api/crm/contacts/${contactId}/`, {
@@ -500,12 +505,16 @@ export default function CrmContactPanel({
 
   return (
     <>
-      <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden="true" />
+      {!embedded && <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden="true" />}
       <aside
-        role="dialog"
-        aria-modal="true"
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
         aria-label={detail ? `Contato ${detail.name}` : "Contato"}
-        className="fixed inset-y-0 right-0 z-40 w-full sm:w-[540px] bg-crm-raised text-crm-text border-l border-crm-line shadow-[var(--crm-shadow-lg)] flex flex-col"
+        className={
+          embedded
+            ? "h-full w-full min-h-0 bg-crm-raised text-crm-text flex flex-col"
+            : "fixed inset-y-0 right-0 z-40 w-full sm:w-[540px] bg-crm-raised text-crm-text border-l border-crm-line shadow-[var(--crm-shadow-lg)] flex flex-col"
+        }
       >
         {!detail ? (
           <div className="p-6 flex-1 flex flex-col">

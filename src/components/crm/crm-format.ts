@@ -39,6 +39,18 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   return `há ${Math.floor(hours / 24)}d`;
 }
 
+/** Chat-list time, like WhatsApp: "14:32" today, "ontem", "qua." this week, "14/11" before. */
+export function chatTime(iso: string, now: number = Date.now()): string {
+  const day = spDate(iso);
+  const today = spDate(now);
+  if (day === today) return timeOfDay(iso);
+  if (day === spDate(now - 86_400_000)) return "ontem";
+  if (Date.parse(`${today}T00:00:00-03:00`) - Date.parse(`${day}T00:00:00-03:00`) < 7 * 86_400_000) {
+    return new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "short" }).format(new Date(iso));
+  }
+  return shortDate(iso);
+}
+
 /** null when the 24h window is closed; otherwise "faltam 22h" / "faltam 35 min". */
 export function windowLabel(lastInboundAt: string | null, now: number = Date.now()): string | null {
   const ms = serviceWindowRemainingMs(lastInboundAt, now);

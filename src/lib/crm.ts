@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
 import {
   CRM_SOURCES,
+  CRM_STAGES,
   formatPhone,
   isCrmConsentStatus,
   isCrmSource,
@@ -18,6 +19,7 @@ import {
   type CrmConsentStatus,
   type CrmContactCard,
   type CrmContactDetail,
+  type CrmConversation,
   type CrmEvent,
   type CrmEventKind,
   type CrmFacets,
@@ -321,6 +323,61 @@ export async function listUnreadContacts(): Promise<CrmContactCard[]> {
   return rows.map(mapCard);
 }
 
+
+export type ConversationFilters = Pick<ContactFilters, "q" | "owner" | "currentUserId"> & {
+  /** Only conversations with an opportunity in this funnel stage. */
+  stage?: string;
+  unread?: boolean;
+};
+
+/**
+ * WhatsApp conversations — active contacts with at least one message — newest
+ * first, each with the stages of its opportunities. Keyset-paginated by
+ * (last_message_at, id): pass the returned `next` back as `before`.
+ */
+export async function listConversations(
+  f: ConversationFilters,
+  opts: { before?: string | null; limit?: number } = {}
+): Promise<{ rows: CrmConversation[]; next: string | null; unreadTotal: number }> {
+  const { sql, values } = contactWhere({ q: f.q, owner: f.owner, currentUserId: f.currentUserId });
+  const extra = ["c.last_message_at IS NOT NULL"];
+  if (f.unread) extra.push("c.unread_count > 0");
+  if (f.stage && isCrmStage(f.stage)) {
+    values.push(f.stage);
+    extra.push(`EXISTS (SELECT 1 FROM crm_deals d WHERE d.contact_id = c.id AND d.stage = $${values.length})`);
+  }
+  const cut = (opts.before ?? "").lastIndexOf("|");
+  const beforeAt = cut > 0 ? opts.before!.slice(0, cut) : "";
+  const beforeId = cut > 0 ? opts.before!.slice(cut + 1) : "";
+  if (beforeAt && beforeId && !Number.isNaN(Date.parse(beforeAt))) {
+    values.push(new Date(beforeAt), beforeId);
+    extra.push(`(c.last_message_at, c.id) < ($${values.length - 1}, $${values.length})`);
+  }
+  const limit = Math.min(200, Math.max(1, Math.floor(opts.limit ?? 60)));
+  values.push(limit + 1);
+  const db = await getDb();
+  const [list, unread] = await Promise.all([
+    db.query<CardRow & { deal_stages: string[] }>(
+      `SELECT x.*, ARRAY(SELECT DISTINCT d.stage FROM crm_deals d WHERE d.contact_id = x.id) AS deal_stages
+       FROM (${CARD_SELECT} ${sql} AND ${extra.join(" AND ")}
+             ORDER BY c.last_message_at DESC, c.id DESC LIMIT $${values.length}) x
+       ORDER BY x.last_message_at DESC, x.id DESC`,
+      values
+    ),
+    db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts WHERE archived_at IS NULL AND unread_count > 0`),
+  ]);
+  const order = new Map<string, number>(CRM_STAGES.map((st, i) => [st.id, i]));
+  const rows = list.rows.slice(0, limit).map((r) => ({
+    ...mapCard(r),
+    dealStages: r.deal_stages.filter(isCrmStage).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+  }));
+  const last = rows[rows.length - 1];
+  return {
+    rows,
+    next: list.rows.length > limit && last?.lastMessageAt ? `${last.lastMessageAt}|${last.id}` : null,
+    unreadTotal: Number(unread.rows[0].n),
+  };
+}
 
 /** Normalized phone, or null when empty. Throws on something that can't be a phone. */
 export function parsePhone(value: unknown): string | null {

@@ -159,6 +159,9 @@ export type CrmContactCard = {
   createdAt: string;
 };
 
+/** A WhatsApp conversation in the Conversas list: the contact plus the funnel stages of its opportunities (the "tags"). */
+export type CrmConversation = CrmContactCard & { dealStages: CrmStage[] };
+
 export type CrmMessage = {
   id: string;
   direction: "in" | "out";
