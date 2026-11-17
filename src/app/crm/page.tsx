@@ -9,7 +9,7 @@ import { listBoardDeals } from "@/lib/crm-deals";
 import { listTasks } from "@/lib/crm-tasks";
 import { isWhatsAppConfigured } from "@/lib/whatsapp";
 import CrmApp from "@/components/crm/CrmApp";
-import { CRM_THEME_COOKIE, parseCrmTheme } from "@/components/crm/crm-theme";
+import { CRM_SIDEBAR_COOKIE, CRM_THEME_COOKIE, parseCrmTheme } from "@/components/crm/crm-theme";
 
 export const metadata: Metadata = {
   title: "CRM · Legado",
@@ -43,7 +43,9 @@ export default async function CrmPage() {
   }
 
   if (loaded) {
-    const theme = parseCrmTheme((await cookies()).get(CRM_THEME_COOKIE)?.value);
+    const cookieStore = await cookies();
+    const theme = parseCrmTheme(cookieStore.get(CRM_THEME_COOKIE)?.value);
+    const sidebarCollapsed = cookieStore.get(CRM_SIDEBAR_COOKIE)?.value === "collapsed";
     return (
       <CrmApp
         initialDeals={loaded.deals}
@@ -56,6 +58,7 @@ export default async function CrmPage() {
         currentUserId={scope.userId}
         currentUserName={scope.userName}
         initialTheme={theme}
+        initialSidebarCollapsed={sidebarCollapsed}
       />
     );
   }

@@ -43,19 +43,14 @@ export function Mascot({
   );
 }
 
-/** White mark + wordmark, for the black CRM header (same in both themes). */
-export function LegadoLockup() {
+/** White mark + wordmark, for the navy CRM sidebar (same in both themes). `markOnly` for the collapsed sidebar. */
+export function LegadoLockup({ markOnly = false }: { markOnly?: boolean }) {
   return (
     <span className="flex items-center gap-2.5">
-      <Image src="/brand/crm/legado-mark-white.webp" width={161} height={112} alt="" priority className="h-7 w-auto" />
-      <Image
-        src="/brand/crm/legado-wordmark-white.webp"
-        width={241}
-        height={72}
-        alt="Legado Enterprise"
-        priority
-        className="hidden sm:block h-[22px] w-auto"
-      />
+      <Image src="/brand/crm/legado-mark-white.webp" width={161} height={112} alt={markOnly ? "Legado Enterprise" : ""} priority className="h-7 w-auto" />
+      {!markOnly && (
+        <Image src="/brand/crm/legado-wordmark-white.webp" width={241} height={72} alt="Legado Enterprise" priority className="h-[22px] w-auto" />
+      )}
     </span>
   );
 }
