@@ -92,12 +92,17 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 1. **Antes de cada fase ir ao ar**, criar uma cópia do banco no provedor
    (Neon → *Branches* → *Create branch* a partir de `main`, ou um snapshot no
    painel). Se algo der errado, a cópia é o ponto de restauração.
-2. **Migrações só acrescentam:** nenhuma coluna ou tabela existente é
+2. **Atualização do banco em etapas:** cada nova versão (v5, v6, v7…) roda só
+   se o banco ainda não a tem e grava a versão assim que termina. Assim o
+   primeiro acesso depois de publicar faz só os comandos novos (antes refazia
+   a cadeia inteira, ~80 comandos, e passava do limite de 10s da Vercel), e
+   uma atualização interrompida continua de onde parou.
+3. **Migrações só acrescentam:** nenhuma coluna ou tabela existente é
    removida; dados antigos continuam onde estavam (ex.: o texto antigo de
    empresa em `crm_contacts.company` foi mantido).
-3. **Exportar CSV** (aba Contatos) gera uma cópia legível da base a qualquer
+4. **Exportar CSV** (aba Contatos) gera uma cópia legível da base a qualquer
    momento, respeitando os filtros da tela.
-4. **Importação errada:** em Importar planilha → Importações recentes →
+5. **Importação errada:** em Importar planilha → Importações recentes →
    *Desfazer*. Remove só os contatos que aquela importação criou **e que
    ninguém mexeu depois** (sem mensagem, sem mudança de etapa/campo, sem
    tarefa), junto com as oportunidades criadas pela importação; os
