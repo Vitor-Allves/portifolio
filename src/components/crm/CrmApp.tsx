@@ -5,28 +5,41 @@ import Link from "next/link";
 import {
   CRM_SOURCES,
   CRM_STAGES,
+  formatBRL,
+  isClosedStage,
+  lostReasonLabel,
   sourceLabel,
   type CrmContactCard,
+  type CrmDealCard,
+  type CrmLostReason,
   type CrmQuickReply,
   type CrmStage,
+  type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_INPUT, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
+import { CRM_INPUT, CRM_SEGMENT_TRACK, STAGE_DOT, TASK_KIND_ICON, crmSegment } from "./crm-styles";
 import type { CrmTheme } from "./crm-theme";
 import CrmThemeToggle from "./CrmThemeToggle";
 import CrmWelcome from "./CrmWelcome";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { LegadoLockup, Mascot } from "./crm-brand";
-import { followUpState, initials, relativeTime, shortDate, spDate, windowLabel, type FollowUpState } from "./crm-format";
+import { TASK_STATE_TONE, initials, relativeTime, shortDate, taskDueLabel, taskState, windowLabel } from "./crm-format";
 import CrmContactPanel from "./CrmContactPanel";
 import CrmNewContactDialog from "./CrmNewContactDialog";
 import CrmContactsView from "./CrmContactsView";
 import CrmCompaniesView from "./CrmCompaniesView";
 import CrmCompanyPanel from "./CrmCompanyPanel";
 import CrmImportDialog from "./CrmImportDialog";
+import CrmLostDialog from "./CrmLostDialog";
+import CrmTasksView from "./CrmTasksView";
+import CrmAgendaView from "./CrmAgendaView";
 
 type CrmAppProps = {
-  initialContacts: CrmContactCard[];
+  initialDeals: CrmDealCard[];
+  /** Pending tasks of the whole team. */
+  initialTasks: CrmTask[];
+  /** Contacts with unread WhatsApp messages. */
+  initialInbox: CrmContactCard[];
   team: CrmTeamMember[];
   initialQuickReplies: CrmQuickReply[];
   whatsappConfigured: boolean;
@@ -36,46 +49,45 @@ type CrmAppProps = {
   initialTheme: CrmTheme | null;
 };
 
+type View = "board" | "tasks" | "agenda" | "contacts" | "companies";
+type PanelTab = "conversa" | "negocio" | "detalhes";
+type Selection = { contactId: string; dealId?: string | null; tab?: PanelTab };
+
 const BOARD_REFRESH_MS = 10_000;
 
-async function fetchContacts(): Promise<CrmContactCard[]> {
-  const res = await fetch("/api/crm/contacts/");
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
   if (!res.ok) throw new Error("fetch failed");
-  return ((await res.json()) as { contacts: CrmContactCard[] }).contacts;
+  return (await res.json()) as T;
 }
 
-const FOLLOW_UP_TONE: Record<FollowUpState, string> = {
-  overdue: "text-crm-red",
-  today: "text-crm-amber",
-  upcoming: "text-crm-text",
-  none: "text-crm-dim",
-};
-
-function ContactCard({
-  contact,
+function DealCard({
+  deal,
   selected,
   now,
-  today,
   onOpen,
 }: {
-  contact: CrmContactCard;
+  deal: CrmDealCard;
   selected: boolean;
   now: number;
-  today: string;
-  onOpen: (id: string) => void;
+  onOpen: (deal: CrmDealCard) => void;
 }) {
-  const win = windowLabel(contact.lastInboundAt, now);
-  const fu = followUpState(contact.nextActionAt, today);
+  const win = windowLabel(deal.lastInboundAt, now);
+  const closed = isClosedStage(deal.stage);
+  const task = deal.nextTask;
+  const state = task ? taskState(task.dueAt, task.allDay, now) : null;
+  // The title usually is the company (or the contact) — don't repeat it below.
+  const who = [deal.contactName, deal.company].filter((v): v is string => Boolean(v) && v !== deal.title).join(" · ");
 
   function handleDragStart(e: DragEvent<HTMLDivElement>) {
-    e.dataTransfer.setData("text/plain", contact.id);
+    e.dataTransfer.setData("text/plain", deal.id);
     e.dataTransfer.effectAllowed = "move";
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      onOpen(contact.id);
+      onOpen(deal);
     }
   }
 
@@ -85,60 +97,75 @@ function ContactCard({
       tabIndex={0}
       draggable
       onDragStart={handleDragStart}
-      onClick={() => onOpen(contact.id)}
+      onClick={() => onOpen(deal)}
       onKeyDown={handleKeyDown}
-      aria-label={`Abrir ${contact.name}`}
+      aria-label={`Abrir ${deal.title}`}
       className={`cursor-pointer rounded-xl border bg-crm-card px-3 py-2.5 shadow-[var(--crm-shadow)] transition-colors duration-150 focus:outline-none focus-visible:border-crm-accent ${
         selected ? "border-crm-accent ring-1 ring-crm-accent/40" : "border-crm-line hover:border-crm-line-strong"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold text-crm-text truncate">{contact.name}</p>
-          {contact.company && <p className="text-[11.5px] text-crm-dim truncate">{contact.company}</p>}
+          <p className="text-[13px] font-semibold text-crm-text truncate">{deal.title}</p>
+          {who && <p className="text-[11.5px] text-crm-dim truncate">{who}</p>}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {contact.unreadCount > 0 && (
+          {deal.unreadCount > 0 && (
             <span
-              title={`${contact.unreadCount} mensagem(ns) não lida(s)`}
+              title={`${deal.unreadCount} mensagem(ns) não lida(s)`}
               className="min-w-[18px] h-[18px] px-1 rounded-full bg-crm-accent text-crm-on-accent text-[10.5px] font-semibold flex items-center justify-center"
             >
-              {contact.unreadCount}
+              {deal.unreadCount}
             </span>
           )}
-          <OwnerAvatar name={contact.ownerName} />
+          <OwnerAvatar name={deal.ownerName} />
         </div>
       </div>
+
+      {(deal.valueCents !== null || deal.expectedCloseAt) && (
+        <p className="mt-1 flex items-baseline gap-2 text-[12px]">
+          {deal.valueCents !== null && <span className="font-semibold text-crm-text tabular-nums">{formatBRL(deal.valueCents)}</span>}
+          {deal.expectedCloseAt && !closed && <span className="text-crm-faint">previsão {shortDate(deal.expectedCloseAt)}</span>}
+        </p>
+      )}
 
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         <span className="max-w-full truncate text-[10.5px] px-2 py-0.5 rounded-full bg-crm-sunken border border-crm-line text-crm-dim">
-          {sourceLabel(contact.source)}
-          {contact.referredBy ? ` · ${contact.referredBy}` : ""}
+          {sourceLabel(deal.source)}
+          {deal.referredBy ? ` · ${deal.referredBy}` : ""}
         </span>
       </div>
 
-      {contact.lastMessagePreview && (
-        <p className="mt-1.5 text-[11.5px] text-crm-dim line-clamp-2 break-words">{contact.lastMessagePreview}</p>
+      {deal.stage === "perdido" && deal.lostReason && (
+        <p className="mt-1.5 text-[11.5px] text-crm-red truncate">
+          {lostReasonLabel(deal.lostReason)}
+          {deal.lostNote ? ` · ${deal.lostNote}` : ""}
+        </p>
       )}
 
+      {deal.lastMessagePreview && <p className="mt-1.5 text-[11.5px] text-crm-dim line-clamp-2 break-words">{deal.lastMessagePreview}</p>}
+
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
-        <span className="text-crm-faint">{contact.lastMessageAt ? relativeTime(contact.lastMessageAt, now) : "sem mensagens"}</span>
+        <span className="text-crm-faint">{deal.lastMessageAt ? relativeTime(deal.lastMessageAt, now) : "sem mensagens"}</span>
         {win && <span className="text-crm-green font-medium">janela: {win}</span>}
       </div>
 
-      {(contact.nextAction || contact.nextActionAt) && (
-        <p className={`mt-1 text-[11.5px] font-medium truncate ${FOLLOW_UP_TONE[fu]}`}>
-          {fu === "overdue" ? "Atrasado: " : ""}
-          {contact.nextAction ?? "Próxima ação"}
-          {contact.nextActionAt ? ` · ${shortDate(contact.nextActionAt)}` : ""}
+      {task && state ? (
+        <p className={`mt-1 text-[11.5px] font-medium truncate ${TASK_STATE_TONE[state]}`}>
+          <span aria-hidden="true">{TASK_KIND_ICON[task.kind]} </span>
+          {task.title} · {taskDueLabel(task.dueAt, task.allDay, now)}
         </p>
+      ) : (
+        !closed && <p className="mt-1 text-[11.5px] text-crm-faint">Sem próxima tarefa</p>
       )}
     </div>
   );
 }
 
 export default function CrmApp({
-  initialContacts,
+  initialDeals,
+  initialTasks,
+  initialInbox,
   team,
   initialQuickReplies,
   whatsappConfigured,
@@ -147,20 +174,23 @@ export default function CrmApp({
   currentUserName,
   initialTheme,
 }: CrmAppProps) {
-  const [contacts, setContacts] = useState(initialContacts);
+  const [deals, setDeals] = useState(initialDeals);
+  const [tasks, setTasks] = useState(initialTasks);
+  const [inbox, setInbox] = useState(initialInbox);
   const [quickReplies, setQuickReplies] = useState(initialQuickReplies);
-  const [view, setView] = useState<"board" | "today" | "contacts" | "companies">("board");
+  const [view, setView] = useState<View>("board");
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  // Bumped after any change so the Contatos/Empresas lists refetch.
+  // Bumped after any change so the Agenda/Contatos/Empresas lists refetch.
   const [dataVersion, setDataVersion] = useState(0);
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const [followUpOnly, setFollowUpOnly] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<"all" | "due" | "none">("all");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Selection | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [dropStage, setDropStage] = useState<CrmStage | null>(null);
+  const [lostPending, setLostPending] = useState<{ dealId: string; title: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [celebration, setCelebration] = useState<{ name: string; mascot: "titanWin" | "legacyWin" } | null>(null);
@@ -178,7 +208,14 @@ export default function CrmApp({
 
   const refresh = useCallback(async () => {
     try {
-      setContacts(await fetchContacts());
+      const [d, t, i] = await Promise.all([
+        getJson<{ deals: CrmDealCard[] }>("/api/crm/deals/"),
+        getJson<{ tasks: CrmTask[] }>("/api/crm/tasks/?status=pending&owner=all"),
+        getJson<{ contacts: CrmContactCard[] }>("/api/crm/inbox/"),
+      ]);
+      setDeals(d.deals);
+      setTasks(t.tasks);
+      setInbox(i.contacts);
       setDataVersion((v) => v + 1);
       setError(null);
     } catch {
@@ -194,65 +231,91 @@ export default function CrmApp({
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const today = spDate(now);
+  const openContact = useCallback((contactId: string, tab?: PanelTab, dealId?: string | null) => {
+    setSelected({ contactId, tab, dealId });
+  }, []);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
-    return contacts.filter((c) => {
-      if (ownerFilter === "mine" && c.ownerId !== currentUserId) return false;
-      if (ownerFilter === "none" && c.ownerId) return false;
-      if (!["all", "mine", "none"].includes(ownerFilter) && c.ownerId !== ownerFilter) return false;
-      if (sourceFilter !== "all" && c.source !== sourceFilter) return false;
-      if (followUpOnly) {
-        const s = followUpState(c.nextActionAt, today);
+    return deals.filter((d) => {
+      if (ownerFilter === "mine" && d.ownerId !== currentUserId) return false;
+      if (ownerFilter === "none" && d.ownerId) return false;
+      if (!["all", "mine", "none"].includes(ownerFilter) && d.ownerId !== ownerFilter) return false;
+      if (sourceFilter !== "all" && d.source !== sourceFilter) return false;
+      if (taskFilter === "due") {
+        const s = d.nextTask ? taskState(d.nextTask.dueAt, d.nextTask.allDay, now) : "none";
         if (s !== "overdue" && s !== "today") return false;
       }
+      if (taskFilter === "none" && (d.nextTask || isClosedStage(d.stage))) return false;
       if (q) {
-        const inText =
-          c.name.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q) || (c.email ?? "").includes(q);
-        const inPhone = digits.length >= 3 && (c.phone ?? "").includes(digits);
+        const inText = [d.title, d.contactName, d.company ?? "", d.email ?? ""].some((v) => v.toLowerCase().includes(q));
+        const inPhone = digits.length >= 3 && (d.phone ?? "").includes(digits);
         if (!inText && !inPhone) return false;
       }
       return true;
     });
-  }, [contacts, ownerFilter, sourceFilter, followUpOnly, search, currentUserId, today]);
+  }, [deals, ownerFilter, sourceFilter, taskFilter, search, currentUserId, now]);
 
-  const dueContacts = useMemo(
+  const dueCount = useMemo(
     () =>
-      contacts
-        .filter((c) => {
-          const s = followUpState(c.nextActionAt, today);
-          return (s === "overdue" || s === "today") && c.stage !== "ganho" && c.stage !== "perdido";
-        })
-        .sort((a, b) => Date.parse(a.nextActionAt!) - Date.parse(b.nextActionAt!)),
-    [contacts, today]
+      tasks.filter((t) => {
+        const s = taskState(t.dueAt, t.allDay, now);
+        return s === "overdue" || s === "today";
+      }).length,
+    [tasks, now]
   );
+  const unread = inbox.reduce((sum, c) => sum + c.unreadCount, 0);
 
-  async function moveTo(id: string, stage: CrmStage) {
-    const before = contacts;
-    if (before.find((c) => c.id === id)?.stage === stage) return;
-    setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage, stageChangedAt: new Date().toISOString() } : c)));
-    const res = await fetch(`/api/crm/contacts/${id}/`, {
+  async function patchStage(dealId: string, body: { stage: CrmStage; lostReason?: CrmLostReason; lostNote?: string }) {
+    const before = deals;
+    const deal = before.find((d) => d.id === dealId);
+    const at = new Date().toISOString();
+    setDeals((ds) =>
+      ds.map((d) =>
+        d.id === dealId
+          ? {
+              ...d,
+              stage: body.stage,
+              stageChangedAt: at,
+              closedAt: isClosedStage(body.stage) ? at : null,
+              lostReason: body.lostReason ?? null,
+              lostNote: body.lostNote?.trim() || null,
+            }
+          : d
+      )
+    );
+    const res = await fetch(`/api/crm/deals/${dealId}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
-      setContacts(before);
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      setError(body?.error ?? "Não foi possível mover o card.");
+      setDeals(before);
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      setError(data?.error ?? "Não foi possível mover o card.");
       return;
     }
-    if (stage === "ganho") celebrate(before.find((c) => c.id === id)?.name ?? "O lead");
+    if (body.stage === "ganho") celebrate(deal?.title ?? "O negócio");
+    void refresh();
+  }
+
+  function moveTo(dealId: string, stage: CrmStage) {
+    const deal = deals.find((d) => d.id === dealId);
+    if (!deal || deal.stage === stage) return;
+    // Losing a deal always records why — the dialog asks before the move.
+    if (stage === "perdido") setLostPending({ dealId, title: deal.title });
+    else void patchStage(dealId, { stage });
   }
 
   function handleDrop(e: DragEvent<HTMLElement>, stage: CrmStage) {
     e.preventDefault();
     setDropStage(null);
     const id = e.dataTransfer.getData("text/plain");
-    if (id) void moveTo(id, stage);
+    if (id) moveTo(id, stage);
   }
+
+  const showBoardTools = view === "board";
 
   return (
     <div className="min-h-screen bg-crm-bg text-crm-text">
@@ -303,7 +366,7 @@ export default function CrmApp({
       </header>
 
       <div className="px-4 sm:px-6 py-5 space-y-4">
-        {(view === "board" || view === "today") && <CrmWelcome userName={currentUserName} contacts={contacts} now={now} />}
+        {(view === "board" || view === "tasks") && <CrmWelcome userName={currentUserName} deals={deals} tasks={tasks} unread={unread} now={now} />}
 
         {!whatsappConfigured && (
           <p className="text-[12.5px] text-crm-dim max-w-3xl">
@@ -317,7 +380,8 @@ export default function CrmApp({
             {(
               [
                 ["board", "Funil"],
-                ["today", `Hoje${dueContacts.length > 0 ? ` · ${dueContacts.length}` : ""}`],
+                ["tasks", `Tarefas${dueCount > 0 ? ` · ${dueCount}` : ""}`],
+                ["agenda", "Agenda"],
                 ["contacts", "Contatos"],
                 ["companies", "Empresas"],
               ] as const
@@ -335,58 +399,58 @@ export default function CrmApp({
             ))}
           </div>
 
-          {(view === "board" || view === "today") && (
-          <>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar nome, empresa ou telefone"
-            aria-label="Buscar contatos"
-            className={`${CRM_INPUT} !w-64 max-w-full !rounded-full !py-1.5`}
-          />
+          {showBoardTools && (
+            <>
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar negócio, contato ou telefone"
+                aria-label="Buscar no funil"
+                className={`${CRM_INPUT} !w-64 max-w-full !rounded-full !py-1.5`}
+              />
 
-          <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            aria-label="Filtrar por responsável"
-            className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
-          >
-            <option value="all">Todos os responsáveis</option>
-            <option value="mine">Meus contatos</option>
-            <option value="none">Sem responsável</option>
-            {team.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+              <select
+                value={ownerFilter}
+                onChange={(e) => setOwnerFilter(e.target.value)}
+                aria-label="Filtrar por responsável"
+                className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
+              >
+                <option value="all">Todos os responsáveis</option>
+                <option value="mine">Meus negócios</option>
+                <option value="none">Sem responsável</option>
+                {team.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
 
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            aria-label="Filtrar por origem"
-            className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
-          >
-            <option value="all">Todas as origens</option>
-            {CRM_SOURCES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                aria-label="Filtrar por origem"
+                className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
+              >
+                <option value="all">Todas as origens</option>
+                {CRM_SOURCES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
 
-          <button
-            type="button"
-            aria-pressed={followUpOnly}
-            onClick={() => setFollowUpOnly((v) => !v)}
-            className={`text-[12.5px] px-3.5 py-1.5 rounded-full border transition-colors duration-200 ${
-              followUpOnly ? "bg-crm-amber/[0.12] border-crm-amber/50 text-crm-amber font-medium" : "bg-crm-card border-crm-line text-crm-dim hover:text-crm-text hover:border-crm-line-strong"
-            }`}
-          >
-            Precisa de follow-up
-          </button>
-          </>
+              <select
+                value={taskFilter}
+                onChange={(e) => setTaskFilter(e.target.value as "all" | "due" | "none")}
+                aria-label="Filtrar por próxima tarefa"
+                className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5 ${taskFilter !== "all" ? "!border-crm-amber/60 !text-crm-amber" : ""}`}
+              >
+                <option value="all">Qualquer próxima tarefa</option>
+                <option value="due">Tarefa para hoje ou atrasada</option>
+                <option value="none">Sem próxima tarefa</option>
+              </select>
+            </>
           )}
         </div>
 
@@ -403,15 +467,27 @@ export default function CrmApp({
           <CrmContactsView
             team={team}
             version={dataVersion}
-            onOpenContact={setSelectedId}
+            onOpenContact={(id) => openContact(id)}
             onImport={() => setImportOpen(true)}
             onNew={() => setNewOpen(true)}
           />
         ) : view === "companies" ? (
           <CrmCompaniesView version={dataVersion} onOpenCompany={setCompanyId} />
-        ) : view === "board" ? (
+        ) : view === "tasks" ? (
+          <CrmTasksView
+            tasks={tasks}
+            inbox={inbox}
+            team={team}
+            currentUserId={currentUserId}
+            now={now}
+            onOpenContact={(id, tab) => openContact(id, tab)}
+            onChanged={() => void refresh()}
+          />
+        ) : view === "agenda" ? (
+          <CrmAgendaView team={team} version={dataVersion} now={now} onOpenContact={(id, tab) => openContact(id, tab)} />
+        ) : (
           <>
-            {contacts.length === 0 && (
+            {deals.length === 0 && (
               <div className="flex items-end gap-4 rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] px-6 pt-5 max-w-xl overflow-hidden">
                 <div className="pb-5">
                   <p className="crm-display text-[17px] mb-1">Vamos começar?</p>
@@ -425,7 +501,8 @@ export default function CrmApp({
             )}
             <div className="flex gap-3 overflow-x-auto pb-4 items-start">
               {CRM_STAGES.map((stage) => {
-                const items = visible.filter((c) => c.stage === stage.id);
+                const items = visible.filter((d) => d.stage === stage.id);
+                const total = items.reduce((sum, d) => sum + (d.valueCents ?? 0), 0);
                 return (
                   <section
                     key={stage.id}
@@ -443,16 +520,28 @@ export default function CrmApp({
                       dropStage === stage.id ? "border-crm-accent bg-crm-accent/[0.06]" : "border-transparent bg-crm-column"
                     }`}
                   >
-                    <header className="px-3.5 pt-3 pb-2 flex items-center justify-between">
-                      <h2 className="flex items-center gap-2 text-[12.5px] font-semibold text-crm-text">
-                        <span className={`h-2 w-2 rounded-full ${STAGE_DOT[stage.id]}`} aria-hidden="true" />
-                        {stage.label}
-                      </h2>
-                      <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
+                    <header className="px-3.5 pt-3 pb-2">
+                      <div className="flex items-center justify-between">
+                        <h2 className="flex items-center gap-2 text-[12.5px] font-semibold text-crm-text">
+                          <span className={`h-2 w-2 rounded-full ${STAGE_DOT[stage.id]}`} aria-hidden="true" />
+                          {stage.label}
+                        </h2>
+                        <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
+                      </div>
+                      <p className="mt-0.5 pl-4 h-4 text-[11.5px] text-crm-dim tabular-nums" aria-label={`Total em ${stage.label}`}>
+                        {total > 0 ? formatBRL(total) : ""}
+                        {isClosedStage(stage.id) && items.length > 0 ? <span className="text-crm-faint">{total > 0 ? " · " : ""}últimos 30 dias</span> : null}
+                      </p>
                     </header>
                     <div className="px-2.5 pb-3 space-y-2 min-h-[96px]">
-                      {items.map((c) => (
-                        <ContactCard key={c.id} contact={c} selected={c.id === selectedId} now={now} today={today} onOpen={setSelectedId} />
+                      {items.map((d) => (
+                        <DealCard
+                          key={d.id}
+                          deal={d}
+                          selected={selected?.contactId === d.contactId && (!selected.dealId || selected.dealId === d.id)}
+                          now={now}
+                          onOpen={(deal) => openContact(deal.contactId, undefined, deal.id)}
+                        />
                       ))}
                       {items.length === 0 && (
                         <p className="rounded-xl border border-dashed border-crm-line-strong/70 px-3 py-6 text-center text-[11.5px] text-crm-faint">
@@ -465,58 +554,15 @@ export default function CrmApp({
               })}
             </div>
           </>
-        ) : (
-          <section aria-label="Follow-ups de hoje" className="rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] max-w-3xl">
-            <header className="px-5 pt-4 pb-3 border-b border-crm-line">
-              <h2 className="text-[14px] font-semibold">Hoje</h2>
-              <p className="text-[12px] text-crm-dim mt-0.5">Próximas ações marcadas para hoje e as atrasadas, da mais antiga para a mais nova.</p>
-            </header>
-            {dueContacts.length === 0 ? (
-              <div className="flex items-end justify-between gap-4 px-5 pt-5 overflow-hidden">
-                <div className="pb-6">
-                  <p className="crm-display text-[17px] mb-1">Tudo em dia</p>
-                  <p className="text-[12.5px] text-crm-dim">Nenhum follow-up para hoje. Marque a próxima ação de cada lead no painel do contato.</p>
-                </div>
-                <Mascot name="titanWin" decorative className="h-28 w-auto shrink-0" />
-              </div>
-            ) : (
-              <ul>
-                {dueContacts.map((c) => {
-                  const fu = followUpState(c.nextActionAt, today);
-                  return (
-                    <li key={c.id} className="border-b border-crm-line last:border-0">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(c.id)}
-                        className="w-full text-left px-5 py-3 flex items-center gap-3 hover:bg-crm-hover transition-colors duration-150"
-                      >
-                        <OwnerAvatar name={c.ownerName} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-[13px] font-semibold truncate">
-                            {c.name}
-                            {c.company ? <span className="font-normal text-crm-dim"> · {c.company}</span> : null}
-                          </span>
-                          <span className="block text-[12px] text-crm-dim truncate">{c.nextAction ?? "Próxima ação"}</span>
-                        </span>
-                        <span className={`text-[12px] font-medium shrink-0 ${FOLLOW_UP_TONE[fu]}`}>
-                          {fu === "overdue" ? `Atrasado · ${shortDate(c.nextActionAt!)}` : "Hoje"}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
         )}
       </div>
 
-      {companyId && !selectedId && (
+      {companyId && !selected && (
         <CrmCompanyPanel
           key={companyId}
           companyId={companyId}
           onClose={() => setCompanyId(null)}
-          onOpenContact={setSelectedId}
+          onOpenContact={(id) => openContact(id)}
           onChanged={() => setDataVersion((v) => v + 1)}
         />
       )}
@@ -529,18 +575,33 @@ export default function CrmApp({
         onImported={() => void refresh()}
       />
 
-      {selectedId && (
+      {selected && (
         <CrmContactPanel
-          key={selectedId}
-          contactId={selectedId}
+          key={`${selected.contactId}|${selected.dealId ?? ""}|${selected.tab ?? ""}`}
+          contactId={selected.contactId}
+          initialDealId={selected.dealId ?? null}
+          initialTab={selected.tab}
+          currentUserId={currentUserId}
           team={team}
           quickReplies={quickReplies}
           onQuickRepliesChange={setQuickReplies}
           whatsappConfigured={whatsappConfigured}
           templatesConfigured={templatesConfigured}
-          onClose={() => setSelectedId(null)}
+          onClose={() => setSelected(null)}
           onChanged={() => void refresh()}
           onWon={celebrate}
+        />
+      )}
+
+      {lostPending && (
+        <CrmLostDialog
+          dealTitle={lostPending.title}
+          onCancel={() => setLostPending(null)}
+          onConfirm={(lostReason, lostNote) => {
+            const { dealId } = lostPending;
+            setLostPending(null);
+            void patchStage(dealId, { stage: "perdido", lostReason, lostNote });
+          }}
         />
       )}
 
@@ -553,7 +614,7 @@ export default function CrmApp({
           <div className="pb-4 min-w-0">
             <p className="crm-display text-[18px] text-crm-accent">Conquista!</p>
             <p className="text-[12.5px] text-crm-text">
-              <strong>{celebration.name}</strong> virou cliente. Parabéns, time!
+              Negócio ganho: <strong>{celebration.name}</strong>. Parabéns, time!
             </p>
           </div>
           <button type="button" onClick={() => setCelebration(null)} aria-label="Fechar aviso" className="absolute top-2 right-2.5 text-crm-faint hover:text-crm-text text-[16px] leading-none">
@@ -570,7 +631,7 @@ export default function CrmApp({
         onCreated={(id) => {
           setNewOpen(false);
           void refresh();
-          setSelectedId(id);
+          openContact(id);
         }}
       />
     </div>

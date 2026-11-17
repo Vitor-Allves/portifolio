@@ -40,6 +40,49 @@ export function sourceLabel(id: string): string {
   return CRM_SOURCES.find((s) => s.id === id)?.label ?? id;
 }
 
+/** Kinds of task/activity a salesperson schedules or logs. */
+export const CRM_TASK_KINDS = [
+  { id: "ligacao", label: "Ligação" },
+  { id: "reuniao", label: "Reunião" },
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "email", label: "E-mail" },
+  { id: "tarefa", label: "Tarefa" },
+] as const;
+
+export type CrmTaskKind = (typeof CRM_TASK_KINDS)[number]["id"];
+
+export function isCrmTaskKind(value: unknown): value is CrmTaskKind {
+  return CRM_TASK_KINDS.some((k) => k.id === value);
+}
+
+export function taskKindLabel(id: string): string {
+  return CRM_TASK_KINDS.find((k) => k.id === id)?.label ?? id;
+}
+
+/** Asked when an opportunity moves to "Perdido" — feeds the loss analysis. */
+export const CRM_LOST_REASONS = [
+  { id: "sem_orcamento", label: "Sem orçamento" },
+  { id: "concorrente", label: "Escolheu outra empresa" },
+  { id: "sem_resposta", label: "Parou de responder" },
+  { id: "sem_perfil", label: "Sem perfil para o serviço" },
+  { id: "adiou", label: "Adiou o projeto" },
+  { id: "outro", label: "Outro motivo" },
+] as const;
+
+export type CrmLostReason = (typeof CRM_LOST_REASONS)[number]["id"];
+
+export function isCrmLostReason(value: unknown): value is CrmLostReason {
+  return CRM_LOST_REASONS.some((r) => r.id === value);
+}
+
+export function lostReasonLabel(id: string | null): string {
+  return CRM_LOST_REASONS.find((r) => r.id === id)?.label ?? "";
+}
+
+export function isClosedStage(stage: string): boolean {
+  return stage === "ganho" || stage === "perdido";
+}
+
 /** Whether the lead agreed to be contacted. "descadastrado" is derived from opted_out_at, never stored here. */
 export const CRM_CONSENT = [
   { id: "sim", label: "Aceitou contato" },
@@ -140,7 +183,9 @@ export type CrmEventKind =
   | "consent"
   | "opt_out"
   | "archived"
-  | "restored";
+  | "restored"
+  | "deal"
+  | "task";
 
 export type CrmEvent = {
   id: string;
@@ -150,13 +195,100 @@ export type CrmEvent = {
   createdAt: string;
 };
 
+/** An opportunity (negócio) as stored — one contact may have several over time. */
+export type CrmDeal = {
+  id: string;
+  contactId: string;
+  title: string;
+  /** Centavos; null = not estimated yet. */
+  valueCents: number | null;
+  stage: CrmStage;
+  ownerId: string | null;
+  ownerName: string | null;
+  expectedCloseAt: string | null;
+  lostReason: CrmLostReason | null;
+  lostNote: string | null;
+  stageChangedAt: string;
+  closedAt: string | null;
+  createdAt: string;
+};
+
+export type CrmTaskSummary = { id: string; kind: CrmTaskKind; title: string; dueAt: string | null; allDay: boolean };
+
+/** One card on the funnel: the opportunity plus what the board shows of its contact. */
+export type CrmDealCard = CrmDeal & {
+  contactName: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  source: CrmSource;
+  referredBy: string | null;
+  hasAdReferral: boolean;
+  unreadCount: number;
+  lastInboundAt: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  /** Earliest pending task for this opportunity (or for its contact with no opportunity set). */
+  nextTask: CrmTaskSummary | null;
+};
+
+export type CrmTask = CrmTaskSummary & {
+  contactId: string;
+  contactName: string;
+  company: string | null;
+  dealId: string | null;
+  dealTitle: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  doneAt: string | null;
+  doneByName: string | null;
+  result: string | null;
+  canceledAt: string | null;
+  createdAt: string;
+  createdByName: string | null;
+};
+
 export type CrmContactDetail = CrmContactCard & {
   consentSource: string | null;
   consentAt: string | null;
   adReferral: CrmAdReferral | null;
   messages: CrmMessage[];
   events: CrmEvent[];
+  /** Open ones first, then the closed ones, newest first. */
+  deals: CrmDeal[];
+  /** Pending tasks (soonest first) and the latest finished ones. */
+  tasks: CrmTask[];
 };
+
+/** "R$ 1.500,50" / "1500.5" / 1500.5 → centavos. Empty → null. Throws a pt-BR message on garbage. */
+export function parseMoneyToCents(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  let n: number;
+  if (typeof value === "number") n = value;
+  else if (typeof value === "string") {
+    const raw = value.replace(/[R$\s]/g, "");
+    if (!raw) return null;
+    // pt-BR: "1.500,50" → 1500.50 and "2.000" → 2000 (dots as thousands);
+    // a plain "1500.50" is also accepted.
+    const normalized = raw.includes(",")
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : /^\d{1,3}(\.\d{3})+$/.test(raw)
+        ? raw.replace(/\./g, "")
+        : raw;
+    n = Number(normalized);
+  } else throw new Error("Valor inválido.");
+  if (!Number.isFinite(n) || n < 0 || n > 1e10) throw new Error("Valor inválido.");
+  return Math.round(n * 100);
+}
+
+export function formatBRL(cents: number | null, opts: { compact?: boolean } = {}): string {
+  if (cents === null) return "";
+  const reais = cents / 100;
+  if (opts.compact && reais >= 1000) {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(reais);
+  }
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: reais % 1 ? 2 : 0 }).format(reais);
+}
 
 export type CrmCompanyRow = {
   id: string;
@@ -206,6 +338,8 @@ export type CrmImportDefaults = {
   ownerId?: string | null;
   consentStatus?: string;
   consentSource?: string;
+  /** Open an opportunity in "Novo" for each imported contact (default true). */
+  createDeals?: boolean;
 };
 
 export type CrmImportRowResult = {

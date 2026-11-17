@@ -5,9 +5,13 @@ import {
   CRM_CONSENT,
   CRM_SOURCES,
   CRM_STAGES,
+  formatBRL,
   formatPhone,
+  isClosedStage,
+  lostReasonLabel,
   serviceWindowRemainingMs,
   stageLabel,
+  taskKindLabel,
   type CrmContactDetail,
   type CrmEvent,
   type CrmMessage,
@@ -16,9 +20,11 @@ import {
   type CrmTemplate,
 } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
-import { dateTime, initials, shortDate, spDate, windowLabel } from "./crm-format";
+import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, timeOfDay, windowLabel } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
+import CrmDealsTasksTab from "./CrmDealsTasksTab";
+import CrmLostDialog from "./CrmLostDialog";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -32,6 +38,10 @@ type CrmContactPanelProps = {
   onChanged: () => void;
   /** The contact was just moved to Ganho from this panel. */
   onWon?: (name: string) => void;
+  /** Opportunity to focus (opened from a funnel card). */
+  initialDealId?: string | null;
+  initialTab?: "conversa" | "negocio" | "detalhes";
+  currentUserId: string;
 };
 
 const PANEL_REFRESH_MS = 5_000;
@@ -99,9 +109,11 @@ function describeEvent(e: CrmEvent): string {
       if (p.via === "importacao") return `Contato importado da planilha "${String(p.fileName ?? "planilha")}"`;
       return p.via === "anuncio" ? "Contato criado por um anúncio de clique para o WhatsApp" : p.via === "whatsapp" ? "Contato criado ao mandar mensagem" : "Contato criado";
     case "stage":
-      return `Etapa: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${p.auto ? " (automático, o lead respondeu)" : ""}`;
+      return `Etapa${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${
+        p.auto ? " (automático, o lead respondeu)" : ""
+      }${p.lostReason ? ` · motivo: ${lostReasonLabel(String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}`;
     case "owner":
-      return `Responsável: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}`;
+      return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}`;
     case "next_action":
       return p.text || p.at ? `Próxima ação: ${p.text ?? "sem descrição"}${p.at ? ` · ${shortDate(String(p.at))}` : ""}` : "Próxima ação removida";
     case "note":
@@ -118,6 +130,34 @@ function describeEvent(e: CrmEvent): string {
       return "Contato arquivado";
     case "restored":
       return p.auto ? "Voltou ao funil (mandou mensagem)" : "Contato restaurado";
+    case "deal": {
+      if (p.action === "created") return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
+      const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
+      const show = (c: { field: string }, v: string | null) =>
+        v === null ? "vazio" : c.field === "Valor" ? formatBRL(Number(v)) : c.field === "Previsão de fechamento" ? shortDate(v) : v;
+      return `Oportunidade "${String(p.title)}": ${changes.map((c) => `${c.field} ${show(c, c.from)} → ${show(c, c.to)}`).join(" · ")}`;
+    }
+    case "task": {
+      const what = `${taskKindLabel(String(p.kind))}: ${String(p.title)}`;
+      const when = typeof p.dueAt === "string" ? ` · ${shortDate(p.dueAt)}${p.allDay === false ? ` ${timeOfDay(p.dueAt)}` : ""}` : "";
+      const result = p.result ? ` — ${String(p.result)}` : "";
+      switch (p.action) {
+        case "created":
+          return `Tarefa agendada · ${what}${when}`;
+        case "logged":
+          return `Registrou ${what}${result}`;
+        case "done":
+          return `Concluiu ${what}${result}`;
+        case "rescheduled":
+          return `Reagendou ${what}${when || " · sem data"}`;
+        case "reopened":
+          return `Reabriu ${what}`;
+        case "canceled":
+          return `Cancelou ${what}`;
+        default:
+          return what;
+      }
+    }
   }
 }
 
@@ -300,17 +340,21 @@ export default function CrmContactPanel({
   onClose,
   onChanged,
   onWon,
+  initialDealId = null,
+  initialTab = "conversa",
+  currentUserId,
 }: CrmContactPanelProps) {
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"conversa" | "detalhes">("conversa");
+  const [tab, setTab] = useState<"conversa" | "negocio" | "detalhes">(initialTab);
+  const [dealPick, setDealPick] = useState<string | null>(initialDealId);
+  const [lostPending, setLostPending] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [note, setNote] = useState("");
   const [form, setForm] = useState<ContactForm | null>(null);
-  const [nextAction, setNextAction] = useState<{ text: string; date: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
@@ -432,7 +476,27 @@ export default function CrmContactPanel({
         }
       : null);
   const edit = (changes: Partial<ContactForm>) => fields && setForm({ ...fields, ...changes });
-  const next = nextAction ?? (detail ? { text: detail.nextAction ?? "", date: detail.nextActionAt ? spDate(detail.nextActionAt) : "" } : null);
+  // The opportunity the header acts on: the one picked, else the first open one, else the latest.
+  const deal =
+    detail?.deals.find((d) => d.id === dealPick) ?? detail?.deals.find((d) => !isClosedStage(d.stage)) ?? detail?.deals[0] ?? null;
+  const nextTask = detail?.tasks.find((t) => !t.doneAt) ?? null;
+
+  async function patchDeal(body: Record<string, unknown>): Promise<boolean> {
+    if (!deal) return false;
+    const res = await fetch(`/api/crm/deals/${deal.id}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      setActionError(await errorFrom(res, "Não foi possível salvar."));
+      return false;
+    }
+    setActionError(null);
+    await load();
+    onChanged();
+    return true;
+  }
 
   return (
     <>
@@ -483,58 +547,105 @@ export default function CrmContactPanel({
                   ×
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block">
-                  <span className={`${CRM_LABEL} flex items-center gap-1.5`}>
-                    <span className={`h-2 w-2 rounded-full ${STAGE_DOT[detail.stage]}`} aria-hidden="true" />
-                    Etapa
-                  </span>
-                  <select
-                    value={detail.stage}
-                    onChange={async (e) => {
-                      const stage = e.target.value;
-                      if ((await patch({ stage })) && stage === "ganho") onWon?.(detail.name);
-                    }}
-                    className={`${CRM_INPUT} mt-1`}
-                  >
-                    {CRM_STAGES.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className={`${CRM_LABEL} flex items-center gap-1.5`}>Responsável</span>
-                  <select
-                    value={detail.ownerId ?? ""}
-                    onChange={(e) => void patch({ ownerId: e.target.value || null })}
-                    className={`${CRM_INPUT} mt-1`}
-                  >
-                    <option value="">Sem responsável</option>
-                    {team.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              {deal ? (
+                <div className="rounded-xl border border-crm-line bg-crm-sunken p-2.5 space-y-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${STAGE_DOT[deal.stage]}`} aria-hidden="true" />
+                    {detail.deals.length > 1 ? (
+                      <select
+                        value={deal.id}
+                        onChange={(e) => setDealPick(e.target.value)}
+                        aria-label="Oportunidade"
+                        className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-crm-text focus:outline-none truncate"
+                      >
+                        {detail.deals.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.title} · {stageLabel(d.stage)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="min-w-0 flex-1 text-[13px] font-semibold truncate">{deal.title}</span>
+                    )}
+                    <span className="text-[13px] font-semibold tabular-nums">{formatBRL(deal.valueCents) || <span className="text-crm-faint font-normal">sem valor</span>}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className={CRM_LABEL}>Etapa</span>
+                      <select
+                        value={deal.stage}
+                        onChange={async (e) => {
+                          const stage = e.target.value;
+                          if (stage === "perdido") return setLostPending(deal.id);
+                          if ((await patchDeal({ stage })) && stage === "ganho") onWon?.(deal.title);
+                        }}
+                        aria-label="Etapa da oportunidade"
+                        className={`${CRM_INPUT} mt-1 !py-1.5`}
+                      >
+                        {CRM_STAGES.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className={CRM_LABEL}>Responsável</span>
+                      <select
+                        value={deal.ownerId ?? ""}
+                        onChange={(e) => void patchDeal({ ownerId: e.target.value || null })}
+                        aria-label="Responsável pela oportunidade"
+                        className={`${CRM_INPUT} mt-1 !py-1.5`}
+                      >
+                        <option value="">Sem responsável</option>
+                        {team.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {deal.stage === "perdido" && deal.lostReason && (
+                    <p className="text-[11.5px] text-crm-red">
+                      Perdida: {lostReasonLabel(deal.lostReason)}
+                      {deal.lostNote ? ` · ${deal.lostNote}` : ""}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-dashed border-crm-line-strong px-3 py-2.5">
+                  <span className="text-[12.5px] text-crm-dim">Sem oportunidade no funil.</span>
+                  <button type="button" onClick={() => setTab("negocio")} className={CRM_LINK_BTN}>
+                    + Criar oportunidade
+                  </button>
+                </div>
+              )}
+              {lostPending && deal && (
+                <CrmLostDialog
+                  dealTitle={deal.title}
+                  onCancel={() => setLostPending(null)}
+                  onConfirm={async (lostReason, lostNote) => {
+                    setLostPending(null);
+                    await patchDeal({ stage: "perdido", lostReason, lostNote });
+                  }}
+                />
+              )}
               <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
                 {win ? (
                   <span className="px-2.5 py-1 rounded-full bg-crm-green/10 text-crm-green border border-crm-green/25 font-medium">Janela de 24h: {win}</span>
                 ) : (
                   <span className="px-2.5 py-1 rounded-full bg-crm-sunken text-crm-dim border border-crm-line">Janela de 24h fechada</span>
                 )}
-                {detail.nextAction || detail.nextActionAt ? (
-                  <span className="text-crm-dim">
-                    Próxima ação: <span className="text-crm-text">{detail.nextAction ?? "—"}</span>
-                    {detail.nextActionAt ? ` · ${shortDate(detail.nextActionAt)}` : ""}
-                  </span>
+                {nextTask ? (
+                  <button type="button" onClick={() => setTab("negocio")} className="text-crm-dim hover:text-crm-text text-left">
+                    Próxima tarefa: <span className="text-crm-text">{nextTask.title}</span>{" "}
+                    <span className={TASK_STATE_TONE[taskState(nextTask.dueAt, nextTask.allDay, now)]}>· {taskDueLabel(nextTask.dueAt, nextTask.allDay, now)}</span>
+                  </button>
                 ) : null}
               </div>
               <div className={`${CRM_SEGMENT_TRACK} w-fit`} role="tablist">
-                {(["conversa", "detalhes"] as const).map((t) => (
+                {(["conversa", "negocio", "detalhes"] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -543,7 +654,7 @@ export default function CrmContactPanel({
                     onClick={() => setTab(t)}
                     className={crmSegment(tab === t)}
                   >
-                    {t === "conversa" ? "Conversa" : "Detalhes e histórico"}
+                    {t === "conversa" ? "Conversa" : t === "negocio" ? "Negócio e tarefas" : "Detalhes e histórico"}
                   </button>
                 ))}
               </div>
@@ -555,7 +666,20 @@ export default function CrmContactPanel({
               </div>
             )}
 
-            {tab === "conversa" ? (
+            {tab === "negocio" ? (
+              <CrmDealsTasksTab
+                detail={detail}
+                team={team}
+                currentUserId={currentUserId}
+                selectedDealId={deal?.id ?? null}
+                onSelectDeal={setDealPick}
+                now={now}
+                onReload={async () => {
+                  await load();
+                  onChanged();
+                }}
+              />
+            ) : tab === "conversa" ? (
               <>
                 <div ref={messagesRef} className="flex-1 overflow-y-auto bg-crm-sunken px-5 py-4 space-y-2.5">
                   {detail.messages.length === 0 ? (
@@ -631,48 +755,6 @@ export default function CrmContactPanel({
               </>
             ) : (
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-                {next && (
-                  <section className="space-y-2">
-                    <h3 className={CRM_LABEL}>Próxima ação</h3>
-                    <input
-                      value={next.text}
-                      onChange={(e) => setNextAction({ ...next, text: e.target.value })}
-                      placeholder="Ex.: Ligar para confirmar a reunião"
-                      aria-label="Descrição da próxima ação"
-                      className={CRM_INPUT}
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="date"
-                        value={next.date}
-                        onChange={(e) => setNextAction({ ...next, date: e.target.value })}
-                        aria-label="Data da próxima ação"
-                        className={`${CRM_INPUT} !w-auto`}
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (await patch({ nextAction: next.text, nextActionAt: next.date || null })) setNextAction(null);
-                        }}
-                        className={CRM_LINK_BTN}
-                      >
-                        Salvar
-                      </button>
-                      {(detail.nextAction || detail.nextActionAt) && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (await patch({ nextAction: null, nextActionAt: null })) setNextAction(null);
-                          }}
-                          className="text-[12.5px] text-crm-dim hover:text-crm-text"
-                        >
-                          Concluir / limpar
-                        </button>
-                      )}
-                    </div>
-                  </section>
-                )}
-
                 {fields && (
                   <section className="space-y-2">
                     <h3 className={CRM_LABEL}>Dados do contato</h3>

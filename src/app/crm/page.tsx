@@ -4,7 +4,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sessionScopeFromCookieStore } from "@/lib/auth-context";
 import { DbConfigError } from "@/lib/db";
-import { listContacts, listQuickReplies, listTeam } from "@/lib/crm";
+import { listQuickReplies, listTeam, listUnreadContacts } from "@/lib/crm";
+import { listBoardDeals } from "@/lib/crm-deals";
+import { listTasks } from "@/lib/crm-tasks";
 import { isWhatsAppConfigured } from "@/lib/whatsapp";
 import CrmApp from "@/components/crm/CrmApp";
 import { CRM_THEME_COOKIE, parseCrmTheme } from "@/components/crm/crm-theme";
@@ -15,8 +17,14 @@ export const metadata: Metadata = {
 };
 
 async function loadBoard() {
-  const [contacts, team, quickReplies] = await Promise.all([listContacts(), listTeam(), listQuickReplies()]);
-  return { contacts, team, quickReplies };
+  const [deals, tasks, inbox, team, quickReplies] = await Promise.all([
+    listBoardDeals(),
+    listTasks({ status: "pending", owner: "all" }),
+    listUnreadContacts(),
+    listTeam(),
+    listQuickReplies(),
+  ]);
+  return { deals, tasks, inbox, team, quickReplies };
 }
 
 export default async function CrmPage() {
@@ -38,7 +46,9 @@ export default async function CrmPage() {
     const theme = parseCrmTheme((await cookies()).get(CRM_THEME_COOKIE)?.value);
     return (
       <CrmApp
-        initialContacts={loaded.contacts}
+        initialDeals={loaded.deals}
+        initialTasks={loaded.tasks}
+        initialInbox={loaded.inbox}
         team={loaded.team}
         initialQuickReplies={loaded.quickReplies}
         whatsappConfigured={isWhatsAppConfigured()}
