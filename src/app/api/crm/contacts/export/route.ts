@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeAudit } from "@/lib/audit-log";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
 import { contactFiltersFromSearch, listContactsForExport } from "@/lib/crm";
+import { nextTasksByContact } from "@/lib/crm-tasks";
 import { CRM_CONSENT, formatPhone, sourceLabel, stageLabel } from "@/lib/crm-types";
 import { rowsToCsv } from "@/lib/csv";
 
@@ -17,9 +18,10 @@ export async function GET(req: NextRequest) {
   try {
     const filters = contactFiltersFromSearch(req.nextUrl.searchParams, actor.userId);
     const contacts = await listContactsForExport(filters);
+    const nextTasks = await nextTasksByContact(contacts.map((c) => c.id));
     const header = [
       "Nome", "WhatsApp", "E-mail", "Empresa", "Cargo", "Segmento", "Cidade", "Origem", "Indicado por",
-      "Etapa", "Responsável", "Consentimento", "Descadastrado", "Próxima ação", "Data da próxima ação", "Cadastrado em",
+      "Etapa", "Responsável", "Consentimento", "Descadastrado", "Próxima tarefa", "Data da próxima tarefa", "Cadastrado em",
     ];
     const rows = contacts.map((c) => [
       c.name,
@@ -35,8 +37,8 @@ export async function GET(req: NextRequest) {
       c.ownerName ?? "",
       CRM_CONSENT.find((x) => x.id === c.consentStatus)?.label ?? "",
       c.optedOutAt ? `Sim (${day(c.optedOutAt)})` : "",
-      c.nextAction ?? "",
-      day(c.nextActionAt),
+      nextTasks.get(c.id)?.title ?? "",
+      day(nextTasks.get(c.id)?.dueAt ?? null),
       day(c.createdAt),
     ]);
     await writeAudit({

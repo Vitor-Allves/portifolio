@@ -66,3 +66,54 @@ export function initials(name: string): string {
     .map((p) => p[0]!.toUpperCase())
     .join("");
 }
+
+/** "seg., 18/11" style weekday + date, Brasília. */
+export function weekdayDate(iso: string | number | Date): string {
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(iso));
+}
+
+/** Adds n days to a "YYYY-MM-DD" (calendar math, no timezone surprises). */
+export function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Monday of the week containing `day` ("YYYY-MM-DD"). */
+export function weekStart(day: string): string {
+  const wd = new Date(`${day}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  return addDays(day, wd === 0 ? -6 : 1 - wd);
+}
+
+export type TaskState = "overdue" | "today" | "soon" | "later" | "none";
+
+/** Where a pending task stands: overdue, due today, within 7 days, later or without a date. */
+export function taskState(dueAt: string | null, allDay: boolean, now: number = Date.now()): TaskState {
+  if (!dueAt) return "none";
+  const today = spDate(now);
+  const day = spDate(dueAt);
+  if (day < today || (!allDay && day === today && Date.parse(dueAt) < now)) return "overdue";
+  if (day === today) return "today";
+  if (day <= addDays(today, 7)) return "soon";
+  return "later";
+}
+
+/** "Hoje 13:30", "Amanhã", "Atrasada · 14/11", "qui., 20/11 09:00", "Sem data". */
+export function taskDueLabel(dueAt: string | null, allDay: boolean, now: number = Date.now()): string {
+  if (!dueAt) return "Sem data";
+  const today = spDate(now);
+  const day = spDate(dueAt);
+  const time = allDay ? "" : ` ${timeOfDay(dueAt)}`;
+  if (taskState(dueAt, allDay, now) === "overdue") return `Atrasada · ${shortDate(dueAt)}${time}`;
+  if (day === today) return `Hoje${time}`;
+  if (day === addDays(today, 1)) return `Amanhã${time}`;
+  return `${weekdayDate(dueAt)}${time}`;
+}
+
+export const TASK_STATE_TONE: Record<TaskState, string> = {
+  overdue: "text-crm-red",
+  today: "text-crm-amber",
+  soon: "text-crm-text",
+  later: "text-crm-dim",
+  none: "text-crm-faint",
+};

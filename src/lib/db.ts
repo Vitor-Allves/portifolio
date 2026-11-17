@@ -41,7 +41,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -446,6 +446,78 @@ async function ensureSchema(): Promise<void> {
       [row.id, key]
     );
   }
+
+  // v6 — CRM fase 2: oportunidades (negócios com valor) e tarefas. The funnel
+  // moves from contacts to opportunities; every contact gets one carrying its
+  // current stage/owner, and every "próxima ação" becomes a task. The legacy
+  // contact columns (stage, next_action, next_action_at) stay; contact.stage
+  // is kept in sync with the contact's main opportunity from here on.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_deals (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      value_cents BIGINT,
+      stage TEXT NOT NULL DEFAULT 'novo',
+      owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      expected_close_at TIMESTAMPTZ,
+      lost_reason TEXT,
+      lost_note TEXT,
+      stage_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      closed_at TIMESTAMPTZ,
+      import_id TEXT REFERENCES crm_imports (id) ON DELETE SET NULL,
+      created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_deals_contact_idx ON crm_deals (contact_id)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_deals_stage_idx ON crm_deals (stage, closed_at)`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crm_tasks (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+      deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+      kind TEXT NOT NULL DEFAULT 'tarefa',
+      title TEXT NOT NULL,
+      due_at TIMESTAMPTZ,
+      -- true = a day without a set time ("dia todo")
+      all_day BOOLEAN NOT NULL DEFAULT true,
+      owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      done_at TIMESTAMPTZ,
+      done_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      done_by_name TEXT,
+      result TEXT,
+      canceled_at TIMESTAMPTZ,
+      created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_tasks_pending_idx ON crm_tasks (due_at) WHERE done_at IS NULL AND canceled_at IS NULL`);
+  await db.query(`CREATE INDEX IF NOT EXISTS crm_tasks_contact_idx ON crm_tasks (contact_id)`);
+  // Backfill 1: one opportunity per contact that has none yet (idempotent:
+  // a contact that already has an opportunity is skipped).
+  await db.query(
+    `INSERT INTO crm_deals (id, contact_id, title, stage, owner_id, stage_changed_at, closed_at, import_id, created_at, updated_at)
+     SELECT 'mig-' || c.id, c.id, COALESCE(co.name, c.company, c.name), c.stage, c.owner_id, c.stage_changed_at,
+            CASE WHEN c.stage IN ('ganho', 'perdido') THEN c.stage_changed_at END, c.import_id, c.created_at, c.updated_at
+     FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id
+     WHERE NOT EXISTS (SELECT 1 FROM crm_deals d WHERE d.contact_id = c.id)
+     ON CONFLICT (id) DO NOTHING`
+  );
+  // Backfill 2: each "próxima ação" becomes a pending task on that
+  // opportunity (fixed id, so a rerun never duplicates it).
+  await db.query(
+    `INSERT INTO crm_tasks (id, contact_id, deal_id, kind, title, due_at, all_day, owner_id, created_by_name, created_at, updated_at)
+     SELECT 'mig-' || c.id, c.id,
+            (SELECT d.id FROM crm_deals d WHERE d.contact_id = c.id ORDER BY d.created_at LIMIT 1),
+            'tarefa', COALESCE(c.next_action, 'Próxima ação'), c.next_action_at, true, c.owner_id, 'Migração', c.updated_at, c.updated_at
+     FROM crm_contacts c
+     WHERE c.next_action IS NOT NULL OR c.next_action_at IS NOT NULL
+     ON CONFLICT (id) DO NOTHING`
+  );
 
   await db.query(
     `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`,

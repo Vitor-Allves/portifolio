@@ -37,6 +37,8 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
   const [referredBy, setReferredBy] = useState("");
   const [consentSource, setConsentSource] = useState("");
   const [ownerId, setOwnerId] = useState(team.some((m) => m.id === currentUserId) ? currentUserId : "");
+  const [createDeal, setCreateDeal] = useState(true);
+  const [dealValue, setDealValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +70,8 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
         consentStatus,
         consentSource: consentStatus === "sim" ? consentSource : "",
         ownerId: ownerId || null,
+        createDeal,
+        dealValue: createDeal ? dealValue : "",
       }),
     });
     setSaving(false);
@@ -167,6 +171,28 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
                 onChange={(e) => setConsentSource(e.target.value)}
                 placeholder="Ex.: pediu contato no evento"
                 className={CRM_INPUT}
+              />
+            </Field>
+          )}
+        </div>
+        <div className="rounded-xl border border-crm-line bg-crm-sunken/60 px-3.5 py-3 space-y-2.5">
+          <label className="flex items-center gap-2.5 text-[13px] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={createDeal}
+              onChange={(e) => setCreateDeal(e.target.checked)}
+              className="h-4 w-4 accent-[var(--crm-accent)]"
+            />
+            Criar oportunidade no funil (coluna Novo)
+          </label>
+          {createDeal && (
+            <Field label="Valor estimado (opcional)">
+              <input
+                value={dealValue}
+                onChange={(e) => setDealValue(e.target.value)}
+                inputMode="decimal"
+                placeholder="Ex.: 2.500 ou 2.500,00"
+                className={`${CRM_INPUT} sm:!w-1/2`}
               />
             </Field>
           )}

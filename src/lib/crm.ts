@@ -28,6 +28,8 @@ import {
   type CrmTeamMember,
 } from "./crm-types";
 import { CrmInputError, addEvent, cleanText, escapeLike, iso, resolveCompanyId, type CrmActor } from "./crm-core";
+import { createDealTx, listContactDeals, setContactStageTx, updateDealTx } from "./crm-deals";
+import { createTaskTx, listContactTasks } from "./crm-tasks";
 import type { InboundMessage, StatusUpdate } from "./whatsapp";
 
 export { CrmInputError, type CrmActor } from "./crm-core";
@@ -251,7 +253,7 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
   const row = rows[0];
   if (!row) return null;
 
-  const [messages, events] = await Promise.all([
+  const [messages, events, deals, tasks] = await Promise.all([
     db.query<{
       id: string;
       direction: "in" | "out";
@@ -278,6 +280,8 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
       `SELECT id, kind, payload, user_name, created_at FROM crm_events WHERE contact_id = $1 ORDER BY created_at ASC, seq ASC`,
       [id]
     ),
+    listContactDeals(db, id),
+    listContactTasks(db, id),
   ]);
 
   return {
@@ -303,15 +307,20 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
     events: events.rows.map(
       (e): CrmEvent => ({ id: e.id, kind: e.kind, payload: e.payload, userName: e.user_name, createdAt: iso(e.created_at)! })
     ),
+    deals,
+    tasks,
   };
 }
 
-/** "2026-11-14" (a date input) → noon in Brasília, so the stored instant never drifts into the previous/next day in either timezone. null clears it. */
-function parseNextActionDate(value: unknown): Date | null {
-  if (value === null || value === "") return null;
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new CrmInputError("Data da próxima ação inválida.");
-  return new Date(`${value}T12:00:00-03:00`);
+/** Contacts with messages nobody has opened yet — the inbox at the top of the Tarefas tab. */
+export async function listUnreadContacts(): Promise<CrmContactCard[]> {
+  const db = await getDb();
+  const { rows } = await db.query<CardRow>(
+    `${CARD_SELECT} WHERE c.archived_at IS NULL AND c.unread_count > 0 ORDER BY c.last_inbound_at DESC NULLS LAST LIMIT 50`
+  );
+  return rows.map(mapCard);
 }
+
 
 /** Normalized phone, or null when empty. Throws on something that can't be a phone. */
 export function parsePhone(value: unknown): string | null {
@@ -365,6 +374,10 @@ export type NewContactInput = {
   consentStatus?: unknown;
   consentSource?: unknown;
   ownerId?: unknown;
+  /** Open an opportunity in "Novo" for this lead (default true). */
+  createDeal?: unknown;
+  dealTitle?: unknown;
+  dealValue?: unknown;
 };
 
 export async function createContact(input: NewContactInput, actor: CrmActor): Promise<string> {
@@ -409,6 +422,9 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
       ]
     );
     await addEvent(client, id, "created", { via: "manual" }, actor);
+    if (input.createDeal !== false) {
+      await createDealTx(client, { contactId: id, title: input.dealTitle, value: input.dealValue, ownerId: ownerId ?? "" }, actor);
+    }
     return id;
   });
 }
@@ -566,11 +582,10 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
       }
     }
 
+    // Legacy: the funnel lives on opportunities now; a stage set on the
+    // contact goes to its main opportunity (which syncs contact.stage back).
     if (patch.stage !== undefined && patch.stage !== current.stage) {
-      if (!isCrmStage(patch.stage)) throw new CrmInputError("Etapa inválida.");
-      set("stage", patch.stage);
-      sets.push("stage_changed_at = now()");
-      await addEvent(client, id, "stage", { from: current.stage, to: patch.stage }, actor);
+      await setContactStageTx(client, id, patch.stage, actor);
     }
 
     if (patch.ownerId !== undefined) {
@@ -587,12 +602,9 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
       }
     }
 
-    if (patch.nextAction !== undefined || patch.nextActionAt !== undefined) {
-      const nextAction = patch.nextAction !== undefined ? cleanText(patch.nextAction, 200) : current.next_action;
-      const nextActionAt = patch.nextActionAt !== undefined ? parseNextActionDate(patch.nextActionAt) : current.next_action_at;
-      set("next_action", nextAction);
-      set("next_action_at", nextActionAt);
-      await addEvent(client, id, "next_action", { text: nextAction, at: nextActionAt ? nextActionAt.toISOString() : null }, actor);
+    // Legacy: "próxima ação" is a task now.
+    if ((patch.nextAction !== undefined && cleanText(patch.nextAction, 200)) || (typeof patch.nextActionAt === "string" && patch.nextActionAt)) {
+      await createTaskTx(client, { contactId: id, kind: "tarefa", title: patch.nextAction, dueDate: patch.nextActionAt }, actor);
     }
 
     if (changes.length > 0) await addEvent(client, id, "edited", { changes }, actor);
@@ -692,6 +704,7 @@ export async function recordInbound(msg: InboundMessage): Promise<void> {
         [contactId, msg.from, msg.profileName?.trim() || formatPhone(msg.from), msg.referral ? "anuncio" : "outro", msg.referral ? JSON.stringify(msg.referral) : null]
       );
       await addEvent(client, contactId, "created", { via: msg.referral ? "anuncio" : "whatsapp" }, null);
+      await createDealTx(client, { contactId, title: msg.referral?.headline ? `${msg.profileName?.trim() || formatPhone(msg.from)} · anúncio` : undefined }, null);
     }
 
     const inserted = await client.query(
@@ -719,11 +732,14 @@ export async function recordInbound(msg: InboundMessage): Promise<void> {
       await addEvent(client, contactId, "restored", { auto: true }, null);
     }
 
-    if (!isNew && found.rows[0].stage === "novo") {
-      const outbound = await client.query(`SELECT 1 FROM crm_messages WHERE contact_id = $1 AND direction = 'out' LIMIT 1`, [contactId]);
-      if (outbound.rows.length > 0) {
-        await client.query(`UPDATE crm_contacts SET stage = 'conversa', stage_changed_at = now() WHERE id = $1`, [contactId]);
-        await addEvent(client, contactId, "stage", { from: "novo", to: "conversa", auto: true }, null);
+    // A lead answering the team: its opportunities still in "Novo" move to "Em conversa".
+    if (!isNew) {
+      const fresh = await client.query<{ id: string }>(`SELECT id FROM crm_deals WHERE contact_id = $1 AND stage = 'novo'`, [contactId]);
+      if (fresh.rows.length > 0) {
+        const outbound = await client.query(`SELECT 1 FROM crm_messages WHERE contact_id = $1 AND direction = 'out' LIMIT 1`, [contactId]);
+        if (outbound.rows.length > 0) {
+          for (const d of fresh.rows) await updateDealTx(client, d.id, { stage: "conversa" }, null, { auto: true });
+        }
       }
     }
   });

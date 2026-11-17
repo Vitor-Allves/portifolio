@@ -52,3 +52,12 @@ export const CONSENT_BADGE = {
   nao_informado: "bg-crm-sunken text-crm-dim border-crm-line",
   descadastrado: "bg-crm-red/10 text-crm-red border-crm-red/25",
 } as const;
+
+/** Small glyph per task kind (text, so it inherits color in both themes). */
+export const TASK_KIND_ICON: Record<string, string> = {
+  ligacao: "☎",
+  reuniao: "◷",
+  whatsapp: "✆",
+  email: "✉",
+  tarefa: "✓",
+};

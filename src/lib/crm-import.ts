@@ -295,6 +295,16 @@ export async function commitImport(
       ]
     );
 
+    // One opportunity in "Novo" per imported contact (titled by company, else name).
+    if (defaults.createDeals !== false) {
+      await client.query(
+        `INSERT INTO crm_deals (id, contact_id, title, stage, owner_id, import_id, created_by)
+         SELECT gen_random_uuid()::text, t.contact_id, t.title, 'novo', $3, $4, $5
+         FROM unnest($1::text[], $2::text[]) AS t(contact_id, title)`,
+        [ids, col((r) => r.company ?? r.name), ownerId, importId, actor.userId]
+      );
+    }
+
     // History: "created via importação" for each, plus the sheet's observations as a note.
     const created = JSON.stringify({ via: "importacao", importId, fileName: cleanText(fileName, 200) });
     const noteRows = checked.fresh.map((r, i) => ({ id: ids[i], notes: r.notes })).filter((n) => n.notes);

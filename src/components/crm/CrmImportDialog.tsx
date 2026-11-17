@@ -115,6 +115,7 @@ function DialogBody({
   const [ownerId, setOwnerId] = useState(team.some((m) => m.id === currentUserId) ? currentUserId : "");
   const [consentStatus, setConsentStatus] = useState("nao_informado");
   const [consentSource, setConsentSource] = useState("");
+  const [createDeals, setCreateDeals] = useState(true);
   const [preview, setPreview] = useState<CrmImportPreview | null>(null);
   const [done, setDone] = useState<(CrmImportPreview & { importId: string }) | null>(null);
   const [undoResult, setUndoResult] = useState<string | null>(null);
@@ -166,7 +167,7 @@ function DialogBody({
     : !mapped.has("phone") && !mapped.has("email")
       ? "Indique a coluna de WhatsApp ou de e-mail."
       : null;
-  const defaults = { source: defaultSource, ownerId: ownerId || null, consentStatus, consentSource };
+  const defaults = { source: defaultSource, ownerId: ownerId || null, consentStatus, consentSource, createDeals };
 
   async function runPreview() {
     setBusy(true);
@@ -372,6 +373,15 @@ function DialogBody({
                   />
                 </label>
               )}
+              <label className="sm:col-span-2 flex items-center gap-2.5 text-[13px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={createDeals}
+                  onChange={(e) => setCreateDeals(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--crm-accent)]"
+                />
+                Criar uma oportunidade no funil (coluna Novo) para cada contato novo
+              </label>
             </section>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
