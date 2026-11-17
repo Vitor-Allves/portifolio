@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
 import { CrmInputError, getContactForSending, recordOutbound } from "@/lib/crm";
 import { serviceWindowRemainingMs } from "@/lib/crm-types";
+import { requireCap, requireContact } from "@/lib/crm-access";
 import { sendTemplate, sendText } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
@@ -18,6 +19,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!body) return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
 
   try {
+    await requireContact(actor, id);
+    requireCap(actor, "sendWhatsApp");
     const contact = await getContactForSending(id);
     if (!contact) return NextResponse.json({ error: "Contato não encontrado." }, { status: 404 });
 

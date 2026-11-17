@@ -74,6 +74,8 @@ export type TaskFilters = {
   /** Inclusive window on due_at (agenda). */
   from?: Date;
   to?: Date;
+  /** Comercial profile: only tasks on leads this user owns or that have no owner. */
+  visibleTo?: string | null;
 };
 
 /** Pending tasks soonest first (no date last), or recently finished ones — contacts that aren't archived. */
@@ -90,6 +92,7 @@ export async function listTasks(f: TaskFilters): Promise<CrmTask[]> {
   else if (f.owner && f.owner !== "all" && f.owner !== "mine") add((n) => `t.owner_id = $${n}`, f.owner);
   if (f.from) add((n) => `t.due_at >= $${n}`, f.from);
   if (f.to) add((n) => `t.due_at <= $${n}`, f.to);
+  if (f.visibleTo) add((n) => `(c.owner_id = $${n} OR c.owner_id IS NULL)`, f.visibleTo);
   const order = f.status === "done" ? "t.done_at DESC" : "t.due_at ASC NULLS LAST, t.created_at";
   const db = await getDb();
   const { rows } = await db.query<TaskRow>(`${TASK_SELECT} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 500`, values);

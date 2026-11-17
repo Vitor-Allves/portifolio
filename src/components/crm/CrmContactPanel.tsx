@@ -24,6 +24,7 @@ import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
+import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
 
 type CrmContactPanelProps = {
@@ -44,6 +45,8 @@ type CrmContactPanelProps = {
   currentUserId: string;
   /** Rendered inside a page column (Conversas, desktop) instead of as a slide-over dialog. */
   embedded?: boolean;
+  /** What the viewer's CRM profile allows (the server enforces it too). */
+  caps: CrmCapabilities;
 };
 
 const PANEL_REFRESH_MS = 5_000;
@@ -346,6 +349,7 @@ export default function CrmContactPanel({
   initialTab = "conversa",
   currentUserId,
   embedded = false,
+  caps,
 }: CrmContactPanelProps) {
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -589,7 +593,8 @@ export default function CrmContactPanel({
                           if ((await patchDeal({ stage })) && stage === "ganho") onWon?.(deal.title);
                         }}
                         aria-label="Etapa da oportunidade"
-                        className={`${CRM_INPUT} mt-1 !py-1.5`}
+                        disabled={!caps.editPipeline}
+                        className={`${CRM_INPUT} mt-1 !py-1.5 disabled:opacity-70`}
                       >
                         {CRM_STAGES.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -604,10 +609,11 @@ export default function CrmContactPanel({
                         value={deal.ownerId ?? ""}
                         onChange={(e) => void patchDeal({ ownerId: e.target.value || null })}
                         aria-label="Responsável pela oportunidade"
-                        className={`${CRM_INPUT} mt-1 !py-1.5`}
+                        disabled={!caps.editPipeline}
+                        className={`${CRM_INPUT} mt-1 !py-1.5 disabled:opacity-70`}
                       >
                         <option value="">Sem responsável</option>
-                        {team.map((m) => (
+                        {(caps.assignAnyOwner ? team : team.filter((m) => m.id === currentUserId || m.id === deal.ownerId)).map((m) => (
                           <option key={m.id} value={m.id}>
                             {m.name}
                           </option>
@@ -625,9 +631,11 @@ export default function CrmContactPanel({
               ) : (
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-dashed border-crm-line-strong px-3 py-2.5">
                   <span className="text-[12.5px] text-crm-dim">Sem oportunidade no funil.</span>
-                  <button type="button" onClick={() => setTab("negocio")} className={CRM_LINK_BTN}>
-                    + Criar oportunidade
-                  </button>
+                  {caps.editPipeline && (
+                    <button type="button" onClick={() => setTab("negocio")} className={CRM_LINK_BTN}>
+                      + Criar oportunidade
+                    </button>
+                  )}
                 </div>
               )}
               {lostPending && deal && (
@@ -678,7 +686,8 @@ export default function CrmContactPanel({
             {tab === "negocio" ? (
               <CrmDealsTasksTab
                 detail={detail}
-                team={team}
+                readOnly={!caps.editPipeline}
+                team={caps.assignAnyOwner ? team : team.filter((m) => m.id === currentUserId)}
                 currentUserId={currentUserId}
                 selectedDealId={deal?.id ?? null}
                 onSelectDeal={setDealPick}
@@ -703,7 +712,9 @@ export default function CrmContactPanel({
                   )}
                 </div>
                 <div className="border-t border-crm-line px-5 py-3 space-y-2.5">
-                  {!detail.phone ? (
+                  {!caps.sendWhatsApp ? (
+                    <p className="text-[12px] text-crm-dim">Seu perfil acompanha as conversas, mas não envia mensagens pelo CRM.</p>
+                  ) : !detail.phone ? (
                     <p className="text-[12px] text-crm-dim">
                       Este contato não tem WhatsApp cadastrado. Adicione o número em <strong>Detalhes e histórico</strong> para conversar por aqui.
                     </p>

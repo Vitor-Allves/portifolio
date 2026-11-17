@@ -64,7 +64,7 @@ function mapDeal(r: DealRow): CrmDeal {
 export const CLOSED_VISIBLE_DAYS = 30;
 
 /** The funnel: open opportunities plus those won/lost in the last 30 days, for contacts that aren't archived. */
-export async function listBoardDeals(): Promise<CrmDealCard[]> {
+export async function listBoardDeals(visibleTo: string | null = null): Promise<CrmDealCard[]> {
   const db = await getDb();
   const { rows } = await db.query<
     DealRow & {
@@ -103,8 +103,9 @@ export async function listBoardDeals(): Promise<CrmDealCard[]> {
      ) nt ON true
      WHERE c.archived_at IS NULL
        AND (d.stage NOT IN ('ganho', 'perdido') OR d.closed_at >= now() - make_interval(days => $1))
+       AND ($2::text IS NULL OR c.owner_id = $2 OR c.owner_id IS NULL)
      ORDER BY COALESCE(c.last_message_at, d.updated_at) DESC, d.id`,
-    [CLOSED_VISIBLE_DAYS]
+    [CLOSED_VISIBLE_DAYS, visibleTo]
   );
   return rows.map((r) => ({
     ...mapDeal(r),

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { writeAudit } from "@/lib/audit-log";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
+import { requireCap } from "@/lib/crm-access";
 import { undoImport } from "@/lib/crm-import";
 
 export const runtime = "nodejs";
@@ -11,6 +12,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   try {
+    requireCap(actor, "importContacts");
     const result = await undoImport(id, actor);
     if (!result) return NextResponse.json({ error: "Importação não encontrada ou já desfeita." }, { status: 404 });
     await writeAudit({

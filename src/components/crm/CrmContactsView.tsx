@@ -39,13 +39,16 @@ export default function CrmContactsView({
   version,
   onOpenContact,
   onImport,
+  canExport,
   onNew,
 }: {
   team: CrmTeamMember[];
   /** Bumped whenever something changed elsewhere (panel, import) — the list refetches. */
   version: number;
   onOpenContact: (id: string) => void;
-  onImport: () => void;
+  /** Absent when the profile can't import. */
+  onImport?: () => void;
+  canExport: boolean;
   onNew: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -212,12 +215,16 @@ export default function CrmContactsView({
         </button>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <a href={`/api/crm/contacts/export/?${params}`} className={CRM_BTN_OUTLINE} download>
-            Exportar CSV
-          </a>
-          <button type="button" onClick={onImport} className={CRM_BTN_OUTLINE}>
-            Importar planilha
-          </button>
+          {canExport && (
+            <a href={`/api/crm/contacts/export/?${params}`} className={CRM_BTN_OUTLINE} download>
+              Exportar CSV
+            </a>
+          )}
+          {onImport && (
+            <button type="button" onClick={onImport} className={CRM_BTN_OUTLINE}>
+              Importar planilha
+            </button>
+          )}
           <button type="button" onClick={onNew} className={CRM_BTN_PRIMARY}>
             + Novo contato
           </button>

@@ -33,6 +33,8 @@ import { CrmInputError, addEvent, cleanText, escapeLike, iso, resolveCompanyId, 
 import { createDealTx, listContactDeals, setContactStageTx, updateDealTx } from "./crm-deals";
 import { createTaskTx, listContactTasks } from "./crm-tasks";
 import type { InboundMessage, StatusUpdate } from "./whatsapp";
+import { effectiveCrmAccess } from "./crm-permissions";
+import type { StaffRole } from "./session-scope";
 
 export { CrmInputError, type CrmActor } from "./crm-core";
 
@@ -114,11 +116,10 @@ function mapCard(r: CardRow): CrmContactCard {
 }
 
 /** Everything on the Kanban board — archived leads stay out of it. */
-export async function listContacts(): Promise<CrmContactCard[]> {
+export async function listContacts(visibleTo: string | null = null): Promise<CrmContactCard[]> {
+  const { sql, values } = contactWhere({ visibleTo });
   const db = await getDb();
-  const { rows } = await db.query<CardRow>(
-    `${CARD_SELECT} WHERE c.archived_at IS NULL ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`
-  );
+  const { rows } = await db.query<CardRow>(`${CARD_SELECT} ${sql} ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`, values);
   return rows.map(mapCard);
 }
 
@@ -136,6 +137,8 @@ export type ContactFilters = {
   companyId?: string;
   /** true = only archived; default = only active. */
   archived?: boolean;
+  /** Comercial profile: only leads this user owns or that have no owner. */
+  visibleTo?: string | null;
 };
 
 export type ContactSort = "recent" | "name" | "created";
@@ -169,6 +172,7 @@ function contactWhere(f: ContactFilters): { sql: string; values: unknown[] } {
   if (f.consent === "descadastrado") where.push("c.opted_out_at IS NOT NULL");
   else if (f.consent && isCrmConsentStatus(f.consent)) add((n) => `c.consent_status = $${n} AND c.opted_out_at IS NULL`, f.consent);
   if (f.companyId) add((n) => `c.company_id = $${n}`, f.companyId);
+  if (f.visibleTo) add((n) => `(c.owner_id = $${n} OR c.owner_id IS NULL)`, f.visibleTo);
   return { sql: `WHERE ${where.join(" AND ")}`, values };
 }
 
@@ -241,12 +245,13 @@ export async function listFacets(): Promise<CrmFacets> {
   return { segments: pick("segment"), cities: pick("city") };
 }
 
+/** People who can own leads: active staff with access to the CRM. */
 export async function listTeam(): Promise<CrmTeamMember[]> {
   const db = await getDb();
-  const { rows } = await db.query<{ id: string; name: string }>(
-    `SELECT id, name FROM internal_users WHERE revoked_at IS NULL ORDER BY name`
+  const { rows } = await db.query<{ id: string; name: string; role: StaffRole; crm_role: string | null }>(
+    `SELECT id, name, role, crm_role FROM internal_users WHERE revoked_at IS NULL ORDER BY name`
   );
-  return rows;
+  return rows.filter((r) => effectiveCrmAccess(r.crm_role, r.role) !== "sem_acesso").map((r) => ({ id: r.id, name: r.name }));
 }
 
 export async function getContactDetail(id: string): Promise<CrmContactDetail | null> {
@@ -315,16 +320,18 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
 }
 
 /** Contacts with messages nobody has opened yet — the inbox at the top of the Tarefas tab. */
-export async function listUnreadContacts(): Promise<CrmContactCard[]> {
+export async function listUnreadContacts(visibleTo: string | null = null): Promise<CrmContactCard[]> {
+  const { sql, values } = contactWhere({ visibleTo });
   const db = await getDb();
   const { rows } = await db.query<CardRow>(
-    `${CARD_SELECT} WHERE c.archived_at IS NULL AND c.unread_count > 0 ORDER BY c.last_inbound_at DESC NULLS LAST LIMIT 50`
+    `${CARD_SELECT} ${sql} AND c.unread_count > 0 ORDER BY c.last_inbound_at DESC NULLS LAST LIMIT 50`,
+    values
   );
   return rows.map(mapCard);
 }
 
 
-export type ConversationFilters = Pick<ContactFilters, "q" | "owner" | "currentUserId"> & {
+export type ConversationFilters = Pick<ContactFilters, "q" | "owner" | "currentUserId" | "visibleTo"> & {
   /** Only conversations with an opportunity in this funnel stage. */
   stage?: string;
   unread?: boolean;
@@ -339,7 +346,8 @@ export async function listConversations(
   f: ConversationFilters,
   opts: { before?: string | null; limit?: number } = {}
 ): Promise<{ rows: CrmConversation[]; next: string | null; unreadTotal: number }> {
-  const { sql, values } = contactWhere({ q: f.q, owner: f.owner, currentUserId: f.currentUserId });
+  const { sql, values } = contactWhere({ q: f.q, owner: f.owner, currentUserId: f.currentUserId, visibleTo: f.visibleTo });
+  const unreadScope = contactWhere({ visibleTo: f.visibleTo });
   const extra = ["c.last_message_at IS NOT NULL"];
   if (f.unread) extra.push("c.unread_count > 0");
   if (f.stage && isCrmStage(f.stage)) {
@@ -364,7 +372,7 @@ export async function listConversations(
        ORDER BY x.last_message_at DESC, x.id DESC`,
       values
     ),
-    db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts WHERE archived_at IS NULL AND unread_count > 0`),
+    db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts c ${unreadScope.sql} AND c.unread_count > 0`, unreadScope.values),
   ]);
   const order = new Map<string, number>(CRM_STAGES.map((st, i) => [st.id, i]));
   const rows = list.rows.slice(0, limit).map((r) => ({

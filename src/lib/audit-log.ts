@@ -24,7 +24,8 @@ export type AuditAction =
   | "consultant.whatsapp_click"
   | "crm.import"
   | "crm.import_undo"
-  | "crm.export";
+  | "crm.export"
+  | "crm.role_change";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

@@ -77,11 +77,12 @@ export async function listCompanies(filters: CompanyFilters, page: number, pageS
   return { rows: rows.map(mapCompany), total: Number(total.rows[0].n), page, pageSize };
 }
 
-export async function getCompanyDetail(id: string): Promise<CrmCompanyDetail | null> {
+/** `visibleTo` (Comercial) limits the contacts listed to that user's leads and the unowned ones. */
+export async function getCompanyDetail(id: string, visibleTo: string | null = null): Promise<CrmCompanyDetail | null> {
   const db = await getDb();
   const { rows } = await db.query<CompanyRow>(`${COMPANY_SELECT} WHERE co.id = $1 GROUP BY co.id`, [id]);
   if (!rows[0]) return null;
-  const contacts: CrmContactCard[] = (await listContactsPage({ companyId: id }, 1, 200, "name")).rows;
+  const contacts: CrmContactCard[] = (await listContactsPage({ companyId: id, visibleTo }, 1, 200, "name")).rows;
   return { ...mapCompany(rows[0]), contacts };
 }
 

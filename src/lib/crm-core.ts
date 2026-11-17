@@ -12,6 +12,12 @@ export type CrmActor = { userId: string; userName: string } | null;
 /** A validation failure worth showing the user as-is (pt-BR), unlike an unexpected error. */
 export class CrmInputError extends Error {}
 
+/** The acting profile may not do this (→ 403, message shown as-is). */
+export class CrmForbiddenError extends Error {}
+
+/** The record doesn't exist — or isn't visible to this profile, which reads the same (→ 404). */
+export class CrmNotFoundError extends Error {}
+
 export function iso(d: Date | string | null): string | null {
   if (!d) return null;
   return d instanceof Date ? d.toISOString() : new Date(d).toISOString();
