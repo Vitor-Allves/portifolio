@@ -25,6 +25,7 @@ import { TASK_STATE_TONE, relativeTime, shortDate, taskDueLabel, taskState, wind
 import CrmSidebar, { CRM_SECTIONS, CrmSectionIcon, type CrmView } from "./CrmSidebar";
 import CrmConversationsView from "./CrmConversationsView";
 import CrmTeamView from "./CrmTeamView";
+import CrmDashboardView from "./CrmDashboardView";
 import { crmAccessLabel, crmCapabilities, type CrmRole } from "@/lib/crm-permissions";
 import CrmContactPanel from "./CrmContactPanel";
 import CrmNewContactDialog from "./CrmNewContactDialog";
@@ -200,7 +201,7 @@ export default function CrmApp({
   const [tasks, setTasks] = useState(initialTasks);
   const [inbox, setInbox] = useState(initialInbox);
   const [quickReplies, setQuickReplies] = useState(initialQuickReplies);
-  const [view, setView] = useState<CrmView>("board");
+  const [view, setView] = useState<CrmView>("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // The conversation open beside the Conversas list (wide screens only).
@@ -368,7 +369,7 @@ export default function CrmApp({
         onCloseMobile={() => setMobileNavOpen(false)}
         currentUserName={currentUserName}
         roleLabel={crmAccessLabel(role)}
-        sections={["board", "conversations", "tasks", "agenda", "contacts", "companies", ...(caps.manageTeam ? (["team"] as const) : [])]}
+        sections={["dashboard", "board", "conversations", "tasks", "agenda", "contacts", "companies", ...(caps.manageTeam ? (["team"] as const) : [])]}
         whatsappConfigured={whatsappConfigured}
         initialTheme={initialTheme}
       />
@@ -401,7 +402,7 @@ export default function CrmApp({
         </header>
 
       <div className="px-4 sm:px-6 py-5 space-y-4">
-        {view === "board" && <CrmWelcome userName={currentUserName} deals={deals} tasks={tasks} unread={unread} now={now} />}
+        {view === "dashboard" && <CrmWelcome userName={currentUserName} deals={deals} tasks={tasks} unread={unread} now={now} />}
 
         {view === "board" && (
           <div className="flex flex-wrap items-center gap-2">
@@ -468,7 +469,9 @@ export default function CrmApp({
           </div>
         )}
 
-        {view === "conversations" ? (
+        {view === "dashboard" ? (
+          <CrmDashboardView team={team} currentUserId={currentUserId} seeAll={caps.seeAllLeads} version={dataVersion} now={now} />
+        ) : view === "conversations" ? (
           <CrmConversationsView
             team={team}
             version={dataVersion}

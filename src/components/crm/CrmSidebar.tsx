@@ -6,10 +6,18 @@ import CrmThemeToggle from "./CrmThemeToggle";
 import { LegadoLockup, Mascot, type MascotName } from "./crm-brand";
 import { initials } from "./crm-format";
 
-export type CrmView = "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies" | "team";
+export type CrmView = "dashboard" | "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies" | "team";
 
 /** Every CRM section: the menu label, a one-line hint, what the page is for, and a practical tip. */
 export const CRM_SECTIONS: { id: CrmView; label: string; hint: string; description: string; tip: string; mascot: MascotName }[] = [
+  {
+    id: "dashboard",
+    label: "Painel",
+    hint: "Como estamos",
+    description: "Os números do período comparados com o período anterior, o funil agora e o resultado de cada pessoa.",
+    tip: "Troque o período no topo. As setas comparam com o mesmo número de dias logo antes.",
+    mascot: "titanWelcome",
+  },
   {
     id: "board",
     label: "Funil",
@@ -69,6 +77,7 @@ export const CRM_SECTIONS: { id: CrmView; label: string; hint: string; descripti
 ];
 
 const ICONS: Record<CrmView, React.ReactNode> = {
+  dashboard: <path d="M4 13h4v7H4v-7Zm6-9h4v16h-4V4Zm6 6h4v10h-4V10Z" />,
   board: <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />,
   conversations: (
     <path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v10.5A1.5 1.5 0 0 1 20 17H9.2l-4.4 3.7A.5.5 0 0 1 4 20.3V17a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5Zm3 4.5v1.8h10V8H7Zm0 3.8v1.8h7v-1.8H7Z" />
