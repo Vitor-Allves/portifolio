@@ -173,6 +173,8 @@ export type CrmMessage = {
   status: string | null;
   error: string | null;
   sentByName: string | null;
+  /** Set when the message went out as part of a campaign (Fase 5). */
+  campaignName: string | null;
   createdAt: string;
 };
 

@@ -15,10 +15,20 @@ import type { CrmAdReferral, CrmTemplate } from "./crm-types";
 const DEFAULT_GRAPH_VERSION = "v23.0";
 
 export class WhatsAppApiError extends Error {
-  constructor(message: string) {
+  /** Graph error code when Meta answered with one (e.g. 131048 = spam rate limit). */
+  code: number | null;
+  constructor(message: string, code: number | null = null) {
     super(message);
     this.name = "WhatsAppApiError";
+    this.code = code;
   }
+}
+
+// Meta throttling the number: stop and retry later instead of burning the rest of the list.
+const RATE_LIMIT_CODES = new Set([4, 80007, 130429, 131048, 131056]);
+
+export function isRateLimited(err: unknown): boolean {
+  return err instanceof WhatsAppApiError && err.code !== null && RATE_LIMIT_CODES.has(err.code);
 }
 
 export class WhatsAppConfigError extends WhatsAppApiError {
@@ -42,6 +52,9 @@ function getConfig() {
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID!,
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || null,
     version: process.env.WHATSAPP_GRAPH_VERSION || DEFAULT_GRAPH_VERSION,
+    // Local tests only: points at a fake Graph server. Ignored in production,
+    // so the token can never be sent anywhere but Meta.
+    baseUrl: (process.env.NODE_ENV !== "production" && process.env.WHATSAPP_GRAPH_BASE_URL) || "https://graph.facebook.com",
   };
 }
 
@@ -63,7 +76,7 @@ type GraphErrorBody = { error?: { message?: string; code?: number; error_data?: 
 
 async function graph<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const config = getConfig();
-  const res = await reachMeta(`https://graph.facebook.com/${config.version}/${path}`, {
+  const res = await reachMeta(`${config.baseUrl}/${config.version}/${path}`, {
     method: init.method ?? "GET",
     headers: {
       Authorization: `Bearer ${config.token}`,
@@ -78,7 +91,7 @@ async function graph<T>(path: string, init: { method?: string; body?: unknown } 
     // error_data.details carries the actionable part, e.g. "Message failed
     // to send because more than 24 hours have passed since the customer
     // last replied to this number."
-    throw new WhatsAppApiError(`WhatsApp ${res.status}: ${err?.error_data?.details ?? err?.message ?? "erro desconhecido"}`);
+    throw new WhatsAppApiError(`WhatsApp ${res.status}: ${err?.error_data?.details ?? err?.message ?? "erro desconhecido"}`, err?.code ?? null);
   }
   return body;
 }

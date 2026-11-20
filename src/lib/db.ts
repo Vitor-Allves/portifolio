@@ -41,7 +41,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 async function ensureSchema(): Promise<void> {
   const db = getPool();
@@ -554,6 +554,53 @@ async function ensureSchema(): Promise<void> {
     );
 
     await done(7);
+  }
+
+  if (current < 8) {
+    // v8 — Campanhas (Fase 5): a campaign is one approved WhatsApp template
+    // sent to a filtered audience. Recipients are frozen when sending starts
+    // (one row per contact, so nobody gets the same campaign twice) and each
+    // sent message points back to its campaign. Only adds; nothing existing
+    // changes. See crm-campaigns.ts.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_campaigns (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'rascunho',
+        template_name TEXT,
+        template_language TEXT,
+        template_body TEXT,
+        params JSONB NOT NULL DEFAULT '[]'::jsonb,
+        audience JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        started_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        started_at TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ,
+        -- Why sending stopped on its own (e.g. Meta's rate limit), shown on the screen.
+        pause_reason TEXT
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_campaign_recipients (
+        campaign_id TEXT NOT NULL REFERENCES crm_campaigns (id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        skip_reason TEXT,
+        wa_message_id TEXT,
+        error TEXT,
+        claimed_at TIMESTAMPTZ,
+        sent_at TIMESTAMPTZ,
+        PRIMARY KEY (campaign_id, contact_id)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_campaign_recipients_status_idx ON crm_campaign_recipients (campaign_id, status)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_campaign_recipients_contact_idx ON crm_campaign_recipients (contact_id)`);
+    await db.query(`ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS campaign_id TEXT REFERENCES crm_campaigns (id) ON DELETE SET NULL`);
+
+    await done(8);
   }
 }
 

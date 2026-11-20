@@ -25,6 +25,7 @@ import { TASK_STATE_TONE, relativeTime, shortDate, taskDueLabel, taskState, wind
 import CrmSidebar, { CRM_SECTIONS, CrmSectionIcon, type CrmView } from "./CrmSidebar";
 import CrmConversationsView from "./CrmConversationsView";
 import CrmTeamView from "./CrmTeamView";
+import CrmCampaignsView from "./CrmCampaignsView";
 import CrmDashboardView from "./CrmDashboardView";
 import { crmAccessLabel, crmCapabilities, type CrmRole } from "@/lib/crm-permissions";
 import CrmContactPanel from "./CrmContactPanel";
@@ -369,7 +370,17 @@ export default function CrmApp({
         onCloseMobile={() => setMobileNavOpen(false)}
         currentUserName={currentUserName}
         roleLabel={crmAccessLabel(role)}
-        sections={["dashboard", "board", "conversations", "tasks", "agenda", "contacts", "companies", ...(caps.manageTeam ? (["team"] as const) : [])]}
+        sections={[
+          "dashboard",
+          "board",
+          "conversations",
+          "tasks",
+          "agenda",
+          "contacts",
+          "companies",
+          ...(caps.editCampaigns ? (["campaigns"] as const) : []),
+          ...(caps.manageTeam ? (["team"] as const) : []),
+        ]}
         whatsappConfigured={whatsappConfigured}
         initialTheme={initialTheme}
       />
@@ -508,6 +519,8 @@ export default function CrmApp({
             canExport={caps.exportContacts}
             onNew={() => setNewOpen(true)}
           />
+        ) : view === "campaigns" && caps.editCampaigns ? (
+          <CrmCampaignsView team={team} canSend={caps.sendCampaigns} templatesConfigured={templatesConfigured} onOpenContact={(id) => openContact(id, "conversa")} />
         ) : view === "team" && caps.manageTeam ? (
           <CrmTeamView currentUserId={currentUserId} onChanged={() => void refresh()} />
         ) : view === "companies" ? (

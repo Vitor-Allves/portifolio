@@ -41,6 +41,13 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   criadas/editadas, tarefas criadas/reagendadas/concluídas/canceladas,
   atividades registradas, notas, edições de campo, consentimento, descadastro,
   arquivamento).
+- `crm_campaigns` — campanhas: nome, situação (rascunho, enviando, pausada,
+  concluída, cancelada), modelo do WhatsApp e seu texto, de onde vem cada
+  variável (`params`), filtros do público (`audience`), quem criou e quem
+  disparou. `crm_campaign_recipients` — uma linha por contato da campanha
+  (chave campanha + contato): na fila, enviada, falhou ou ficou de fora (com
+  o motivo), id da mensagem no WhatsApp. `crm_messages.campaign_id` liga a
+  mensagem enviada à campanha.
 - `crm_imports` — cada importação de planilha (quem, quando, contagens, se foi
   desfeita). `crm_quick_replies` — respostas rápidas.
 
@@ -59,6 +66,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Contatos, empresas, notas, consentimento, arquivar | sim | sim | nos seus | sim |
   | Importar / desfazer importação | sim | sim | não | sim |
   | Exportar CSV | sim | sim | não | sim |
+  | Campanhas: montar rascunho e ver resultados | sim | sim | não | sim |
+  | Campanhas: disparar, pausar, cancelar | sim | sim | não | não |
   | Equipe (definir perfis) | sim | não | não | não |
 
   Lead de outra pessoa, para o Comercial, responde como "não encontrado".
@@ -78,8 +87,17 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   quem fez e quando. Importações, desfazer importação e exportações também vão
   para o registro de auditoria (`audit_log`, visível ao administrador geral).
 - **Consentimento e descadastro:** quem escreve primeiro no WhatsApp fica com
-  consentimento "sim" (iniciou a conversa). Descadastrados ficam marcados e as
-  campanhas (fase 5) vão pulá-los.
+  consentimento "sim" (iniciou a conversa). Quem responde só "SAIR" (ou
+  "parar", "stop", "cancelar", "descadastrar", "não quero receber"…, como
+  mensagem inteira) é descadastrado na hora e recebe uma confirmação; fica no
+  histórico como automático. Descadastrados não recebem campanhas.
+- **Campanhas só para quem pode receber:** recebe quem aceitou contato, não se
+  descadastrou, não está arquivado e tem WhatsApp. A regra é aplicada quando o
+  envio começa **e de novo antes de cada mensagem** (quem pediu para sair no
+  meio do envio é pulado). Cada contato recebe a mesma campanha no máximo uma
+  vez, mesmo com dois envios ao mesmo tempo. Um envio interrompido no meio
+  (queda da função) é marcado como "falhou — confira na conversa", nunca
+  reenviado às cegas. Se a Meta limitar o número, a campanha pausa sozinha.
 - **Perda com motivo:** uma oportunidade só vai para *Perdido* com o motivo
   (sem orçamento, escolheu outra empresa, parou de responder, sem perfil,
   adiou, outro) e um detalhe opcional. Reabrir limpa o motivo; tudo fica no
@@ -109,6 +127,35 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Fase 5 — Campanhas (schema v8)
+
+- Nova seção **Campanhas** no menu (Administrador, Gestor e Marketing).
+- Montagem em 3 passos na mesma tela: nome e público (etapa, origem,
+  responsável, segmento, cidade), mensagem (modelo aprovado pela Meta; cada
+  variável vem do primeiro nome, nome, empresa ou responsável do contato, com
+  texto reserva, ou de um texto fixo) e revisão. Ao lado, ao vivo: quantos vão
+  receber, quem fica de fora e por quê, e como a mensagem chega para os
+  primeiros contatos.
+- **Só WhatsApp, só "enviar agora"** (sem agendamento por enquanto). O envio
+  roda com a página aberta, em lotes de ~5 s (`POST
+  /api/crm/campaigns/[id]/send` com `batch`), com barra de progresso, pausar,
+  continuar e cancelar. Fechar a página para o envio; ao reabrir aparece
+  "Continuar envio".
+- Marketing monta e salva rascunhos; **só Administrador e Gestor disparam**.
+  Sem intervalo mínimo entre campanhas para a mesma pessoa.
+- Resultados por campanha: enviadas, entregues, lidas, responderam (até 3
+  dias), viraram oportunidade (até 30 dias), pediram para sair, falharam e
+  ficaram de fora, e a lista de cada contato com a situação. A mensagem
+  aparece na conversa do contato como "Campanha · nome".
+- Descadastro automático por "SAIR" no webhook (a assinatura da Meta continua
+  obrigatória).
+- Auditoria: `crm.campaign_send` (com quantos receberam e ficaram de fora),
+  `crm.campaign_cancel`, `crm.campaign_delete`.
+- Banco v8 só acrescenta: tabelas `crm_campaigns` e `crm_campaign_recipients`
+  e a coluna `crm_messages.campaign_id`.
+- Testes locais usam um servidor falso da Meta (`WHATSAPP_GRAPH_BASE_URL`,
+  ignorado em produção).
 
 ### Fase 4 — Painel de indicadores
 

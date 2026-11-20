@@ -6,7 +6,7 @@ import CrmThemeToggle from "./CrmThemeToggle";
 import { LegadoLockup, Mascot, type MascotName } from "./crm-brand";
 import { initials } from "./crm-format";
 
-export type CrmView = "dashboard" | "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies" | "team";
+export type CrmView = "dashboard" | "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies" | "campaigns" | "team";
 
 /** Every CRM section: the menu label, a one-line hint, what the page is for, and a practical tip. */
 export const CRM_SECTIONS: { id: CrmView; label: string; hint: string; description: string; tip: string; mascot: MascotName }[] = [
@@ -67,6 +67,14 @@ export const CRM_SECTIONS: { id: CrmView; label: string; hint: string; descripti
     mascot: "legacyDoubt",
   },
   {
+    id: "campaigns",
+    label: "Campanhas",
+    hint: "Mensagens para uma lista",
+    description: "Um modelo aprovado do WhatsApp enviado para um público filtrado, só para quem aceitou contato, com o resultado de cada envio.",
+    tip: "Quem responder SAIR é descadastrado na hora e não recebe as próximas. A Meta cobra cada mensagem de modelo enviada.",
+    mascot: "legacyHello",
+  },
+  {
     id: "team",
     label: "Equipe",
     hint: "Perfis de acesso",
@@ -87,6 +95,7 @@ const ICONS: Record<CrmView, React.ReactNode> = {
     <path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2ZM5 9v10h14V9H5Zm2 2h3v3H7v-3Z" />
   ),
   contacts: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-8 1.66-8 5v1h16v-1c0-3.34-4.7-5-8-5Z" />,
+  campaigns: <path d="M18 4.5v15l-6.5-3.6H8.6l1.2 4.6H7.3L6 15.9H5a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h6.5L18 4.5ZM20 9.5a2.5 2.5 0 0 1 0 5v-5Z" />,
   team: (
     <path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.5 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 19c0-3 3.1-5 7-5s7 2 7 5v1H2v-1Zm15.5 1v-1c0-1.6-.6-3-1.7-4 3.2.1 6.2 1.6 6.2 4v1h-4.5Z" />
   ),

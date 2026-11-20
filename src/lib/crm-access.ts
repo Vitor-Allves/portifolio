@@ -42,6 +42,8 @@ const DENIED: Record<keyof CrmCapabilities, string> = {
   importContacts: "Seu perfil não pode importar planilhas.",
   exportContacts: "Seu perfil não pode exportar contatos.",
   manageTeam: "Só o Administrador gerencia a equipe do CRM.",
+  editCampaigns: "Seu perfil não acessa as campanhas.",
+  sendCampaigns: "Só Administrador e Gestor disparam campanhas.",
 };
 
 export function requireCap(s: CrmSession, cap: keyof CrmCapabilities): void {

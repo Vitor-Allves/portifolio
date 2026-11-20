@@ -29,6 +29,7 @@ import {
   type CrmSource,
   type CrmTeamMember,
 } from "./crm-types";
+import { isOptOutText } from "./crm-campaign-rules";
 import { CrmInputError, addEvent, cleanText, escapeLike, iso, resolveCompanyId, type CrmActor } from "./crm-core";
 import { createDealTx, listContactDeals, setContactStageTx, updateDealTx } from "./crm-deals";
 import { createTaskTx, listContactTasks } from "./crm-tasks";
@@ -143,7 +144,7 @@ export type ContactFilters = {
 
 export type ContactSort = "recent" | "name" | "created";
 
-function contactWhere(f: ContactFilters): { sql: string; values: unknown[] } {
+export function contactWhere(f: ContactFilters): { sql: string; values: unknown[] } {
   const where: string[] = [f.archived ? "c.archived_at IS NOT NULL" : "c.archived_at IS NULL"];
   const values: unknown[] = [];
   const add = (sql: (n: number) => string, value: unknown) => {
@@ -272,13 +273,15 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
       status: string | null;
       error: string | null;
       sent_by_name: string | null;
+      campaign_name: string | null;
       created_at: Date;
     }>(
       // The latest 500, returned oldest first for display.
       `SELECT * FROM (
          SELECT m.id, m.direction, m.type, m.body, m.media_id, m.media_mime, m.template_name, m.status, m.error,
-                u.name AS sent_by_name, m.created_at, m.seq
+                u.name AS sent_by_name, k.name AS campaign_name, m.created_at, m.seq
          FROM crm_messages m LEFT JOIN internal_users u ON u.id = m.sent_by
+         LEFT JOIN crm_campaigns k ON k.id = m.campaign_id
          WHERE m.contact_id = $1 ORDER BY m.created_at DESC, m.seq DESC LIMIT 500
        ) recent ORDER BY created_at ASC, seq ASC`,
       [id]
@@ -308,6 +311,7 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
         status: m.status,
         error: m.error,
         sentByName: m.sent_by_name,
+        campaignName: m.campaign_name,
         createdAt: iso(m.created_at)!,
       })
     ),
@@ -729,14 +733,14 @@ function preview(type: string, body: string | null, templateName: string | null)
 
 export async function recordOutbound(
   contactId: string,
-  data: { waMessageId: string; type: "text" | "template"; body: string | null; templateName: string | null },
+  data: { waMessageId: string; type: "text" | "template"; body: string | null; templateName: string | null; campaignId?: string | null },
   actor: CrmActor
 ): Promise<void> {
   const db = await getDb();
   await db.query(
-    `INSERT INTO crm_messages (id, contact_id, wa_message_id, direction, type, body, template_name, status, sent_by)
-     VALUES ($1, $2, $3, 'out', $4, $5, $6, 'sent', $7)`,
-    [randomUUID(), contactId, data.waMessageId, data.type, data.body, data.templateName, actor?.userId ?? null]
+    `INSERT INTO crm_messages (id, contact_id, wa_message_id, direction, type, body, template_name, status, sent_by, campaign_id)
+     VALUES ($1, $2, $3, 'out', $4, $5, $6, 'sent', $7, $8)`,
+    [randomUUID(), contactId, data.waMessageId, data.type, data.body, data.templateName, actor?.userId ?? null, data.campaignId ?? null]
   );
   await db.query(
     `UPDATE crm_contacts SET last_message_at = now(), last_message_preview = $2, updated_at = now() WHERE id = $1`,
@@ -752,10 +756,10 @@ export async function recordOutbound(
  * answers a message the team sent moves to "Em conversa" on its own; an
  * archived lead that writes again comes back to the board.
  */
-export async function recordInbound(msg: InboundMessage): Promise<void> {
-  await withTransaction(async (client) => {
-    const found = await client.query<{ id: string; stage: string; archived_at: Date | null }>(
-      `SELECT id, stage, archived_at FROM crm_contacts WHERE phone = ANY($1) ORDER BY created_at LIMIT 1 FOR UPDATE`,
+export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { contactId: string; phone: string } | null }> {
+  return withTransaction(async (client) => {
+    const found = await client.query<{ id: string; stage: string; archived_at: Date | null; opted_out_at: Date | null }>(
+      `SELECT id, stage, archived_at, opted_out_at FROM crm_contacts WHERE phone = ANY($1) ORDER BY created_at LIMIT 1 FOR UPDATE`,
       [phoneVariants(msg.from)]
     );
     let contactId = found.rows[0]?.id;
@@ -778,7 +782,7 @@ export async function recordInbound(msg: InboundMessage): Promise<void> {
        ON CONFLICT (wa_message_id) DO NOTHING`,
       [randomUUID(), contactId, msg.waMessageId, msg.type, msg.body, msg.mediaId, msg.mediaMime, msg.timestamp]
     );
-    if (inserted.rowCount === 0) return;
+    if (inserted.rowCount === 0) return { optedOut: null };
 
     await client.query(
       `UPDATE crm_contacts
@@ -807,6 +811,15 @@ export async function recordInbound(msg: InboundMessage): Promise<void> {
         }
       }
     }
+
+    // "SAIR" (and similar, as the whole message) unsubscribes from campaigns.
+    // The webhook route sends the confirmation after this commits.
+    if (!isNew && !found.rows[0].opted_out_at && isOptOutText(msg.body)) {
+      await client.query(`UPDATE crm_contacts SET opted_out_at = now(), updated_at = now() WHERE id = $1`, [contactId]);
+      await addEvent(client, contactId, "opt_out", { value: true, auto: true, text: msg.body?.trim().slice(0, 60) }, null);
+      return { optedOut: { contactId, phone: msg.from } };
+    }
+    return { optedOut: null };
   });
 }
 
