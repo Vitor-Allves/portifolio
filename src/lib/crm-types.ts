@@ -374,6 +374,58 @@ export type CrmImportSummary = {
 
 export type CrmTeamMember = { id: string; name: string };
 
+/** Numbers of one period on the Painel (Fase 4). */
+export type CrmDashboardMetrics = {
+  newLeads: number;
+  newDeals: number;
+  /** Opportunities that entered "Reunião agendada" / "Proposta enviada" in the period. */
+  meetings: number;
+  proposals: number;
+  wonCount: number;
+  wonValueCents: number;
+  lostCount: number;
+  lostValueCents: number;
+  /** won / (won + lost); null with nothing closed. */
+  conversion: number | null;
+  /** Mean value of the won opportunities that have a value. */
+  avgTicketCents: number | null;
+  /** Mean days from opening to winning. */
+  avgCycleDays: number | null;
+  tasksDone: number;
+};
+
+export type CrmDashboard = {
+  /** Inclusive Brasília dates (YYYY-MM-DD). */
+  from: string;
+  to: string;
+  previousFrom: string;
+  previousTo: string;
+  current: CrmDashboardMetrics;
+  previous: CrmDashboardMetrics;
+  /** Right now, whatever the period. */
+  openNow: { count: number; valueCents: number };
+  tasksNow: { overdue: number; today: number };
+  /** Open opportunities per stage now, plus won/lost in the period. */
+  funnel: { stage: CrmStage; count: number; valueCents: number }[];
+  bucket: "week" | "month";
+  series: { start: string; label: string; newLeads: number; won: number }[];
+  lossReasons: { reason: CrmLostReason | "sem_motivo"; count: number; valueCents: number }[];
+  sources: { source: CrmSource; newLeads: number; won: number; wonValueCents: number }[];
+  team: {
+    ownerId: string | null;
+    name: string;
+    openCount: number;
+    openValueCents: number;
+    wonCount: number;
+    wonValueCents: number;
+    lostCount: number;
+    conversion: number | null;
+    tasksDone: number;
+    tasksOverdue: number;
+    lastActivityAt: string | null;
+  }[];
+};
+
 export type CrmQuickReply = { id: string; title: string; body: string };
 
 export type CrmTemplate = {

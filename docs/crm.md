@@ -110,6 +110,27 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
 ## Registro de alterações
 
+### Fase 4 — Painel de indicadores
+
+- **Painel** é a nova página inicial do CRM (primeiro item do menu), com a
+  faixa de boas-vindas no topo.
+- Filtros de período (este mês, mês passado, 7/30/90 dias, este ano ou datas
+  livres) e de responsável. O Comercial vê só os próprios números (regra no
+  servidor, mesmo pedindo os de outra pessoa).
+- Indicadores do período, cada um comparado com o mesmo número de dias logo
+  antes: novos leads, novas oportunidades, reuniões e propostas (oportunidades
+  que entraram nessas etapas), ganhos e perdidos (quantidade e R$), conversão
+  (ganhos ÷ fechados), ticket médio, tempo médio até ganhar e tarefas
+  concluídas.
+- Gráficos: funil agora (quantidade e valor por etapa), novos leads × ganhos
+  semana a semana (mês a mês acima de 92 dias, com opção de tabela), motivos
+  de perda e origem dos leads com quantos viraram ganho.
+- Tabela por pessoa: em aberto, ganhos, perdidos, conversão, tarefas feitas e
+  atrasadas, última atividade; inclui "Sem responsável" quando há trabalho
+  sem dono.
+- Só lê dados (`src/lib/crm-dashboard.ts`, `GET /api/crm/dashboard`); sem
+  mudança no banco. Contatos arquivados ficam fora, como no funil.
+
 ### Fase 3 — Usuários e permissões (schema v7)
 
 - Perfis do CRM (Administrador, Gestor, Comercial, Marketing, Sem acesso) com

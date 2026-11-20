@@ -359,6 +359,8 @@ select:focus-visible {
   --color-crm-amber: var(--crm-amber);
   --color-crm-red: var(--crm-red);
   --color-crm-violet: var(--crm-violet);
+  --color-crm-chart-1: var(--crm-chart-1);
+  --color-crm-chart-2: var(--crm-chart-2);
   --color-crm-silver: var(--crm-silver);
   --color-crm-navy: var(--crm-navy);
   --color-crm-bubble-out: var(--crm-bubble-out);
@@ -390,6 +392,9 @@ select:focus-visible {
   --crm-amber: #b45309;
   --crm-red: #dc2626;
   --crm-violet: #6d28d9;
+  /* Painel chart series — validated (dataviz): lightness, chroma, CVD, contrast. */
+  --crm-chart-1: #2f5fa7;
+  --crm-chart-2: #0f9f8f;
   --crm-silver: #6b727c;
   --crm-navy: #1f3a63;
   --crm-bubble-out: #1f3a63;
@@ -427,6 +432,8 @@ select:focus-visible {
   --crm-amber: #fbbf24;
   --crm-red: #f87171;
   --crm-violet: #a78bfa;
+  --crm-chart-1: #4f86e0;
+  --crm-chart-2: #1aa898;
   --crm-silver: #bfc3c9;
   --crm-navy: #1f3a63;
   --crm-bubble-out: #1f3a63;
@@ -463,6 +470,8 @@ select:focus-visible {
     --crm-amber: #fbbf24;
     --crm-red: #f87171;
     --crm-violet: #a78bfa;
+    --crm-chart-1: #4f86e0;
+    --crm-chart-2: #1aa898;
     --crm-silver: #bfc3c9;
     --crm-navy: #1f3a63;
     --crm-bubble-out: #1f3a63;
