@@ -10,9 +10,9 @@ export type CrmAccess = CrmRole | "sem_acesso";
 
 export const CRM_ACCESS_OPTIONS: { id: CrmAccess; label: string; description: string }[] = [
   { id: "administrador", label: "Administrador", description: "Tudo, inclusive definir o perfil de cada pessoa da equipe." },
-  { id: "gestor", label: "Gestor", description: "Vê e mexe em todos os leads, troca responsáveis, importa e exporta." },
+  { id: "gestor", label: "Gestor", description: "Vê e mexe em todos os leads, troca responsáveis, importa, exporta e dispara campanhas." },
   { id: "comercial", label: "Comercial", description: "Vê e trabalha só os próprios leads e os sem responsável." },
-  { id: "marketing", label: "Marketing", description: "Cadastra, importa e exporta contatos; vê o funil sem mexer nele." },
+  { id: "marketing", label: "Marketing", description: "Cadastra, importa e exporta contatos; monta campanhas para o Gestor disparar; vê o funil sem mexer nele." },
   { id: "sem_acesso", label: "Sem acesso", description: "Não entra no CRM." },
 ];
 
@@ -50,13 +50,17 @@ export type CrmCapabilities = {
   importContacts: boolean;
   exportContacts: boolean;
   manageTeam: boolean;
+  /** See campaigns and their results, create and edit drafts (Fase 5). */
+  editCampaigns: boolean;
+  /** Start, pause, resume and cancel a campaign's sending. */
+  sendCampaigns: boolean;
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, importContacts: false, exportContacts: false, manageTeam: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false },
 };
 
 export function crmCapabilities(role: CrmRole): CrmCapabilities {

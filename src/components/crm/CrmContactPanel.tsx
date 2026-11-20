@@ -83,7 +83,11 @@ function MessageBubble({ message }: { message: CrmMessage }) {
             : "bg-crm-bubble-in text-crm-text border-crm-line rounded-bl-md shadow-[var(--crm-shadow)]"
         }`}
       >
-        {message.templateName && <p className="text-[10.5px] tracking-[0.06em] uppercase opacity-60 mb-1">Modelo · {message.templateName}</p>}
+        {message.templateName && (
+          <p className="text-[10.5px] tracking-[0.06em] uppercase opacity-60 mb-1">
+            {message.campaignName ? `Campanha · ${message.campaignName}` : `Modelo · ${message.templateName}`}
+          </p>
+        )}
         {mediaUrl && message.type === "image" && (
           // eslint-disable-next-line @next/next/no-img-element -- streamed from the authenticated media proxy, not a static asset
           <img src={mediaUrl} alt="Imagem enviada pelo contato" className="max-h-64 rounded-lg mb-1" />
@@ -130,6 +134,7 @@ function describeEvent(e: CrmEvent): string {
     case "consent":
       return p.to === "sim" ? "Consentimento: aceitou ser contatado" : "Consentimento: não informado";
     case "opt_out":
+      if (p.value && p.auto) return `Descadastrado automaticamente (respondeu "${typeof p.text === "string" ? p.text : "SAIR"}" no WhatsApp)`;
       return p.value ? "Marcado como descadastrado (não quer mais contato)" : "Descadastro removido";
     case "archived":
       return "Contato arquivado";
