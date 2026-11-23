@@ -1,0 +1,60 @@
+# Runs on every pull request and on main: types, lint, production build and
+# the CRM test suites (tests/run.sh) against a throwaway Postgres and a fake
+# Meta API. Uses no secrets and never touches the real database.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Types
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Browser for the tests
+        run: npx playwright install --with-deps chromium
+      - name: CRM tests
+        run: npm test
+        env:
+          TEST_DATABASE_URL: postgresql://postgres@localhost:5432/crm_test
+          CRM_TEST_LOGS: ${{ runner.temp }}/crm-test-logs
+      - name: Server logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crm-test-logs
+          path: ${{ runner.temp }}/crm-test-logs
+          if-no-files-found: ignore

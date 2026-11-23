@@ -14,7 +14,9 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 | APIs | `src/app/api/crm/**` — todas exigem sessão da equipe e conferem o perfil do CRM (`src/lib/crm-auth.ts`, `crm-access.ts`) |
 | Perfis | `src/lib/crm-permissions.ts` (tabela do que cada perfil pode) + `crm-access.ts` (checagem por registro e Equipe) |
 | WhatsApp | `src/lib/whatsapp.ts` + webhook público assinado em `src/app/api/whatsapp/webhook/` |
-| Banco | Postgres; tabelas `crm_*` criadas/migradas por `ensureSchema` em `src/lib/db.ts` |
+| Banco | Postgres; tabelas `crm_*` criadas/migradas por `ensureSchema` em `src/lib/db.ts` (nunca a partir de uma prévia da Vercel) |
+| Testes | `tests/` (ver `tests/README.md`), rodam em todo PR pela verificação automática |
+| Segurança e continuidade | [`seguranca.md`](./seguranca.md) |
 
 ### Tabelas
 
@@ -127,6 +129,19 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 0: segurança e base técnica
+
+- Auditoria técnica completa registrada em [`seguranca.md`](./seguranca.md)
+  (arquitetura, autenticação, permissões, riscos, LGPD, continuidade).
+- Next.js 16.3.5 → 16.4.6 e dependências corrigidas (`npm audit` zerado).
+- Prévias da Vercel não alteram mais a estrutura do banco de produção; só a
+  publicação oficial (`schemaChangesAllowed` em `src/lib/db.ts`).
+- Testes no repositório (`tests/`) e verificação automática em todo PR
+  (`.github/workflows/ci.yml`): tipos, lint, build e 6 conjuntos de testes.
+- Corrigido o único erro de lint antigo (`IntelligenceSidebar.tsx`), sem
+  mudar o comportamento.
+- Nada muda na tela.
 
 ### Fase 5 — Campanhas (schema v8)
 
