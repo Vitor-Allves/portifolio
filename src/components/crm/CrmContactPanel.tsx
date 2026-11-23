@@ -3,15 +3,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CRM_CONSENT,
-  CRM_SOURCES,
   CRM_STAGES,
   formatBRL,
   formatPhone,
   isClosedStage,
-  lostReasonLabel,
   serviceWindowRemainingMs,
   stageLabel,
-  taskKindLabel,
   type CrmContactDetail,
   type CrmEvent,
   type CrmMessage,
@@ -26,6 +23,10 @@ import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
+import CrmTagsEditor from "./CrmTagsEditor";
+import { SegmentSelect, TagChips, useCatalog } from "./crm-catalog-context";
+import type { OptionKind } from "@/lib/crm-catalog";
+import { TAG_VIA } from "@/lib/crm-catalog";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -111,7 +112,7 @@ function MessageBubble({ message }: { message: CrmMessage }) {
   );
 }
 
-function describeEvent(e: CrmEvent): string {
+function describeEvent(e: CrmEvent, label: (kind: OptionKind, id: string) => string): string {
   const p = e.payload;
   switch (e.kind) {
     case "created":
@@ -120,7 +121,7 @@ function describeEvent(e: CrmEvent): string {
     case "stage":
       return `Etapa${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${
         p.auto ? " (automático, o lead respondeu)" : ""
-      }${p.lostReason ? ` · motivo: ${lostReasonLabel(String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}`;
+      }${p.lostReason ? ` · motivo: ${label("lost_reason", String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}`;
     case "owner":
       return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}`;
     case "next_action":
@@ -148,7 +149,7 @@ function describeEvent(e: CrmEvent): string {
       return `Oportunidade "${String(p.title)}": ${changes.map((c) => `${c.field} ${show(c, c.from)} → ${show(c, c.to)}`).join(" · ")}`;
     }
     case "task": {
-      const what = `${taskKindLabel(String(p.kind))}: ${String(p.title)}`;
+      const what = `${label("task_kind", String(p.kind))}: ${String(p.title)}`;
       const when = typeof p.dueAt === "string" ? ` · ${shortDate(p.dueAt)}${p.allDay === false ? ` ${timeOfDay(p.dueAt)}` : ""}` : "";
       const result = p.result ? ` — ${String(p.result)}` : "";
       switch (p.action) {
@@ -167,6 +168,10 @@ function describeEvent(e: CrmEvent): string {
         default:
           return what;
       }
+    }
+    case "tag": {
+      const via = p.via && p.via !== "manual" ? ` (${TAG_VIA.find((v) => v.id === p.via)?.label ?? String(p.via)})` : "";
+      return p.action === "removed" ? `Etiqueta removida: ${String(p.label)}` : `Etiqueta adicionada: ${String(p.label)}${via}`;
     }
   }
 }
@@ -356,6 +361,7 @@ export default function CrmContactPanel({
   embedded = false,
   caps,
 }: CrmContactPanelProps) {
+  const { label, options } = useCatalog();
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -549,6 +555,11 @@ export default function CrmContactPanel({
                       {detail.phone ? formatPhone(detail.phone) : detail.email ?? "Sem contato"}
                       {detail.company ? ` · ${detail.company}` : ""}
                     </p>
+                    {detail.tagIds.length > 0 && (
+                      <p className="mt-1">
+                        <TagChips ids={detail.tagIds} max={4} />
+                      </p>
+                    )}
                     {(detail.optedOutAt || detail.archivedAt) && (
                       <p className="mt-1 flex flex-wrap gap-1.5">
                         {detail.optedOutAt && (
@@ -628,7 +639,7 @@ export default function CrmContactPanel({
                   </div>
                   {deal.stage === "perdido" && deal.lostReason && (
                     <p className="text-[11.5px] text-crm-red">
-                      Perdida: {lostReasonLabel(deal.lostReason)}
+                      Perdida: {label("lost_reason", deal.lostReason)}
                       {deal.lostNote ? ` · ${deal.lostNote}` : ""}
                     </p>
                   )}
@@ -780,6 +791,14 @@ export default function CrmContactPanel({
               </>
             ) : (
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+                <CrmTagsEditor
+                  detail={detail}
+                  canEdit={caps.editContacts}
+                  onChanged={() => {
+                    void load();
+                    onChanged();
+                  }}
+                />
                 {fields && (
                   <section className="space-y-2">
                     <h3 className={CRM_LABEL}>Dados do contato</h3>
@@ -789,10 +808,10 @@ export default function CrmContactPanel({
                       <input value={fields.email} onChange={(e) => edit({ email: e.target.value })} type="email" aria-label="E-mail" placeholder="E-mail" className={CRM_INPUT} />
                       <CrmCompanyField value={fields.company} onChange={(v) => edit({ company: v })} ariaLabel="Empresa" placeholder="Empresa" />
                       <input value={fields.jobTitle} onChange={(e) => edit({ jobTitle: e.target.value })} aria-label="Cargo" placeholder="Cargo" className={CRM_INPUT} />
-                      <input value={fields.segment} onChange={(e) => edit({ segment: e.target.value })} aria-label="Segmento" placeholder={detail.companyId ? "Segmento (da empresa)" : "Segmento"} className={CRM_INPUT} />
+                      <SegmentSelect value={fields.segment} onChange={(v) => edit({ segment: v })} className={CRM_INPUT} emptyLabel={detail.companyId ? "Segmento (da empresa)" : "Sem segmento"} />
                       <input value={fields.city} onChange={(e) => edit({ city: e.target.value })} aria-label="Cidade" placeholder={detail.companyId ? "Cidade (da empresa)" : "Cidade"} className={CRM_INPUT} />
                       <select value={fields.source} onChange={(e) => edit({ source: e.target.value })} aria-label="Origem" className={CRM_INPUT}>
-                        {CRM_SOURCES.map((s) => (
+                        {options("source", detail.source).map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.label}
                           </option>
@@ -904,7 +923,7 @@ export default function CrmContactPanel({
                   <ol className="space-y-2.5 pt-1">
                     {[...detail.events].reverse().map((e) => (
                       <li key={e.id} className={e.kind === "note" ? "rounded-lg border border-crm-amber/30 bg-crm-amber/[0.08] px-3 py-2" : "px-1"}>
-                        <p className={`text-[12.5px] whitespace-pre-wrap break-words ${e.kind === "note" ? "text-crm-text" : "text-crm-dim"}`}>{describeEvent(e)}</p>
+                        <p className={`text-[12.5px] whitespace-pre-wrap break-words ${e.kind === "note" ? "text-crm-text" : "text-crm-dim"}`}>{describeEvent(e, label)}</p>
                         <p className="text-[10.5px] text-crm-dim mt-0.5">
                           {e.userName ?? "Sistema"} · {dateTime(e.createdAt)}
                         </p>

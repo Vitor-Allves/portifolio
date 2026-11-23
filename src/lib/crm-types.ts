@@ -17,66 +17,16 @@ export function isCrmStage(value: unknown): value is CrmStage {
   return CRM_STAGES.some((s) => s.id === value);
 }
 
-export const CRM_SOURCES = [
-  { id: "anuncio", label: "Anúncio" },
-  { id: "bni", label: "BNI" },
-  { id: "site", label: "Site" },
-  { id: "evento", label: "Evento" },
-  { id: "indicacao", label: "Indicação" },
-  { id: "outro", label: "Outro" },
-] as const;
-
-export type CrmSource = (typeof CRM_SOURCES)[number]["id"];
-
-export function isCrmSource(value: unknown): value is CrmSource {
-  return CRM_SOURCES.some((s) => s.id === value);
-}
+// Origens, tipos de tarefa e motivos de perda moved to the database in v9
+// (Personalização do CRM): defaults in crm-catalog.ts, reads/writes in
+// crm-options.ts. Records keep the option's code (id); labels come from the
+// catalog.
+export type CrmSource = string;
+export type CrmTaskKind = string;
+export type CrmLostReason = string;
 
 export function stageLabel(id: string): string {
   return CRM_STAGES.find((s) => s.id === id)?.label ?? id;
-}
-
-export function sourceLabel(id: string): string {
-  return CRM_SOURCES.find((s) => s.id === id)?.label ?? id;
-}
-
-/** Kinds of task/activity a salesperson schedules or logs. */
-export const CRM_TASK_KINDS = [
-  { id: "ligacao", label: "Ligação" },
-  { id: "reuniao", label: "Reunião" },
-  { id: "whatsapp", label: "WhatsApp" },
-  { id: "email", label: "E-mail" },
-  { id: "tarefa", label: "Tarefa" },
-] as const;
-
-export type CrmTaskKind = (typeof CRM_TASK_KINDS)[number]["id"];
-
-export function isCrmTaskKind(value: unknown): value is CrmTaskKind {
-  return CRM_TASK_KINDS.some((k) => k.id === value);
-}
-
-export function taskKindLabel(id: string): string {
-  return CRM_TASK_KINDS.find((k) => k.id === id)?.label ?? id;
-}
-
-/** Asked when an opportunity moves to "Perdido" — feeds the loss analysis. */
-export const CRM_LOST_REASONS = [
-  { id: "sem_orcamento", label: "Sem orçamento" },
-  { id: "concorrente", label: "Escolheu outra empresa" },
-  { id: "sem_resposta", label: "Parou de responder" },
-  { id: "sem_perfil", label: "Sem perfil para o serviço" },
-  { id: "adiou", label: "Adiou o projeto" },
-  { id: "outro", label: "Outro motivo" },
-] as const;
-
-export type CrmLostReason = (typeof CRM_LOST_REASONS)[number]["id"];
-
-export function isCrmLostReason(value: unknown): value is CrmLostReason {
-  return CRM_LOST_REASONS.some((r) => r.id === value);
-}
-
-export function lostReasonLabel(id: string | null): string {
-  return CRM_LOST_REASONS.find((r) => r.id === id)?.label ?? "";
 }
 
 export function isClosedStage(stage: string): boolean {
@@ -157,6 +107,8 @@ export type CrmContactCard = {
   optedOutAt: string | null;
   archivedAt: string | null;
   createdAt: string;
+  /** Tags on the contact (crm_tags.id); labels and colors come from the catalog. */
+  tagIds: string[];
 };
 
 /** A WhatsApp conversation in the Conversas list: the contact plus the funnel stages of its opportunities (the "tags"). */
@@ -190,7 +142,8 @@ export type CrmEventKind =
   | "archived"
   | "restored"
   | "deal"
-  | "task";
+  | "task"
+  | "tag";
 
 export type CrmEvent = {
   id: string;
@@ -235,6 +188,8 @@ export type CrmDealCard = CrmDeal & {
   lastMessagePreview: string | null;
   /** Earliest pending task for this opportunity (or for its contact with no opportunity set). */
   nextTask: CrmTaskSummary | null;
+  /** The contact's tags. */
+  tagIds: string[];
 };
 
 export type CrmTask = CrmTaskSummary & {
@@ -263,6 +218,8 @@ export type CrmContactDetail = CrmContactCard & {
   deals: CrmDeal[];
   /** Pending tasks (soonest first) and the latest finished ones. */
   tasks: CrmTask[];
+  /** How each tag got here (manual, importação, campanha, automação), by whom and when. */
+  tagLinks: { tagId: string; via: "manual" | "importacao" | "campanha" | "automacao"; byName: string | null; at: string }[];
 };
 
 /** "R$ 1.500,50" / "1500.5" / 1500.5 → centavos. Empty → null. Throws a pt-BR message on garbage. */
@@ -331,6 +288,7 @@ export const CRM_IMPORT_FIELDS = [
   { id: "consent", label: "Consentimento (sim/não)" },
   { id: "consentSource", label: "Como aceitou ser contatado" },
   { id: "notes", label: "Observações" },
+  { id: "tags", label: "Etiquetas (separadas por vírgula)" },
 ] as const;
 
 export type CrmImportField = (typeof CRM_IMPORT_FIELDS)[number]["id"];
@@ -358,6 +316,10 @@ export type CrmImportPreview = {
   results: CrmImportRowResult[];
   counts: { novo: number; duplicado: number; erro: number };
   newCompanies: number;
+  /** Segments not on the Personalização list yet: added to it on import. */
+  newSegments: string[];
+  /** Tag names in the sheet that match no active tag: ignored. */
+  unknownTags: string[];
 };
 
 export const CRM_IMPORT_MAX_ROWS = 5000;

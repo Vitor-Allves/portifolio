@@ -23,6 +23,8 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `dashboard-e2e` | Painel no navegador: página inicial, filtros, Comercial vê só os seus, todas as seções abrem, tema escuro, celular |
 | `campaigns-api` | Campanhas pela API: perfis, quem fica de fora, variáveis, "SAIR", envios simultâneos sem duplicar, entregue/lida/resposta, limite da Meta, cancelar, envio interrompido |
 | `campaigns-e2e` | Campanhas no navegador: Marketing monta, Gestor envia, resultados, conversa marcada, tema escuro, celular |
+| `catalog-api` | Personalização e etiquetas pela API: quem pode mudar, opção nova/arquivada nos formulários, valor antigo preservado, renomear segmento, etiquetas por perfil, filtro, exportação, importação com etiquetas e segmentos novos |
+| `catalog-e2e` | Menu agrupado, tela de Personalização, etiqueta no painel do contato, filtro por etiqueta, card do funil, celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Dados de teste: `tests/fixtures/seed-base.ts` (usuários `vitor` Gestor,

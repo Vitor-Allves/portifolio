@@ -5,6 +5,7 @@ import type { CrmCompanyRow, CrmFacets, CrmPage } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT, CRM_TD, CRM_TH } from "./crm-styles";
 import { relativeTime } from "./crm-format";
 import { Mascot } from "./crm-brand";
+import { SegmentSelect } from "./crm-catalog-context";
 
 const PAGE_SIZE = 25;
 
@@ -35,7 +36,7 @@ function NewCompanyForm({ onCreated, onCancel }: { onCreated: (id: string) => vo
     <form onSubmit={submit} className="rounded-2xl border border-crm-line bg-crm-card p-4 shadow-[var(--crm-shadow)] space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus placeholder="Nome da empresa *" aria-label="Nome da empresa" className={CRM_INPUT} />
-        <input value={segment} onChange={(e) => setSegment(e.target.value)} placeholder="Segmento" aria-label="Segmento" className={CRM_INPUT} />
+        <SegmentSelect value={segment} onChange={setSegment} className={CRM_INPUT} emptyLabel="Segmento (opcional)" />
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Cidade" aria-label="Cidade" className={CRM_INPUT} />
       </div>
       {error && <p className={CRM_ALERT}>{error}</p>}

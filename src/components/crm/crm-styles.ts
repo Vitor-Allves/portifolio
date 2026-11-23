@@ -53,8 +53,12 @@ export const CONSENT_BADGE = {
   descadastrado: "bg-crm-red/10 text-crm-red border-crm-red/25",
 } as const;
 
-/** Small glyph per task kind (text, so it inherits color in both themes). */
-export const TASK_KIND_ICON: Record<string, string> = {
+/** Small glyph per task kind (text, so it inherits color in both themes); kinds added in Personalização get a dot. */
+export function taskKindIcon(kind: string): string {
+  return TASK_KIND_ICON[kind] ?? "•";
+}
+
+const TASK_KIND_ICON: Record<string, string> = {
   ligacao: "☎",
   reuniao: "◷",
   whatsapp: "✆",

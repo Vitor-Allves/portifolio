@@ -54,13 +54,16 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-// Back to v7: undo exactly what v8 added.
+const LATEST = 9;
+
+// Back to v7: undo exactly what v9 (Personalização) and v8 (Campanhas) added.
 async function downgradeToV7(name) {
   await query(
     name,
-    `ALTER TABLE crm_messages DROP COLUMN campaign_id;
+    `DROP TABLE crm_contact_tags; DROP TABLE crm_tags; DROP TABLE crm_options;
+     ALTER TABLE crm_messages DROP COLUMN campaign_id;
      DROP TABLE crm_campaign_recipients; DROP TABLE crm_campaigns;
-     DELETE FROM schema_migrations WHERE version = 8;`
+     DELETE FROM schema_migrations WHERE version IN (8, 9);`
   );
 }
 
@@ -69,11 +72,11 @@ const B = "crm_schema_upgrade";
 await freshDb(A);
 await freshDb(B);
 
-ok(migrate(A).version === 8, "empty database → v8");
+ok(migrate(A).version === LATEST, `empty database → v${LATEST}`);
 const target = await structure(A);
 
-ok(migrate(B).version === 8, "second database → v8");
-await query(B, `INSERT INTO crm_contacts (id, phone, name) VALUES ('keep-me', '5515999990000', 'Contato existente')`);
+ok(migrate(B).version === LATEST, `second database → v${LATEST}`);
+await query(B, `INSERT INTO crm_contacts (id, phone, name, segment) VALUES ('keep-me', '5515999990000', 'Contato existente', 'Odontologia')`);
 await downgradeToV7(B);
 ok((await query(B, `SELECT max(version) AS v FROM schema_migrations`))[0].v === 7, "second database rolled back to v7");
 
@@ -83,11 +86,16 @@ ok(preview.allowed === false && preview.version === 7, "a Vercel preview doesn't
 ok((await query(B, `SELECT to_regclass('crm_campaigns') AS t`))[0].t === null, "…no campaign tables were created by the preview");
 
 const optIn = migrate(B, { VERCEL_ENV: "preview", ALLOW_SCHEMA_MIGRATIONS: "1" });
-ok(optIn.allowed === true && optIn.version === 8, "a preview with its own database can opt in");
+ok(optIn.allowed === true && optIn.version === LATEST, "a preview with its own database can opt in");
 await downgradeToV7(B);
-ok(migrate(B, { VERCEL_ENV: "production" }).version === 8, "production upgrades v7 → v8");
+ok(migrate(B, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v7 → v${LATEST}`);
 ok((await structure(B)) === target, "upgraded structure is identical to a fresh one");
 ok((await query(B, `SELECT name FROM crm_contacts WHERE id = 'keep-me'`))[0]?.name === "Contato existente", "existing rows survive the upgrade");
+// v9 seeds: the lists that were in code, same codes; segments already in use become the list.
+const sources = (await query(B, `SELECT id, label FROM crm_options WHERE kind = 'source' ORDER BY sort`)).map((r) => `${r.id}=${r.label}`).join(",");
+ok(sources === "anuncio=Tráfego pago,bni=BNI,site=Site,evento=Evento,indicacao=Indicação,prospeccao_manual=Prospecção manual,outro=Outro", `origens seeded with the old codes (${sources})`);
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind = 'segment' AND label = 'Odontologia'`))[0].n === 1, "segment in use became a list option");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_tags`))[0].n === 14, "initial tags seeded");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

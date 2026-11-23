@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CRM_LOST_REASONS,
   formatBRL,
-  sourceLabel,
   stageLabel,
   type CrmDashboard,
   type CrmDashboardMetrics,
@@ -13,6 +11,7 @@ import {
 import { CRM_ALERT, CRM_FILTER, CRM_INPUT, CRM_LABEL, CRM_TD, CRM_TH } from "./crm-styles";
 import { addDays, relativeTime, shortDate, spDate } from "./crm-format";
 import { Mascot } from "./crm-brand";
+import { useCatalog } from "./crm-catalog-context";
 
 type Preset = "mes" | "mes_passado" | "7d" | "30d" | "90d" | "ano" | "custom";
 const PRESETS: { id: Preset; label: string }[] = [
@@ -244,6 +243,7 @@ export default function CrmDashboardView({
   version: number;
   now: number;
 }) {
+  const { label } = useCatalog();
   const today = spDate(now);
   const [preset, setPreset] = useState<Preset>("mes");
   const [custom, setCustom] = useState<[string, string]>(() => presetRange("mes", today));
@@ -371,7 +371,7 @@ export default function CrmDashboardView({
                 <HBars
                   rows={d.lossReasons.map((r) => ({
                     key: r.reason,
-                    label: r.reason === "sem_motivo" ? "Sem motivo informado" : CRM_LOST_REASONS.find((x) => x.id === r.reason)?.label ?? r.reason,
+                    label: r.reason === "sem_motivo" ? "Sem motivo informado" : label("lost_reason", r.reason),
                     value: r.count,
                     figure: `${r.count}${r.valueCents > 0 ? ` · ${brl(r.valueCents)}` : ""}`,
                   }))}
@@ -385,7 +385,7 @@ export default function CrmDashboardView({
                 <HBars
                   rows={d.sources.map((s) => ({
                     key: s.source,
-                    label: sourceLabel(s.source),
+                    label: label("source", s.source),
                     value: s.newLeads,
                     figure: `${s.newLeads} lead${s.newLeads === 1 ? "" : "s"} · ${s.won} ganho${s.won === 1 ? "" : "s"}${s.wonValueCents > 0 ? ` (${brl(s.wonValueCents)})` : ""}`,
                   }))}

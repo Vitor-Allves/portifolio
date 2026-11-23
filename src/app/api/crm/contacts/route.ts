@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 /**
  * Without ?page: every active contact, for the Kanban board.
  * With ?page: one page of the contact list, filtered (?q, stage, owner,
- * source, segment, city, consent, company, archived=1, sort, pageSize).
+ * source, segment, city, consent, company, tag, archived=1, sort, pageSize).
  */
 export async function GET(req: NextRequest) {
   const actor = await crmActorFromRequest(req);

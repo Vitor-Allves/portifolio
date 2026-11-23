@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { CRM_CONSENT, CRM_SOURCES, type CrmSource, type CrmTeamMember } from "@/lib/crm-types";
+import { CRM_CONSENT, type CrmSource, type CrmTeamMember } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL } from "./crm-styles";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
+import { useCatalog } from "./crm-catalog-context";
 
 type CrmNewContactDialogProps = {
   open: boolean;
@@ -25,6 +26,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // Mounted only while open, so every opening starts from a clean form.
 function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewContactDialogProps, "open">) {
+  const { options } = useCatalog();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -133,7 +135,7 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
           </Field>
           <Field label="Origem">
             <select value={source} onChange={(e) => setSource(e.target.value as CrmSource)} className={`${CRM_INPUT}`}>
-              {CRM_SOURCES.map((s) => (
+              {options("source").map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>

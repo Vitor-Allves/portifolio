@@ -77,12 +77,14 @@ run_suite() {
     campaigns-api) reset_db base campaigns && start_server && node tests/suites/campaigns.api.mjs ;;
     campaigns-e2e) reset_db base campaigns && start_server && node tests/suites/campaigns.e2e.mjs ;;
     regression) reset_db base campaigns && start_server && node tests/suites/regression.e2e.mjs ;;
+    catalog-api) reset_db base campaigns && start_server && node tests/suites/catalog.api.mjs ;;
+    catalog-e2e) reset_db base campaigns && start_server && node tests/suites/catalog.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

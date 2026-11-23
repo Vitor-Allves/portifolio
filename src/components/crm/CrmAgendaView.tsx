@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { type CrmTask, type CrmTeamMember } from "@/lib/crm-types";
-import { CRM_BTN_OUTLINE, CRM_FILTER, TASK_KIND_ICON } from "./crm-styles";
+import { CRM_BTN_OUTLINE, CRM_FILTER, taskKindIcon } from "./crm-styles";
 import { TASK_STATE_TONE, addDays, spDate, taskState, timeOfDay, weekStart } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 
@@ -107,7 +107,7 @@ export default function CrmAgendaView({
                         }`}
                       >
                         <span className={`block text-[11px] font-medium ${done ? "text-crm-faint" : TASK_STATE_TONE[state]}`}>
-                          {t.allDay ? "Dia todo" : timeOfDay(t.dueAt!)} <span aria-hidden="true">{TASK_KIND_ICON[t.kind]}</span>
+                          {t.allDay ? "Dia todo" : timeOfDay(t.dueAt!)} <span aria-hidden="true">{taskKindIcon(t.kind)}</span>
                         </span>
                         <span className={`block text-[12px] font-semibold truncate ${done ? "line-through text-crm-faint" : "text-crm-text"}`}>{t.title}</span>
                         <span className="flex items-center justify-between gap-1">

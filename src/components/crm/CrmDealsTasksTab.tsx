@@ -2,20 +2,18 @@
 
 import { useState, type FormEvent } from "react";
 import {
-  CRM_TASK_KINDS,
   formatBRL,
   isClosedStage,
-  lostReasonLabel,
   stageLabel,
-  taskKindLabel,
   type CrmContactDetail,
   type CrmDeal,
   type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, STAGE_DOT, TASK_KIND_ICON } from "./crm-styles";
+import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, STAGE_DOT, taskKindIcon } from "./crm-styles";
 import { TASK_STATE_TONE, shortDate, spDate, taskDueLabel, taskState, timeOfDay } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
+import { useCatalog } from "./crm-catalog-context";
 
 type Send = (url: string, method: "POST" | "PATCH", body: Record<string, unknown>) => Promise<boolean>;
 
@@ -59,6 +57,7 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
 }
 
 function PendingTask({ task, now, send, deals, readOnly }: { task: CrmTask; now: number; send: Send; deals: CrmDeal[]; readOnly: boolean }) {
+  const { label } = useCatalog();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState("");
   const [date, setDate] = useState(task.dueAt ? spDate(task.dueAt) : "");
@@ -80,12 +79,12 @@ function PendingTask({ task, now, send, deals, readOnly }: { task: CrmTask; now:
         <button type="button" onClick={() => setOpen((v) => !v)} disabled={readOnly} aria-expanded={open} className="min-w-0 flex-1 text-left">
           <span className="block text-[13px] font-semibold truncate">
             <span aria-hidden="true" className="text-crm-faint mr-1">
-              {TASK_KIND_ICON[task.kind]}
+              {taskKindIcon(task.kind)}
             </span>
             {task.title}
           </span>
           <span className="block text-[11.5px] text-crm-dim truncate">
-            {taskKindLabel(task.kind)}
+            {label("task_kind", task.kind)}
             {deal ? ` · ${deal.title}` : ""}
           </span>
         </button>
@@ -131,6 +130,7 @@ function NewTaskForm({
   defaultOwnerId: string;
   send: Send;
 }) {
+  const { options } = useCatalog();
   const [mode, setMode] = useState<"agendar" | "registrar">("agendar");
   const [kind, setKind] = useState("ligacao");
   const [title, setTitle] = useState("");
@@ -181,7 +181,7 @@ function NewTaskForm({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Tipo" className={CRM_INPUT}>
-          {CRM_TASK_KINDS.map((k) => (
+          {options("task_kind").map((k) => (
             <option key={k.id} value={k.id}>
               {k.label}
             </option>
@@ -241,6 +241,7 @@ export default function CrmDealsTasksTab({
   /** Refetch the contact (and the board) after a change. */
   onReload: () => Promise<void>;
 }) {
+  const { label } = useCatalog();
   const [error, setError] = useState<string | null>(null);
   const [newDeal, setNewDeal] = useState<{ title: string; value: string } | null>(null);
   const selected = detail.deals.find((d) => d.id === selectedDealId) ?? null;
@@ -327,7 +328,7 @@ export default function CrmDealsTasksTab({
                     <span className="block text-[13px] font-semibold truncate">{d.title}</span>
                     <span className="block text-[11.5px] text-crm-dim truncate">
                       {stageLabel(d.stage)}
-                      {d.stage === "perdido" && d.lostReason ? ` · ${lostReasonLabel(d.lostReason)}` : ""}
+                      {d.stage === "perdido" && d.lostReason ? ` · ${label("lost_reason", d.lostReason)}` : ""}
                       {isClosedStage(d.stage) && d.closedAt ? ` · ${shortDate(d.closedAt)}` : ""}
                       {!isClosedStage(d.stage) && d.expectedCloseAt ? ` · previsão ${shortDate(d.expectedCloseAt)}` : ""}
                     </span>
@@ -372,7 +373,7 @@ export default function CrmDealsTasksTab({
                     <span className="text-crm-green mr-1" aria-hidden="true">
                       ✓
                     </span>
-                    <span className="line-through">{t.title}</span> · {taskKindLabel(t.kind)}
+                    <span className="line-through">{t.title}</span> · {label("task_kind", t.kind)}
                   </p>
                   {t.result && <p className="text-[12.5px] text-crm-text mt-0.5 whitespace-pre-wrap">{t.result}</p>}
                   <p className="text-[10.5px] text-crm-faint mt-0.5">

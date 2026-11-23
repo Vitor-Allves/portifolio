@@ -10,7 +10,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 | --- | --- |
 | Tela | `src/app/crm/page.tsx`, componentes em `src/components/crm/` |
 | Dados (servidor) | `src/lib/crm.ts` (contatos, mensagens), `crm-deals.ts` (oportunidades), `crm-tasks.ts` (tarefas e atividades), `crm-companies.ts`, `crm-import.ts`, `crm-core.ts` (peças comuns) |
-| Tipos e regras puras | `src/lib/crm-types.ts` (etapas, origens, consentimento, telefone, chave de empresa, valores em R$, motivos de perda, tipos de tarefa) |
+| Tipos e regras puras | `src/lib/crm-types.ts` (etapas, consentimento, telefone, chave de empresa, valores em R$) e `src/lib/crm-catalog.ts` (listas e etiquetas: tipos, valores iniciais, cores) |
+| Personalização | `src/lib/crm-options.ts` (listas e etiquetas no banco, validação nas gravações) + tela `CrmSettingsView.tsx`; no cliente, `crm-catalog-context.tsx` entrega rótulos e listas a todas as telas |
 | APIs | `src/app/api/crm/**` — todas exigem sessão da equipe e conferem o perfil do CRM (`src/lib/crm-auth.ts`, `crm-access.ts`) |
 | Perfis | `src/lib/crm-permissions.ts` (tabela do que cada perfil pode) + `crm-access.ts` (checagem por registro e Equipe) |
 | WhatsApp | `src/lib/whatsapp.ts` + webhook público assinado em `src/app/api/whatsapp/webhook/` |
@@ -50,6 +51,17 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (chave campanha + contato): na fila, enviada, falhou ou ficou de fora (com
   o motivo), id da mensagem no WhatsApp. `crm_messages.campaign_id` liga a
   mensagem enviada à campanha.
+- `crm_options` — as listas editáveis (Personalização): origens, segmentos,
+  serviços, motivos de perda e de ganho, tipos de tarefa. Chave `(kind, id)`;
+  o código (`id`) nunca muda depois de usado; arquivar (`archived_at`) tira
+  dos formulários sem mexer nos registros. `locked` marca a opção que o
+  sistema usa quando nada se aplica ("Outro", "Tarefa"), que não se arquiva.
+  Segmentos ficam como texto nos registros; renomear um segmento renomeia
+  nas empresas e contatos que o usam.
+- `crm_tags` (categoria Origem/Ação/Classificação, cor, descrição,
+  arquivamento) e `crm_contact_tags` (qual contato tem qual etiqueta, quem
+  aplicou e por onde: manual, importação, campanha, automação). Etiqueta não
+  se apaga, só se arquiva; quem já tem continua com ela.
 - `crm_imports` — cada importação de planilha (quem, quando, contagens, se foi
   desfeita). `crm_quick_replies` — respostas rápidas.
 
@@ -70,6 +82,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Exportar CSV | sim | sim | não | sim |
   | Campanhas: montar rascunho e ver resultados | sim | sim | não | sim |
   | Campanhas: disparar, pausar, cancelar | sim | sim | não | não |
+  | Etiquetas nos contatos | sim | sim | nos seus | sim |
+  | Personalização (listas e etiquetas) | sim | não | não | não |
   | Equipe (definir perfis) | sim | não | não | não |
 
   Lead de outra pessoa, para o Comercial, responde como "não encontrado".
@@ -129,6 +143,32 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 1, entrega 1: Personalização, etiquetas e menu (schema v9)
+
+- **Personalização do CRM** (só Administrador): origens, segmentos,
+  serviços, motivos de perda, motivos de ganho e tipos de tarefa saem do
+  código e vão para o banco. Criar, renomear, descrever, ordenar, arquivar e
+  reativar; a tela mostra quantos registros usam cada opção. As opções de
+  antes continuam com os mesmos códigos ("Anúncio" passou a "Tráfego pago";
+  entrou "Prospecção manual"); os segmentos já usados viraram a lista.
+  Motivos de ganho começam com sugestões editáveis; Serviços começa vazio.
+- **Etiquetas** em três categorias (Origem, Ação, Classificação), com cor e
+  descrição: no painel do contato (aba Detalhes), nas linhas de Contatos, nos
+  cards do funil, no filtro de Contatos, no público das Campanhas e na
+  exportação. Registra quem aplicou e por onde; aplicar/remover entra no
+  histórico. Temperatura (frio/morno/quente) será um campo (entrega 2), não
+  etiqueta.
+- **Importação**: coluna "Etiquetas" (nomes separados por vírgula; os que não
+  existem são avisados e ignorados), origem reconhecida pelas opções
+  cadastradas, segmentos novos entram na lista. Desfazer importação continua
+  funcionando.
+- **Menu agrupado**: Visão geral, Comercial, Operação, Administração. "Funil"
+  virou "Funil de vendas"; "Equipe" virou "Usuários e permissões".
+- Validação no servidor: só se grava opção ativa (ou a que o registro já
+  tem); segmento precisa estar na lista. Auditoria `crm.catalog_change` em
+  toda mudança da Personalização.
+- Testes: `catalog-api` e `catalog-e2e` em `tests/`.
 
 ### Especificação-mestra v1.0 — Fase 0: segurança e base técnica
 

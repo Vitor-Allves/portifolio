@@ -84,7 +84,7 @@ const jd = (await (await japi.get(`${BASE}/api/crm/deals/`)).json()).deals;
 ok(jd.length > 0 && !jd.some((d) => d.ownerId === "u-vitor"), "Comercial doesn't see Vitor's opportunities");
 ok((await japi.get(`${BASE}/api/crm/team/`)).status() === 403, "Comercial can't open Equipe");
 const { page: a } = await open("admin");
-await go(a, "Equipe");
+await go(a, "Usuários e permissões");
 await a.getByRole("cell", { name: /João/ }).waitFor();
 ok(true, "Administrador opens Equipe");
 

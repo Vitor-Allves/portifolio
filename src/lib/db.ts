@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import { companyKey as crmCompanyKey } from "./crm-types";
+import { DEFAULT_OPTIONS, DEFAULT_TAGS } from "./crm-catalog";
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -41,7 +42,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -626,6 +627,83 @@ async function ensureSchema(): Promise<void> {
     await db.query(`ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS campaign_id TEXT REFERENCES crm_campaigns (id) ON DELETE SET NULL`);
 
     await done(8);
+  }
+
+  if (current < 9) {
+    // v9 — Personalização do CRM (especificação v1.0, Fase 1): the lists that
+    // lived in code (origens, motivos de perda, tipos de tarefa) move to the
+    // database with the same codes, so every existing record keeps its
+    // value; new lists (segmentos, serviços, motivos de ganho) and tags join
+    // them. Nothing is deleted: an option or tag is archived, never removed.
+    // Seeds come from crm-catalog.ts (DEFAULT_OPTIONS, DEFAULT_TAGS), inserted once.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_options (
+        kind TEXT NOT NULL,
+        id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        description TEXT,
+        sort INTEGER NOT NULL DEFAULT 0,
+        -- A fallback the code relies on (e.g. source "outro"): can't be archived.
+        locked BOOLEAN NOT NULL DEFAULT false,
+        archived_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (kind, id)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_tags (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        label TEXT NOT NULL,
+        description TEXT,
+        color TEXT NOT NULL DEFAULT 'cinza',
+        sort INTEGER NOT NULL DEFAULT 0,
+        archived_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_tags_label_key ON crm_tags (category, lower(label))`);
+    // Which contact has which tag, who applied it and how (manual, importação,
+    // campanha, automação). A tag is never deleted, so no cascade from it.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_contact_tags (
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        tag_id TEXT NOT NULL REFERENCES crm_tags (id),
+        applied_via TEXT NOT NULL DEFAULT 'manual',
+        applied_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        applied_by_name TEXT,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (contact_id, tag_id)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_contact_tags_tag_idx ON crm_contact_tags (tag_id)`);
+
+    for (const [kind, list] of Object.entries(DEFAULT_OPTIONS)) {
+      for (const [i, o] of list.entries()) {
+        await db.query(
+          `INSERT INTO crm_options (kind, id, label, sort, locked) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (kind, id) DO NOTHING`,
+          [kind, o.id, o.label, i, o.locked ?? false]
+        );
+      }
+    }
+    // Segments were free text: the ones already in use become the list.
+    await db.query(
+      `INSERT INTO crm_options (kind, id, label, sort)
+       SELECT 'segment', 'seg-' || md5(lower(s)), s, (row_number() OVER (ORDER BY lower(s)))::int
+       FROM (SELECT DISTINCT btrim(segment) AS s FROM crm_companies WHERE btrim(COALESCE(segment, '')) <> ''
+             UNION SELECT DISTINCT btrim(segment) FROM crm_contacts WHERE btrim(COALESCE(segment, '')) <> '') x
+       ON CONFLICT (kind, id) DO NOTHING`
+    );
+    for (const [i, t] of DEFAULT_TAGS.entries()) {
+      await db.query(
+        `INSERT INTO crm_tags (id, category, label, color, sort) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
+        [t.id, t.category, t.label, t.color, i]
+      );
+    }
+
+    await done(9);
   }
 }
 

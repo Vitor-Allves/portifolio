@@ -44,6 +44,7 @@ const DENIED: Record<keyof CrmCapabilities, string> = {
   manageTeam: "Só o Administrador gerencia a equipe do CRM.",
   editCampaigns: "Seu perfil não acessa as campanhas.",
   sendCampaigns: "Só Administrador e Gestor disparam campanhas.",
+  customize: "Só o Administrador altera a Personalização do CRM.",
 };
 
 export function requireCap(s: CrmSession, cap: keyof CrmCapabilities): void {

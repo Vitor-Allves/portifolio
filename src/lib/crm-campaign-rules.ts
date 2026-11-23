@@ -105,9 +105,11 @@ export type CampaignAudience = {
   segment?: string;
   city?: string;
   companyId?: string;
+  /** Only contacts with this tag. */
+  tag?: string;
 };
 
-export const AUDIENCE_KEYS = ["stage", "owner", "source", "segment", "city", "companyId"] as const;
+export const AUDIENCE_KEYS = ["stage", "owner", "source", "segment", "city", "companyId", "tag"] as const;
 
 export function cleanAudience(raw: unknown): CampaignAudience {
   const out: CampaignAudience = {};

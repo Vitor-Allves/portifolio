@@ -2,12 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from "react";
 import {
-  CRM_SOURCES,
   CRM_STAGES,
   formatBRL,
   isClosedStage,
-  lostReasonLabel,
-  sourceLabel,
   type CrmContactCard,
   type CrmDealCard,
   type CrmLostReason,
@@ -16,7 +13,7 @@ import {
   type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_BTN_PRIMARY, CRM_INPUT, STAGE_DOT, TASK_KIND_ICON } from "./crm-styles";
+import { CRM_BTN_PRIMARY, CRM_INPUT, STAGE_DOT, taskKindIcon } from "./crm-styles";
 import { CRM_SIDEBAR_COOKIE, type CrmTheme } from "./crm-theme";
 import CrmWelcome from "./CrmWelcome";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
@@ -36,6 +33,9 @@ import CrmCompanyPanel from "./CrmCompanyPanel";
 import CrmImportDialog from "./CrmImportDialog";
 import CrmLostDialog from "./CrmLostDialog";
 import CrmTasksView from "./CrmTasksView";
+import CrmSettingsView from "./CrmSettingsView";
+import { CrmCatalogProvider, TagChips, useCatalog } from "./crm-catalog-context";
+import type { CrmCatalog } from "@/lib/crm-catalog";
 import CrmAgendaView from "./CrmAgendaView";
 
 type CrmAppProps = {
@@ -54,6 +54,8 @@ type CrmAppProps = {
   initialSidebarCollapsed: boolean;
   /** The CRM profile — the server enforces it; the screens hide what it can't do. */
   role: CrmRole;
+  /** Personalização: lists and tags. */
+  initialCatalog: CrmCatalog;
 };
 
 type PanelTab = "conversa" | "negocio" | "detalhes";
@@ -91,6 +93,7 @@ function DealCard({
   now: number;
   onOpen: (deal: CrmDealCard) => void;
 }) {
+  const { label } = useCatalog();
   const win = windowLabel(deal.lastInboundAt, now);
   const closed = isClosedStage(deal.stage);
   const task = deal.nextTask;
@@ -150,14 +153,15 @@ function DealCard({
 
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         <span className="max-w-full truncate text-[10.5px] px-2 py-0.5 rounded-full bg-crm-sunken border border-crm-line text-crm-dim">
-          {sourceLabel(deal.source)}
+          {label("source", deal.source)}
           {deal.referredBy ? ` · ${deal.referredBy}` : ""}
         </span>
+        <TagChips ids={deal.tagIds} max={2} />
       </div>
 
       {deal.stage === "perdido" && deal.lostReason && (
         <p className="mt-1.5 text-[11.5px] text-crm-red truncate">
-          {lostReasonLabel(deal.lostReason)}
+          {label("lost_reason", deal.lostReason)}
           {deal.lostNote ? ` · ${deal.lostNote}` : ""}
         </p>
       )}
@@ -171,7 +175,7 @@ function DealCard({
 
       {task && state ? (
         <p className={`mt-1 text-[11.5px] font-medium truncate ${TASK_STATE_TONE[state]}`}>
-          <span aria-hidden="true">{TASK_KIND_ICON[task.kind]} </span>
+          <span aria-hidden="true">{taskKindIcon(task.kind)} </span>
           {task.title} · {taskDueLabel(task.dueAt, task.allDay, now)}
         </p>
       ) : (
@@ -181,7 +185,15 @@ function DealCard({
   );
 }
 
-export default function CrmApp({
+export default function CrmApp({ initialCatalog, ...props }: CrmAppProps) {
+  return (
+    <CrmCatalogProvider initial={initialCatalog}>
+      <CrmAppInner {...props} />
+    </CrmCatalogProvider>
+  );
+}
+
+function CrmAppInner({
   initialDeals,
   initialTasks,
   initialInbox,
@@ -194,8 +206,9 @@ export default function CrmApp({
   initialTheme,
   initialSidebarCollapsed,
   role,
-}: CrmAppProps) {
+}: Omit<CrmAppProps, "initialCatalog">) {
   const caps = crmCapabilities(role);
+  const catalog = useCatalog();
   // Without the right to reassign, owner pickers offer only oneself (Comercial) or no one (Marketing).
   const ownerChoices = caps.assignAnyOwner ? team : caps.editPipeline ? team.filter((m) => m.id === currentUserId) : [];
   const [deals, setDeals] = useState(initialDeals);
@@ -379,6 +392,7 @@ export default function CrmApp({
           "contacts",
           "companies",
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
+          ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageTeam ? (["team"] as const) : []),
         ]}
         whatsappConfigured={whatsappConfigured}
@@ -450,7 +464,7 @@ export default function CrmApp({
                 className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
               >
                 <option value="all">Todas as origens</option>
-                {CRM_SOURCES.map((s) => (
+                {catalog.options("source").map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label}
                   </option>
@@ -521,6 +535,8 @@ export default function CrmApp({
           />
         ) : view === "campaigns" && caps.editCampaigns ? (
           <CrmCampaignsView team={team} canSend={caps.sendCampaigns} templatesConfigured={templatesConfigured} onOpenContact={(id) => openContact(id, "conversa")} />
+        ) : view === "settings" && caps.customize ? (
+          <CrmSettingsView />
         ) : view === "team" && caps.manageTeam ? (
           <CrmTeamView currentUserId={currentUserId} onChanged={() => void refresh()} />
         ) : view === "companies" ? (

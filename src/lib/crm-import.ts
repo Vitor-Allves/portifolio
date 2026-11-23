@@ -14,10 +14,8 @@ import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import {
   CRM_IMPORT_MAX_ROWS,
-  CRM_SOURCES,
   companyKey,
   isCrmConsentStatus,
-  isCrmSource,
   isPlausibleEmail,
   normalizePhone,
   phoneVariants,
@@ -30,6 +28,8 @@ import {
   type CrmSource,
 } from "./crm-types";
 import { CrmInputError, cleanText, iso, type CrmActor } from "./crm-core";
+import { getCatalog } from "./crm-options";
+import { foldLabel, type CrmCatalog } from "./crm-catalog";
 
 function fold(value: string): string {
   return value
@@ -39,18 +39,40 @@ function fold(value: string): string {
     .trim();
 }
 
-/** Free text from an "Origem" column → one of the CRM's sources, or null when it doesn't say. */
-export function matchSource(text: string | undefined): CrmSource | null {
+/**
+ * Free text from an "Origem" column → one of the active origens
+ * (Personalização), or null when it doesn't say. Exact name first, then the
+ * usual ways people write the default ones, else "outro".
+ */
+export function matchSource(catalog: CrmCatalog, text: string | undefined): CrmSource | null {
   if (!text?.trim()) return null;
   const t = fold(text);
-  const exact = CRM_SOURCES.find((s) => fold(s.label) === t || s.id === t);
+  const active = catalog.options.filter((o) => o.kind === "source" && !o.archived);
+  const exact = active.find((s) => fold(s.label) === t || s.id === t);
   if (exact) return exact.id;
-  if (/bni/.test(t)) return "bni";
-  if (/indica/.test(t)) return "indicacao";
-  if (/anunc|facebook|instagram|meta|google|ads|trafego|campanha/.test(t)) return "anuncio";
-  if (/evento|feira|palestra|workshop/.test(t)) return "evento";
-  if (/site|formul|landing|pagina/.test(t)) return "site";
+  const has = (id: string) => (active.some((o) => o.id === id) ? id : null);
+  if (/bni/.test(t)) return has("bni") ?? "outro";
+  if (/indica/.test(t)) return has("indicacao") ?? "outro";
+  if (/prospec|cold|frio|lista/.test(t)) return has("prospeccao_manual") ?? "outro";
+  if (/anunc|facebook|instagram|meta|google|ads|trafego|campanha/.test(t)) return has("anuncio") ?? "outro";
+  if (/evento|feira|palestra|workshop/.test(t)) return has("evento") ?? "outro";
+  if (/site|formul|landing|pagina/.test(t)) return has("site") ?? "outro";
   return "outro";
+}
+
+/** Tag names typed in a cell ("BNI, Evento") → active tag ids, plus the names that matched nothing. */
+export function matchTags(catalog: CrmCatalog, text: string | undefined): { ids: string[]; unknown: string[] } {
+  const ids: string[] = [];
+  const unknown: string[] = [];
+  for (const part of (text ?? "").split(/[,;|]/)) {
+    const name = part.trim();
+    if (!name) continue;
+    const tag = catalog.tags.find((t) => !t.archived && foldLabel(t.label) === foldLabel(name));
+    if (tag) {
+      if (!ids.includes(tag.id)) ids.push(tag.id);
+    } else unknown.push(name.slice(0, 40));
+  }
+  return { ids, unknown };
 }
 
 /** "sim", "s", "x", "aceitou"… → sim; "não", "n"… → não informado; blank → null (use the default). */
@@ -76,9 +98,16 @@ type ParsedRow = {
   consentStatus: CrmConsentStatus;
   consentSource: string | null;
   notes: string | null;
+  tagIds: string[];
 };
 
-type Checked = { results: CrmImportRowResult[]; fresh: ParsedRow[]; newCompanyKeys: Set<string> };
+type Checked = {
+  results: CrmImportRowResult[];
+  fresh: ParsedRow[];
+  newCompanyKeys: Set<string>;
+  newSegments: string[];
+  unknownTags: string[];
+};
 
 type Db = Pick<PoolClient, "query">;
 
@@ -86,7 +115,21 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
   if (rows.length > CRM_IMPORT_MAX_ROWS) {
     throw new CrmInputError(`A planilha tem ${rows.length} linhas; o limite por importação é ${CRM_IMPORT_MAX_ROWS}. Divida em partes.`);
   }
-  const defaultSource: CrmSource = isCrmSource(defaults.source) ? defaults.source : "outro";
+  const catalog = await getCatalog(db);
+  const activeSource = (id: unknown) => typeof id === "string" && catalog.options.some((o) => o.kind === "source" && o.id === id && !o.archived);
+  const defaultSource: CrmSource = activeSource(defaults.source) ? (defaults.source as string) : "outro";
+  // Segments are matched to the list's own spelling; new ones are collected (added on import).
+  const segmentLabels = new Map(catalog.options.filter((o) => o.kind === "segment").map((o) => [foldLabel(o.label), o.label]));
+  const newSegments = new Map<string, string>();
+  const segmentOf = (text: string | null) => {
+    if (!text) return null;
+    const key = foldLabel(text);
+    const known = segmentLabels.get(key);
+    if (known) return known;
+    if (!newSegments.has(key)) newSegments.set(key, text);
+    return newSegments.get(key)!;
+  };
+  const unknownTags = new Set<string>();
   const defaultConsent: CrmConsentStatus = isCrmConsentStatus(defaults.consentStatus) ? defaults.consentStatus : "nao_informado";
   const defaultConsentSource = cleanText(defaults.consentSource, 200);
 
@@ -128,13 +171,18 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
       company,
       companyKey: company ? companyKey(company) || null : null,
       jobTitle: cleanText(row.jobTitle, 80),
-      segment: cleanText(row.segment, 80),
+      segment: segmentOf(cleanText(row.segment, 80)),
       city: cleanText(row.city, 80),
-      source: matchSource(row.source) ?? defaultSource,
+      source: matchSource(catalog, row.source) ?? defaultSource,
       referredBy: cleanText(row.referredBy, 120),
       consentStatus: consentFromSheet ?? defaultConsent,
       consentSource,
       notes: cleanText(row.notes, 2000),
+      tagIds: (() => {
+        const m = matchTags(catalog, row.tags);
+        for (const u of m.unknown) unknownTags.add(u);
+        return m.ids;
+      })(),
     });
   }
 
@@ -187,13 +235,21 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
   const newCompanyKeys = new Set(keys.filter((k) => !knownKeys.has(k)));
 
   results.sort((a, b) => a.line - b.line);
-  return { results, fresh, newCompanyKeys };
+  // Only segments of rows that will actually be imported join the list.
+  const freshSegments = new Set(fresh.map((r) => r.segment).filter(Boolean));
+  return {
+    results,
+    fresh,
+    newCompanyKeys,
+    newSegments: [...newSegments.values()].filter((s) => freshSegments.has(s)),
+    unknownTags: [...unknownTags],
+  };
 }
 
 function summarize(checked: Checked): CrmImportPreview {
   const counts = { novo: 0, duplicado: 0, erro: 0 };
   for (const r of checked.results) counts[r.status] += 1;
-  return { results: checked.results, counts, newCompanies: checked.newCompanyKeys.size };
+  return { results: checked.results, counts, newCompanies: checked.newCompanyKeys.size, newSegments: checked.newSegments, unknownTags: checked.unknownTags };
 }
 
 /** Dry run: what would happen, row by row. Writes nothing. */
@@ -234,6 +290,17 @@ export async function commitImport(
       ]
     );
     if (checked.fresh.length === 0) return { ...summary, importId };
+
+    // New segments join the Personalização list (at the end, in sheet order).
+    if (checked.newSegments.length > 0) {
+      await client.query(
+        `INSERT INTO crm_options (kind, id, label, sort)
+         SELECT 'segment', 'seg-' || md5(lower(t.label)), t.label, (SELECT COALESCE(max(sort), -1) FROM crm_options WHERE kind = 'segment') + t.n
+         FROM unnest($1::text[]) WITH ORDINALITY AS t(label, n)
+         ON CONFLICT (kind, id) DO NOTHING`,
+        [checked.newSegments]
+      );
+    }
 
     // Companies: create the missing ones (first row's segment/city), then fill gaps on the existing.
     const firstByKey = new Map<string, ParsedRow>();
@@ -294,6 +361,24 @@ export async function commitImport(
         importId,
       ]
     );
+
+    // Tags from the sheet, recorded as applied by this import.
+    const tagPairs = checked.fresh.flatMap((r, i) => r.tagIds.map((tagId) => ({ contactId: ids[i], tagId })));
+    if (tagPairs.length > 0) {
+      await client.query(
+        `INSERT INTO crm_contact_tags (contact_id, tag_id, applied_via, applied_by, applied_by_name)
+         SELECT t.contact_id, t.tag_id, 'importacao', $3, $4 FROM unnest($1::text[], $2::text[]) AS t(contact_id, tag_id)
+         ON CONFLICT DO NOTHING`,
+        [tagPairs.map((p) => p.contactId), tagPairs.map((p) => p.tagId), actor.userId, actor.userName]
+      );
+      await client.query(
+        `INSERT INTO crm_events (id, contact_id, kind, payload, user_id, user_name)
+         SELECT gen_random_uuid()::text, t.contact_id, 'tag',
+                jsonb_build_object('action', 'added', 'tagId', t.tag_id, 'label', tg.label, 'via', 'importacao'), $3, $4
+         FROM unnest($1::text[], $2::text[]) AS t(contact_id, tag_id) JOIN crm_tags tg ON tg.id = t.tag_id`,
+        [tagPairs.map((p) => p.contactId), tagPairs.map((p) => p.tagId), actor.userId, actor.userName]
+      );
+    }
 
     // One opportunity in "Novo" per imported contact (titled by company, else name).
     if (defaults.createDeals !== false) {
@@ -368,7 +453,8 @@ export async function undoImport(importId: string, actor: NonNullable<CrmActor>)
          AND NOT EXISTS (
            SELECT 1 FROM crm_events e
            WHERE e.contact_id = c.id
-             AND NOT (e.kind = 'created' OR (e.kind = 'note' AND e.payload->>'imported' = 'true'))
+             AND NOT (e.kind = 'created' OR (e.kind = 'note' AND e.payload->>'imported' = 'true')
+                      OR (e.kind = 'tag' AND e.payload->>'via' = 'importacao'))
          )`,
       [importId]
     );

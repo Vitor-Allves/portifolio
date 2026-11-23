@@ -152,6 +152,7 @@ const GUESS: [CrmImportField, RegExp][] = [
   ["city", /cidade|municipio|city|localidade/],
   ["source", /origem|fonte|canal|source/],
   ["notes", /observ|^obs|nota|coment|descri/],
+  ["tags", /etiqueta|^tags?$|marcad/],
   ["name", /nome|^contato$|cliente|lead|^name/],
 ];
 
