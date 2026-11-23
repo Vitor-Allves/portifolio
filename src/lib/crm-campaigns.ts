@@ -50,7 +50,7 @@ const SKIP_SQL = `CASE
 END`;
 
 function audienceFilters(a: CampaignAudience) {
-  return contactWhere({ stage: a.stage, owner: a.owner, source: a.source, segment: a.segment, city: a.city, companyId: a.companyId });
+  return contactWhere({ stage: a.stage, owner: a.owner, source: a.source, segment: a.segment, city: a.city, companyId: a.companyId, tag: a.tag });
 }
 
 // ---------- drafts ----------

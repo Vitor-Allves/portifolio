@@ -9,16 +9,14 @@ import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import {
   isClosedStage,
-  isCrmLostReason,
-  isCrmSource,
   isCrmStage,
-  isCrmTaskKind,
   parseMoneyToCents,
   type CrmDeal,
   type CrmDealCard,
   type CrmStage,
 } from "./crm-types";
 import { CrmInputError, addEvent, cleanText, iso, type CrmActor } from "./crm-core";
+import { requireOptionId } from "./crm-options";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -52,7 +50,7 @@ function mapDeal(r: DealRow): CrmDeal {
     ownerId: r.owner_id,
     ownerName: r.owner_name,
     expectedCloseAt: iso(r.expected_close_at),
-    lostReason: isCrmLostReason(r.lost_reason) ? r.lost_reason : null,
+    lostReason: r.lost_reason,
     lostNote: r.lost_note,
     stageChangedAt: iso(r.stage_changed_at)!,
     closedAt: iso(r.closed_at),
@@ -84,12 +82,14 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
       task_title: string | null;
       task_due_at: Date | null;
       task_all_day: boolean | null;
+      tag_ids: string[];
     }
   >(
     `SELECT ${DEAL_COLS},
             c.name AS contact_name, COALESCE(co.name, c.company) AS company, c.phone, c.email, c.source, c.referred_by,
             c.ad_referral IS NOT NULL AS has_ad_referral, c.unread_count, c.last_inbound_at, c.last_message_at, c.last_message_preview,
-            nt.id AS task_id, nt.kind AS task_kind, nt.title AS task_title, nt.due_at AS task_due_at, nt.all_day AS task_all_day
+            nt.id AS task_id, nt.kind AS task_kind, nt.title AS task_title, nt.due_at AS task_due_at, nt.all_day AS task_all_day,
+            ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids
      FROM crm_deals d
      JOIN crm_contacts c ON c.id = d.contact_id
      LEFT JOIN crm_companies co ON co.id = c.company_id
@@ -113,7 +113,7 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
     company: r.company,
     phone: r.phone,
     email: r.email,
-    source: isCrmSource(r.source) ? r.source : "outro",
+    source: r.source,
     referredBy: r.referred_by,
     hasAdReferral: r.has_ad_referral,
     unreadCount: r.unread_count,
@@ -121,9 +121,10 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
     lastMessageAt: iso(r.last_message_at),
     lastMessagePreview: r.last_message_preview,
     nextTask:
-      r.task_id && isCrmTaskKind(r.task_kind)
+      r.task_id && r.task_kind
         ? { id: r.task_id, kind: r.task_kind, title: r.task_title ?? "", dueAt: iso(r.task_due_at), allDay: r.task_all_day ?? true }
         : null,
+    tagIds: r.tag_ids ?? [],
   }));
 }
 
@@ -294,8 +295,8 @@ export async function updateDealTx(
   // Loss reason: required to be lost; cleared when the opportunity is reopened.
   if (stage === "perdido") {
     const reason = patch.lostReason !== undefined ? patch.lostReason : current.lost_reason;
-    if (!isCrmLostReason(reason)) throw new CrmInputError("Informe o motivo da perda.");
-    if (patch.lostReason !== undefined) set("lost_reason", reason);
+    if (typeof reason !== "string" || !reason) throw new CrmInputError("Informe o motivo da perda.");
+    if (patch.lostReason !== undefined) set("lost_reason", await requireOptionId(client, "lost_reason", reason, current.lost_reason));
     if (patch.lostNote !== undefined) set("lost_note", cleanText(patch.lostNote, 500));
   } else if (current.stage === "perdido") {
     set("lost_reason", null);

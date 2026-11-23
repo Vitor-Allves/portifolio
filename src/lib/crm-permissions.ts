@@ -54,13 +54,15 @@ export type CrmCapabilities = {
   editCampaigns: boolean;
   /** Start, pause, resume and cancel a campaign's sending. */
   sendCampaigns: boolean;
+  /** Personalização do CRM: lists, tags (Administrador). */
+  customize: boolean;
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false },
 };
 
 export function crmCapabilities(role: CrmRole): CrmCapabilities {

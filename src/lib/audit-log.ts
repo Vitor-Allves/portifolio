@@ -28,7 +28,8 @@ export type AuditAction =
   | "crm.role_change"
   | "crm.campaign_send"
   | "crm.campaign_cancel"
-  | "crm.campaign_delete";
+  | "crm.campaign_delete"
+  | "crm.catalog_change";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

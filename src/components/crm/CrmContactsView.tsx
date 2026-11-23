@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  CRM_SOURCES,
   CRM_STAGES,
   formatPhone,
-  sourceLabel,
   stageLabel,
   type CrmContactCard,
   type CrmFacets,
@@ -16,6 +14,7 @@ import { CONSENT_BADGE, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT,
 import { relativeTime } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
+import { TagChips, useCatalog } from "./crm-catalog-context";
 
 const PAGE_SIZE = 25;
 
@@ -51,6 +50,7 @@ export default function CrmContactsView({
   canExport: boolean;
   onNew: () => void;
 }) {
+  const { label, options, tagGroups } = useCatalog();
   const [query, setQuery] = useState("");
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("");
@@ -59,6 +59,7 @@ export default function CrmContactsView({
   const [segment, setSegment] = useState("");
   const [city, setCity] = useState("");
   const [consent, setConsent] = useState("");
+  const [tag, setTag] = useState("");
   const [archived, setArchived] = useState(false);
   const [sort, setSort] = useState("recent");
   const [page, setPage] = useState(1);
@@ -84,9 +85,10 @@ export default function CrmContactsView({
     if (segment) p.set("segment", segment);
     if (city) p.set("city", city);
     if (consent) p.set("consent", consent);
+    if (tag) p.set("tag", tag);
     if (archived) p.set("archived", "1");
     return p;
-  }, [q, stage, owner, source, segment, city, consent, archived]);
+  }, [q, stage, owner, source, segment, city, consent, tag, archived]);
 
   const key = `${params.toString()}|${sort}|${page}|${version}`;
 
@@ -119,7 +121,7 @@ export default function CrmContactsView({
     };
   }, [version]);
 
-  const activeFilters = [stage, owner !== "all" ? owner : "", source, segment, city, consent, archived ? "1" : ""].filter(Boolean).length;
+  const activeFilters = [stage, owner !== "all" ? owner : "", source, segment, city, consent, tag, archived ? "1" : ""].filter(Boolean).length;
   const loading = result?.key !== key;
   const data = result?.data ?? null;
   const total = data?.total ?? 0;
@@ -171,7 +173,7 @@ export default function CrmContactsView({
         </select>
         <select value={source} onChange={(e) => resetPage(setSource)(e.target.value)} aria-label="Origem" className={CRM_FILTER}>
           <option value="">Todas as origens</option>
-          {CRM_SOURCES.map((s) => (
+          {options("source").map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
             </option>
@@ -202,6 +204,18 @@ export default function CrmContactsView({
           <option value="sim">Aceitou contato</option>
           <option value="nao_informado">Não informado</option>
           <option value="descadastrado">Descadastrados</option>
+        </select>
+        <select value={tag} onChange={(e) => resetPage(setTag)(e.target.value)} aria-label="Etiqueta" className={CRM_FILTER}>
+          <option value="">Qualquer etiqueta</option>
+          {tagGroups.map((g) => (
+            <optgroup key={g.id} label={g.label}>
+              {g.tags.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         <button
           type="button"
@@ -289,6 +303,11 @@ export default function CrmContactsView({
                     <span className="block text-[11.5px] text-crm-faint">
                       {c.jobTitle ?? (c.lastMessageAt ? `msg ${relativeTime(c.lastMessageAt)}` : "")}
                     </span>
+                    {c.tagIds.length > 0 && (
+                      <span className="mt-1 block">
+                        <TagChips ids={c.tagIds} max={3} />
+                      </span>
+                    )}
                   </td>
                   <td className={`${CRM_TD} text-crm-dim`}>{c.company ?? "—"}</td>
                   <td className={`${CRM_TD} text-crm-dim`}>
@@ -296,7 +315,7 @@ export default function CrmContactsView({
                     {c.email && <span className="block truncate max-w-[200px]">{c.email}</span>}
                   </td>
                   <td className={`${CRM_TD} text-crm-dim`}>{[c.segment, c.city].filter(Boolean).join(" · ") || "—"}</td>
-                  <td className={`${CRM_TD} text-crm-dim whitespace-nowrap`}>{sourceLabel(c.source)}</td>
+                  <td className={`${CRM_TD} text-crm-dim whitespace-nowrap`}>{label("source", c.source)}</td>
                   <td className={CRM_TD}>
                     <StageTag stage={c.stage} />
                   </td>
@@ -327,6 +346,7 @@ export default function CrmContactsView({
                   <span className="flex flex-wrap items-center gap-2 text-[11.5px] text-crm-dim">
                     <StageTag stage={c.stage} />
                     <ConsentBadge c={c} />
+                    <TagChips ids={c.tagIds} max={2} />
                   </span>
                 </button>
               </li>

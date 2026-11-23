@@ -7,6 +7,7 @@ import { DbConfigError } from "@/lib/db";
 import { listQuickReplies, listTeam, listUnreadContacts } from "@/lib/crm";
 import { listBoardDeals } from "@/lib/crm-deals";
 import { listTasks } from "@/lib/crm-tasks";
+import { getCatalog } from "@/lib/crm-options";
 import { isWhatsAppConfigured } from "@/lib/whatsapp";
 import { crmSessionFor, visibleTo, type CrmSession } from "@/lib/crm-access";
 import CrmApp from "@/components/crm/CrmApp";
@@ -19,14 +20,15 @@ export const metadata: Metadata = {
 
 async function loadBoard(session: CrmSession) {
   const mine = visibleTo(session);
-  const [deals, tasks, inbox, team, quickReplies] = await Promise.all([
+  const [deals, tasks, inbox, team, quickReplies, catalog] = await Promise.all([
     listBoardDeals(mine),
     listTasks({ status: "pending", owner: "all", visibleTo: mine }),
     listUnreadContacts(mine),
     listTeam(),
     listQuickReplies(),
+    getCatalog(),
   ]);
-  return { deals, tasks, inbox, team, quickReplies };
+  return { deals, tasks, inbox, team, quickReplies, catalog };
 }
 
 export default async function CrmPage() {
@@ -52,7 +54,7 @@ export default async function CrmPage() {
         <div className="rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] p-8 max-w-md">
           <p className="font-sans text-lg font-semibold text-crm-text mb-2">Sem acesso ao CRM</p>
           <p className="text-sm text-crm-dim leading-relaxed mb-5">
-            Seu perfil não tem acesso ao CRM. Se precisar usar, peça a um administrador para liberar em CRM → Equipe.
+            Seu perfil não tem acesso ao CRM. Se precisar usar, peça a um administrador para liberar em CRM → Usuários e permissões.
           </p>
           <Link href="/intelligence/" className="text-[13px] font-semibold text-crm-accent hover:opacity-80">
             ← Voltar ao Intelligence
@@ -80,6 +82,7 @@ export default async function CrmPage() {
         initialTheme={theme}
         initialSidebarCollapsed={sidebarCollapsed}
         role={session.role}
+        initialCatalog={loaded.catalog}
       />
     );
   }

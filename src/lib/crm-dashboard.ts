@@ -9,9 +9,7 @@
 import { getDb } from "./db";
 import { iso } from "./crm-core";
 import {
-  CRM_SOURCES,
   CRM_STAGES,
-  isCrmLostReason,
   type CrmDashboard,
   type CrmDashboardMetrics,
   type CrmTeamMember,
@@ -130,6 +128,7 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
   const db = await getDb();
   const range = [startOf(from), startOf(shiftDay(to, 1)), ownerId];
   const { bucket, starts } = buckets(from, to);
+  const sourceOptions = await db.query<{ id: string }>(`SELECT id FROM crm_options WHERE kind = 'source' ORDER BY sort, lower(label)`);
 
   const [current, previous, open, tasksNow, closedByStage, leadDays, wonDays, losses, sourceLeads, sourceWon, people, lastActivity] =
     await Promise.all([
@@ -255,17 +254,17 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
   for (const r of wonDays.rows) series[bucketOf(r.day)].won += n(r.count);
 
   const lossReasons = losses.rows
-    .map((r) => ({ reason: isCrmLostReason(r.reason) ? r.reason : ("sem_motivo" as const), count: n(r.count), valueCents: n(r.value) }))
+    .map((r) => ({ reason: r.reason || "sem_motivo", count: n(r.count), valueCents: n(r.value) }))
     .sort((a, b) => b.count - a.count);
 
   const leadsBy = new Map(sourceLeads.rows.map((r) => [r.source, n(r.count)]));
   const wonBy = new Map(sourceWon.rows.map((r) => [r.source, r]));
-  const sources = CRM_SOURCES.map((s) => ({
-    source: s.id,
-    newLeads: leadsBy.get(s.id) ?? 0,
-    won: n(wonBy.get(s.id)?.count),
-    wonValueCents: n(wonBy.get(s.id)?.value),
-  })).filter((s) => s.newLeads > 0 || s.won > 0);
+  // In the Personalização order; a code no longer on the list still shows (old records keep it).
+  const sourceOrder = new Map(sourceOptions.rows.map((r, i) => [r.id, i]));
+  const sources = [...new Set([...leadsBy.keys(), ...wonBy.keys()])]
+    .map((id) => ({ source: id, newLeads: leadsBy.get(id) ?? 0, won: n(wonBy.get(id)?.count), wonValueCents: n(wonBy.get(id)?.value) }))
+    .filter((s) => s.newLeads > 0 || s.won > 0)
+    .sort((a, b) => (sourceOrder.get(a.source) ?? 999) - (sourceOrder.get(b.source) ?? 999) || a.source.localeCompare(b.source));
 
   const peopleBy = new Map(people.rows.map((r) => [r.owner_id, r]));
   const lastBy = new Map(lastActivity.rows.map((r) => [r.user_id, iso(r.at)]));

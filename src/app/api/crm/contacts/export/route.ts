@@ -4,7 +4,8 @@ import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
 import { requireCap } from "@/lib/crm-access";
 import { contactFiltersFromSearch, listContactsForExport } from "@/lib/crm";
 import { nextTasksByContact } from "@/lib/crm-tasks";
-import { CRM_CONSENT, formatPhone, sourceLabel, stageLabel } from "@/lib/crm-types";
+import { CRM_CONSENT, formatPhone, stageLabel } from "@/lib/crm-types";
+import { getCatalog } from "@/lib/crm-options";
 import { rowsToCsv } from "@/lib/csv";
 
 export const runtime = "nodejs";
@@ -20,10 +21,12 @@ export async function GET(req: NextRequest) {
     requireCap(actor, "exportContacts");
     const filters = contactFiltersFromSearch(req.nextUrl.searchParams, actor.userId);
     const contacts = await listContactsForExport(filters);
-    const nextTasks = await nextTasksByContact(contacts.map((c) => c.id));
+    const [nextTasks, catalog] = await Promise.all([nextTasksByContact(contacts.map((c) => c.id)), getCatalog()]);
+    const sourceLabel = (id: string) => catalog.options.find((o) => o.kind === "source" && o.id === id)?.label ?? id;
+    const tagLabels = new Map(catalog.tags.map((t) => [t.id, t.label]));
     const header = [
       "Nome", "WhatsApp", "E-mail", "Empresa", "Cargo", "Segmento", "Cidade", "Origem", "Indicado por",
-      "Etapa", "Responsável", "Consentimento", "Descadastrado", "Próxima tarefa", "Data da próxima tarefa", "Cadastrado em",
+      "Etapa", "Responsável", "Consentimento", "Descadastrado", "Próxima tarefa", "Data da próxima tarefa", "Cadastrado em", "Etiquetas",
     ];
     const rows = contacts.map((c) => [
       c.name,
@@ -42,6 +45,7 @@ export async function GET(req: NextRequest) {
       nextTasks.get(c.id)?.title ?? "",
       day(nextTasks.get(c.id)?.dueAt ?? null),
       day(c.createdAt),
+      c.tagIds.map((id) => tagLabels.get(id) ?? id).join(", "),
     ]);
     await writeAudit({
       actorUserId: actor.userId,

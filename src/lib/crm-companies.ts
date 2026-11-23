@@ -5,6 +5,7 @@
 
 import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
+import { requireSegment } from "./crm-options";
 import {
   companyKey,
   type CrmCompanyDetail,
@@ -110,6 +111,7 @@ export async function createCompany(input: CompanyInput, actor: CrmActor): Promi
   return withTransaction(async (client) => {
     const dup = await client.query<{ name: string }>(`SELECT name FROM crm_companies WHERE name_key = $1`, [companyKey(name)]);
     if (dup.rows[0]) throw new CrmInputError(`Essa empresa já está cadastrada como "${dup.rows[0].name}".`);
+    await requireSegment(client, cleanText(input.segment, 80));
     const id = randomUUID();
     await client.query(
       `INSERT INTO crm_companies (id, name, name_key, segment, city, website, notes, created_by)
@@ -123,7 +125,7 @@ export async function createCompany(input: CompanyInput, actor: CrmActor): Promi
 /** false = no such company. Renaming onto another company's name is refused (merge is a separate, deliberate step). */
 export async function updateCompany(id: string, patch: CompanyInput): Promise<boolean> {
   return withTransaction(async (client) => {
-    const { rows } = await client.query(`SELECT 1 FROM crm_companies WHERE id = $1 FOR UPDATE`, [id]);
+    const { rows } = await client.query<{ segment: string | null }>(`SELECT segment FROM crm_companies WHERE id = $1 FOR UPDATE`, [id]);
     if (rows.length === 0) return false;
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -139,7 +141,11 @@ export async function updateCompany(id: string, patch: CompanyInput): Promise<bo
       set("name", name);
       set("name_key", companyKey(name));
     }
-    if (patch.segment !== undefined) set("segment", cleanText(patch.segment, 80));
+    if (patch.segment !== undefined) {
+      const segment = cleanText(patch.segment, 80);
+      await requireSegment(client, segment, rows[0].segment);
+      set("segment", segment);
+    }
     if (patch.city !== undefined) set("city", cleanText(patch.city, 80));
     if (patch.website !== undefined) set("website", cleanWebsite(patch.website));
     if (patch.notes !== undefined) set("notes", cleanText(patch.notes, 2000));

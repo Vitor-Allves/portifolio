@@ -7,7 +7,8 @@
 import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
-import { isCrmTaskKind, taskKindLabel, type CrmTask, type CrmTaskKind } from "./crm-types";
+import type { CrmTask, CrmTaskKind } from "./crm-types";
+import { optionLabel, requireOptionId } from "./crm-options";
 import { CrmInputError, addEvent, cleanText, iso, type CrmActor } from "./crm-core";
 
 type Db = Pick<PoolClient, "query">;
@@ -51,7 +52,7 @@ function mapTask(r: TaskRow): CrmTask {
     company: r.company,
     dealId: r.deal_id,
     dealTitle: r.deal_title,
-    kind: isCrmTaskKind(r.kind) ? r.kind : "tarefa",
+    kind: r.kind,
     title: r.title,
     dueAt: iso(r.due_at),
     allDay: r.all_day,
@@ -167,8 +168,8 @@ export async function createTaskTx(client: PoolClient, input: NewTaskInput, acto
     if (deal.rows.length === 0) throw new CrmInputError("Oportunidade inválida para este contato.");
     dealId = input.dealId;
   }
-  const kind: CrmTaskKind = isCrmTaskKind(input.kind) ? input.kind : "tarefa";
-  const title = cleanText(input.title, 200) ?? taskKindLabel(kind);
+  const kind: CrmTaskKind = await requireOptionId(client, "task_kind", typeof input.kind === "string" && input.kind ? input.kind : "tarefa");
+  const title = cleanText(input.title, 200) ?? (await optionLabel(client, "task_kind", kind)) ?? "Tarefa";
   const done = input.done === true;
   const parsed = parseDue(input.dueDate, input.dueTime);
   // An activity logged without a date happened now — so it shows on the agenda.
@@ -243,9 +244,8 @@ export async function updateTask(id: string, patch: TaskPatch, actor: CrmActor):
     };
     let kind = current.kind;
     let title = current.title;
-    if (patch.kind !== undefined) {
-      if (!isCrmTaskKind(patch.kind)) throw new CrmInputError("Tipo de tarefa inválido.");
-      kind = patch.kind;
+    if (patch.kind !== undefined && patch.kind !== current.kind) {
+      kind = await requireOptionId(client, "task_kind", patch.kind, current.kind);
       set("kind", kind);
     }
     if (patch.title !== undefined) {

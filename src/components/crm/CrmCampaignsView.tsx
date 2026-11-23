@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CRM_SOURCES, CRM_STAGES, type CrmFacets, type CrmTeamMember, type CrmTemplate } from "@/lib/crm-types";
+import { CRM_STAGES, type CrmFacets, type CrmTeamMember, type CrmTemplate } from "@/lib/crm-types";
 import {
   PARAM_SOURCES,
   campaignStatusLabel,
@@ -17,6 +17,7 @@ import {
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_TD, CRM_TH } from "./crm-styles";
 import { dateTime } from "./crm-format";
 import { Mascot } from "./crm-brand";
+import { useCatalog } from "./crm-catalog-context";
 
 const STATUS_TONE: Record<CampaignStatus, string> = {
   rascunho: "bg-crm-sunken text-crm-dim border-crm-line",
@@ -189,6 +190,7 @@ function CampaignEditor({
   onBack: () => void;
   onStarted: (id: string) => void;
 }) {
+  const { options, tagGroups } = useCatalog();
   const [id, setId] = useState(initialId);
   const [loaded, setLoaded] = useState(initialId === null);
   const [name, setName] = useState("");
@@ -347,7 +349,7 @@ function CampaignEditor({
             <p className="mt-3 text-[12px] text-crm-dim">Quem deve receber? Deixe em “Todos” o que não importa.</p>
             <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <FilterSelect label="Etapa do funil" value={audience.stage} onChange={(v) => setFilter("stage", v)} options={CRM_STAGES.map((s) => [s.id, s.label])} />
-              <FilterSelect label="Origem" value={audience.source} onChange={(v) => setFilter("source", v)} options={CRM_SOURCES.map((s) => [s.id, s.label])} />
+              <FilterSelect label="Origem" value={audience.source} onChange={(v) => setFilter("source", v)} options={options("source").map((s) => [s.id, s.label] as [string, string])} />
               <FilterSelect
                 label="Responsável"
                 value={audience.owner}
@@ -356,6 +358,12 @@ function CampaignEditor({
               />
               <FilterSelect label="Segmento" value={audience.segment} onChange={(v) => setFilter("segment", v)} options={facets.segments.map((s) => [s, s])} />
               <FilterSelect label="Cidade" value={audience.city} onChange={(v) => setFilter("city", v)} options={facets.cities.map((s) => [s, s])} />
+              <FilterSelect
+                label="Etiqueta"
+                value={audience.tag}
+                onChange={(v) => setFilter("tag", v)}
+                options={tagGroups.flatMap((g) => g.tags.map((t) => [t.id, `${g.label}: ${t.label}`] as [string, string]))}
+              />
             </div>
           </Step>
 

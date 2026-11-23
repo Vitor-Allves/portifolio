@@ -5,7 +5,6 @@ import {
   CRM_CONSENT,
   CRM_IMPORT_FIELDS,
   CRM_IMPORT_MAX_ROWS,
-  CRM_SOURCES,
   type CrmImportField,
   type CrmImportPreview,
   type CrmImportRow,
@@ -16,6 +15,7 @@ import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_
 import { guessMapping, lineNumbers, readSheet, type Sheet } from "./crm-sheet";
 import { dateTime } from "./crm-format";
 import { Mascot } from "./crm-brand";
+import { useCatalog } from "./crm-catalog-context";
 
 type Step = "file" | "map" | "preview" | "done";
 
@@ -107,6 +107,7 @@ function DialogBody({
   onClose: () => void;
   onImported: () => void;
 }) {
+  const { options } = useCatalog();
   const [step, setStep] = useState<Step>("file");
   const [fileName, setFileName] = useState("");
   const [sheet, setSheet] = useState<Sheet | null>(null);
@@ -334,7 +335,7 @@ function DialogBody({
               <label className="block">
                 <span className={CRM_LABEL}>Origem (quando a planilha não diz)</span>
                 <select value={defaultSource} onChange={(e) => setDefaultSource(e.target.value)} className={`${CRM_INPUT} mt-1`}>
-                  {CRM_SOURCES.map((s) => (
+                  {options("source").map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.label}
                     </option>
@@ -406,6 +407,17 @@ function DialogBody({
               <Tile label="Com erro" value={preview.counts.erro} tone="text-crm-red" />
               <Tile label="Empresas novas" value={preview.newCompanies} tone="text-crm-accent" />
             </div>
+            {preview.newSegments.length > 0 && (
+              <p className="text-[12.5px] text-crm-dim">
+                Segmentos novos que entram na lista da Personalização: <strong className="text-crm-text">{preview.newSegments.join(", ")}</strong>.
+              </p>
+            )}
+            {preview.unknownTags.length > 0 && (
+              <p className="text-[12.5px] text-crm-amber">
+                Etiquetas que não existem e serão ignoradas: <strong>{preview.unknownTags.slice(0, 20).join(", ")}</strong>
+                {preview.unknownTags.length > 20 ? "…" : ""}. Para usar, o Administrador cria em Personalização antes de importar.
+              </p>
+            )}
             {issues.length > 0 ? (
               <div className="space-y-2">
                 <p className="text-[12.5px] text-crm-dim">Estas linhas não entram (o resto entra normalmente):</p>

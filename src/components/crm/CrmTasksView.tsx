@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { formatPhone, taskKindLabel, type CrmContactCard, type CrmTask, type CrmTeamMember } from "@/lib/crm-types";
-import { CRM_FILTER, TASK_KIND_ICON } from "./crm-styles";
+import { formatPhone, type CrmContactCard, type CrmTask, type CrmTeamMember } from "@/lib/crm-types";
+import { CRM_FILTER, taskKindIcon } from "./crm-styles";
 import { TASK_STATE_TONE, relativeTime, taskDueLabel, taskState, type TaskState } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
+import { useCatalog } from "./crm-catalog-context";
 
 const GROUPS: { id: TaskState; label: string }[] = [
   { id: "overdue", label: "Atrasadas" },
@@ -30,6 +31,7 @@ export function TaskRow({
   busy?: boolean;
   showContact?: boolean;
 }) {
+  const { label } = useCatalog();
   const state = taskState(task.dueAt, task.allDay, now);
   return (
     <div className="flex items-start gap-3 px-4 py-2.5">
@@ -46,9 +48,9 @@ export function TaskRow({
       <button type="button" onClick={onOpen} disabled={!onOpen} className="min-w-0 flex-1 text-left">
         <span className="flex items-center gap-1.5 text-[13px] font-semibold text-crm-text">
           <span aria-hidden="true" className="text-crm-faint w-4 text-center">
-            {TASK_KIND_ICON[task.kind]}
+            {taskKindIcon(task.kind)}
           </span>
-          <span className="sr-only">{taskKindLabel(task.kind)}:</span>
+          <span className="sr-only">{label("task_kind", task.kind)}:</span>
           <span className="truncate">{task.title}</span>
         </span>
         {showContact && (

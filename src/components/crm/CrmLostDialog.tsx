@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { CRM_LOST_REASONS, type CrmLostReason } from "@/lib/crm-types";
+import type { CrmLostReason } from "@/lib/crm-types";
 import { CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL } from "./crm-styles";
 import { Mascot } from "./crm-brand";
+import { useCatalog } from "./crm-catalog-context";
 
 /** Asks why an opportunity was lost before it moves to "Perdido". */
 export default function CrmLostDialog({
@@ -15,6 +16,7 @@ export default function CrmLostDialog({
   onConfirm: (reason: CrmLostReason, note: string) => void;
   onCancel: () => void;
 }) {
+  const { options } = useCatalog();
   const [reason, setReason] = useState<CrmLostReason | "">("");
   const [note, setNote] = useState("");
 
@@ -52,7 +54,7 @@ export default function CrmLostDialog({
         </div>
         <fieldset className="space-y-1.5">
           <legend className={CRM_LABEL}>Motivo</legend>
-          {CRM_LOST_REASONS.map((r) => (
+          {options("lost_reason").map((r) => (
             <label
               key={r.id}
               className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-[13px] cursor-pointer transition-colors ${

@@ -6,11 +6,9 @@
 import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
 import {
-  CRM_SOURCES,
   CRM_STAGES,
   formatPhone,
   isCrmConsentStatus,
-  isCrmSource,
   isCrmStage,
   isPlausibleEmail,
   normalizePhone,
@@ -30,6 +28,7 @@ import {
   type CrmTeamMember,
 } from "./crm-types";
 import { isOptOutText } from "./crm-campaign-rules";
+import { listContactTags, optionLabel, requireOptionId, requireSegment } from "./crm-options";
 import { CrmInputError, addEvent, cleanText, escapeLike, iso, resolveCompanyId, type CrmActor } from "./crm-core";
 import { createDealTx, listContactDeals, setContactStageTx, updateDealTx } from "./crm-deals";
 import { createTaskTx, listContactTasks } from "./crm-tasks";
@@ -68,6 +67,7 @@ type CardRow = {
   opted_out_at: Date | null;
   archived_at: Date | null;
   created_at: Date;
+  tag_ids: string[];
 };
 
 // Company name, segment and city come from the linked company when there is
@@ -80,7 +80,8 @@ const CARD_SELECT = `
          c.source, c.referred_by, c.stage, c.owner_id, u.name AS owner_name,
          c.next_action, c.next_action_at, c.last_message_at, c.last_message_preview, c.last_inbound_at,
          c.unread_count, c.ad_referral, c.stage_changed_at, c.consent_status, c.consent_source, c.consent_at,
-         c.opted_out_at, c.archived_at, c.created_at
+         c.opted_out_at, c.archived_at, c.created_at,
+         ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids
   FROM crm_contacts c
   LEFT JOIN crm_companies co ON co.id = c.company_id
   LEFT JOIN internal_users u ON u.id = c.owner_id`;
@@ -96,7 +97,7 @@ function mapCard(r: CardRow): CrmContactCard {
     company: r.company,
     segment: r.segment,
     city: r.city,
-    source: isCrmSource(r.source) ? r.source : "outro",
+    source: r.source,
     referredBy: r.referred_by,
     stage: isCrmStage(r.stage) ? r.stage : "novo",
     ownerId: r.owner_id,
@@ -113,6 +114,7 @@ function mapCard(r: CardRow): CrmContactCard {
     optedOutAt: iso(r.opted_out_at),
     archivedAt: iso(r.archived_at),
     createdAt: iso(r.created_at)!,
+    tagIds: r.tag_ids ?? [],
   };
 }
 
@@ -138,6 +140,8 @@ export type ContactFilters = {
   companyId?: string;
   /** true = only archived; default = only active. */
   archived?: boolean;
+  /** Only contacts with this tag (crm_tags.id). */
+  tag?: string;
   /** Comercial profile: only leads this user owns or that have no owner. */
   visibleTo?: string | null;
 };
@@ -167,7 +171,8 @@ export function contactWhere(f: ContactFilters): { sql: string; values: unknown[
   if (f.owner === "mine" && f.currentUserId) add((n) => `c.owner_id = $${n}`, f.currentUserId);
   else if (f.owner === "none") where.push("c.owner_id IS NULL");
   else if (f.owner && f.owner !== "all" && f.owner !== "mine") add((n) => `c.owner_id = $${n}`, f.owner);
-  if (f.source && isCrmSource(f.source)) add((n) => `c.source = $${n}`, f.source);
+  if (f.source) add((n) => `c.source = $${n}`, f.source);
+  if (f.tag) add((n) => `EXISTS (SELECT 1 FROM crm_contact_tags ct WHERE ct.contact_id = c.id AND ct.tag_id = $${n})`, f.tag);
   if (f.segment) add((n) => `COALESCE(co.segment, c.segment) = $${n}`, f.segment);
   if (f.city) add((n) => `COALESCE(co.city, c.city) = $${n}`, f.city);
   if (f.consent === "descadastrado") where.push("c.opted_out_at IS NOT NULL");
@@ -190,6 +195,7 @@ export function contactFiltersFromSearch(params: URLSearchParams, currentUserId:
     city: get("city"),
     consent: get("consent"),
     companyId: get("company"),
+    tag: get("tag"),
     archived: params.get("archived") === "1",
   };
 }
@@ -293,6 +299,7 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
     listContactDeals(db, id),
     listContactTasks(db, id),
   ]);
+  const tagLinks = await listContactTags(id);
 
   return {
     ...mapCard(row),
@@ -320,6 +327,7 @@ export async function getContactDetail(id: string): Promise<CrmContactDetail | n
     ),
     deals,
     tasks,
+    tagLinks,
   };
 }
 
@@ -455,7 +463,6 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
   const phone = parsePhone(input.phone);
   const email = parseEmail(input.email);
   if (!phone && !email) throw new CrmInputError("Informe o WhatsApp ou o e-mail do contato.");
-  const source: CrmSource = isCrmSource(input.source) ? input.source : "outro";
   const ownerId = typeof input.ownerId === "string" && input.ownerId ? input.ownerId : null;
   const consentSource = cleanText(input.consentSource, 200);
   // Filling in "como aceitou" is itself a yes; otherwise use what was picked.
@@ -466,6 +473,8 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
   return withTransaction(async (client) => {
     const dup = await findDuplicate(client, phone, email);
     if (dup) throw new CrmInputError(duplicateMessage(dup));
+    const source: CrmSource = await requireOptionId(client, "source", input.source === undefined || input.source === "" ? "outro" : input.source);
+    await requireSegment(client, segment);
     const companyId = await resolveCompanyId(client, input.company, { segment, city }, actor);
     const id = randomUUID();
     await client.query(
@@ -592,10 +601,10 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
     text("jobTitle", "job_title", 80);
     text("referredBy", "referred_by", 120);
     text("consentSource", "consent_source", 200);
-    if (patch.source !== undefined) {
-      if (!isCrmSource(patch.source)) throw new CrmInputError("Origem inválida.");
-      change("source", CRM_SOURCES.find((s) => s.id === current.source)?.label ?? current.source, CRM_SOURCES.find((s) => s.id === patch.source)!.label);
-      set("source", patch.source);
+    if (patch.source !== undefined && patch.source !== current.source) {
+      const next = await requireOptionId(client, "source", patch.source, current.source);
+      change("source", await optionLabel(client, "source", current.source), await optionLabel(client, "source", next));
+      set("source", next);
     }
 
     // Company first, then segment/city: they belong to the company when there is one.
@@ -617,6 +626,7 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
     for (const field of ["segment", "city"] as const) {
       if (patch[field] === undefined) continue;
       const value = cleanText(patch[field], 80);
+      if (field === "segment") await requireSegment(client, value, companyId ? companySegment : current.own_segment);
       if (companyId) {
         const before = field === "segment" ? companySegment : companyCity;
         if ((before ?? null) !== value) {

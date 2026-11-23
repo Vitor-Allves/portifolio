@@ -5,6 +5,7 @@ import { formatPhone, stageLabel, type CrmCompanyDetail } from "@/lib/crm-types"
 import { CRM_ALERT, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, STAGE_DOT } from "./crm-styles";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
+import { SegmentSelect } from "./crm-catalog-context";
 
 type Form = { name: string; segment: string; city: string; website: string; notes: string };
 
@@ -122,7 +123,7 @@ export default function CrmCompanyPanel({
                 <h3 className={CRM_LABEL}>Dados da empresa</h3>
                 <input value={fields.name} onChange={(e) => (setForm({ ...fields, name: e.target.value }), setSaved(false))} aria-label="Nome da empresa" placeholder="Nome" className={CRM_INPUT} />
                 <div className="grid grid-cols-2 gap-2">
-                  <input value={fields.segment} onChange={(e) => (setForm({ ...fields, segment: e.target.value }), setSaved(false))} aria-label="Segmento" placeholder="Segmento" className={CRM_INPUT} />
+                  <SegmentSelect value={fields.segment} onChange={(v) => (setForm({ ...fields, segment: v }), setSaved(false))} className={CRM_INPUT} />
                   <input value={fields.city} onChange={(e) => (setForm({ ...fields, city: e.target.value }), setSaved(false))} aria-label="Cidade" placeholder="Cidade" className={CRM_INPUT} />
                 </div>
                 <input value={fields.website} onChange={(e) => (setForm({ ...fields, website: e.target.value }), setSaved(false))} aria-label="Site" placeholder="Site" className={CRM_INPUT} />
