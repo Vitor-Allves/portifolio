@@ -52,9 +52,9 @@ function getConfig() {
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID!,
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || null,
     version: process.env.WHATSAPP_GRAPH_VERSION || DEFAULT_GRAPH_VERSION,
-    // Local tests only: points at a fake Graph server. Ignored in production,
-    // so the token can never be sent anywhere but Meta.
-    baseUrl: (process.env.NODE_ENV !== "production" && process.env.WHATSAPP_GRAPH_BASE_URL) || "https://graph.facebook.com",
+    // Automated tests only (tests/run.sh): points at a fake Graph server.
+    // Ignored on Vercel, so the token can never be sent anywhere but Meta.
+    baseUrl: (!process.env.VERCEL && process.env.WHATSAPP_GRAPH_BASE_URL) || "https://graph.facebook.com",
   };
 }
 

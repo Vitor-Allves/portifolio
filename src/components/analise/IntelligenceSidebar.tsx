@@ -105,8 +105,13 @@ function SidebarTipCard() {
   const [avatarIndex, setAvatarIndex] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
   useEffect(() => {
-    setAvatarIndex(Math.floor(Math.random() * TIP_AVATARS.length));
-    setTipIndex(Math.floor(Math.random() * SIDEBAR_TIPS.length));
+    // Deferred a tick: setting state synchronously inside the effect body
+    // would trigger a cascading render (react-hooks lint rule).
+    const timer = setTimeout(() => {
+      setAvatarIndex(Math.floor(Math.random() * TIP_AVATARS.length));
+      setTipIndex(Math.floor(Math.random() * SIDEBAR_TIPS.length));
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
   const avatar = TIP_AVATARS[avatarIndex];
   const tip = SIDEBAR_TIPS[tipIndex];

@@ -43,19 +43,44 @@ function getPool(): Pool {
 // production as 504s on GET /analise/, no code involved past getDb()).
 const SCHEMA_VERSION = 8;
 
+/**
+ * Whether this deployment may change the database structure. Vercel preview
+ * deployments still share the production database (until each preview gets
+ * its own Neon branch), so a preview must never migrate it: only a published
+ * release does. Local runs, tests and CI have no VERCEL_ENV and migrate their
+ * own database. A preview that gets its own database branch can opt in with
+ * ALLOW_SCHEMA_MIGRATIONS=1.
+ */
+export function schemaChangesAllowed(env: Record<string, string | undefined> = process.env): boolean {
+  const target = env.VERCEL_ENV;
+  if (!target || target === "production") return true;
+  return env.ALLOW_SCHEMA_MIGRATIONS === "1";
+}
+
 async function ensureSchema(): Promise<void> {
   const db = getPool();
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version INTEGER PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
-  const { rows: migrationRows } = await db.query<{ version: number }>(
-    `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1`
-  );
+  const allowed = schemaChangesAllowed();
+  if (allowed) {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+  }
+  const { rows: migrationRows } = await db
+    .query<{ version: number }>(`SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1`)
+    .catch(() => ({ rows: [] as { version: number }[] }));
   const current = migrationRows[0]?.version ?? 0;
   if (current >= SCHEMA_VERSION) return;
+  if (!allowed) {
+    // Runs on the structure that's there; what needs the newer one fails
+    // on its own instead of changing the production database from a preview.
+    console.warn(
+      `[db] database at schema v${current}, this code expects v${SCHEMA_VERSION}: structure changes are disabled on ${process.env.VERCEL_ENV} deployments and happen only when the release is published.`
+    );
+    return;
+  }
   // Each block below runs only when the database is behind it, and records
   // its version as soon as it finishes. A first request after a deploy then
   // pays only for the new statements (the whole chain from v1 took >10s from
