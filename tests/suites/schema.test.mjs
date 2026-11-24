@@ -54,13 +54,19 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 13;
+const LATEST = 14;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v12: undo exactly what v13 (tarefas e agenda) added.
+// Back to v13: undo exactly what v14 (automações) added.
+async function downgradeToV13(name) {
+  await query(name, `DROP TABLE crm_notifications; DROP TABLE crm_automation_runs; DROP TABLE crm_automations; DELETE FROM schema_migrations WHERE version = 14;`);
+}
+
+// Back to v12: undo exactly what v14 and v13 (tarefas e agenda) added.
 async function downgradeToV12(name) {
+  await downgradeToV13(name);
   await query(
     name,
     `DROP TABLE crm_task_events;
@@ -74,7 +80,7 @@ async function downgradeToV12(name) {
   );
 }
 
-// Back to v7: undo exactly what v13 (tarefas), v12 (índices), v11 (equipe), v10 (campos da entrega 2), v9 (Personalização) and v8 (Campanhas) added.
+// Back to v7: undo exactly what v14 (automações), v13 (tarefas), v12 (índices), v11 (equipe), v10 (campos da entrega 2), v9 (Personalização) and v8 (Campanhas) added.
 async function downgradeToV7(name) {
   await downgradeToV12(name);
   await query(
@@ -167,6 +173,10 @@ ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind = 'tas
 const priorities = (await query(B, `SELECT id, label, locked, color FROM crm_options WHERE kind = 'priority' ORDER BY sort`)).map((r) => `${r.label}${r.locked ? "*" : ""}:${r.color}`).join(",");
 ok(priorities === "Alta:vermelho,Média*:amarelo,Baixa:cinza", `v13: priorities seeded, Média is the fallback (${priorities})`);
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
+// v14 (Fase 3, entrega 2): the ten automations, every one off — nothing changes until an Administrador turns one on.
+const autos = await query(B, `SELECT id, status FROM crm_automations ORDER BY id`);
+ok(autos.length === 10 && autos.every((r) => r.status === "desativada"), `v14: ten automations, all desativadas (${autos.map((r) => r.status).join(",")})`);
+ok((await query(B, `SELECT (SELECT count(*) FROM crm_automation_runs) + (SELECT count(*) FROM crm_notifications) AS n`))[0].n === "0", "v14: no runs and no notices yet");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

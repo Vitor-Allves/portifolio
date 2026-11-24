@@ -5,6 +5,7 @@
 
 import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
+import { afterOwnersAssigned } from "./crm-automation-hooks";
 import { CrmForbiddenError, CrmInputError, CrmNotFoundError } from "./crm-core";
 import { contactFiltersFromSearch, contactWhere } from "./crm";
 import { effectiveCrmAccess } from "./crm-permissions";
@@ -52,9 +53,11 @@ async function moveContacts(
      )
      INSERT INTO crm_events (id, contact_id, kind, payload, user_id, user_name)
      SELECT gen_random_uuid()::text, upd.id, 'owner', jsonb_build_object('from', ou.name, 'to', $3::text, 'via', 'carteira'), $4, $5
-     FROM upd LEFT JOIN internal_users ou ON ou.id = upd.old`,
+     FROM upd LEFT JOIN internal_users ou ON ou.id = upd.old
+     RETURNING contact_id`,
     [contactIds, to.id, to.name, ...by]
   );
+  await afterOwnersAssigned(client, contacts.rows.map((r: { contact_id: string }) => ({ contactId: r.contact_id, ownerId: to.id })), actor, true);
   let deals = 0;
   if (opts.deals) {
     const r = await client.query(

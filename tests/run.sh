@@ -58,6 +58,7 @@ start_server() {
   WHATSAPP_PHONE_NUMBER_ID="000000" \
   WHATSAPP_BUSINESS_ACCOUNT_ID="waba-test" \
   WHATSAPP_GRAPH_BASE_URL="http://localhost:${FAKE_GRAPH_PORT}" \
+  CRON_SECRET="${CRON_SECRET_FOR_TEST:-}" \
     "${cmd[@]}" > "$LOGS/server.log" 2>&1 &
   SERVER_PID=$!
   for _ in $(seq 1 120); do
@@ -89,12 +90,15 @@ run_suite() {
     access-e2e) reset_db base campaigns && start_server && node tests/suites/access.e2e.mjs ;;
     tasks-api) reset_db base campaigns && start_server && node tests/suites/tasks.api.mjs ;;
     tasks-e2e) reset_db base campaigns && start_server && node tests/suites/tasks.e2e.mjs ;;
+    # The daily check needs CRON_SECRET; only these suites start the server with one (test-only value).
+    automations-api) local CRON_SECRET_FOR_TEST="test-only-cron-secret"; reset_db base campaigns && start_server && node tests/suites/automations.api.mjs ;;
+    automations-e2e) reset_db base campaigns && start_server && node tests/suites/automations.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

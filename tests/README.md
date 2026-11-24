@@ -33,7 +33,13 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `access-e2e` | Fase 2 · entrega 2 no navegador: trocar responsável em lote em Contatos, carteira e atividade no painel da pessoa, Auditoria (filtros, contato abre da linha), celular e tema escuro |
 | `tasks-api` | Fase 3 · entrega 1 pela API: atividade interna e tarefa só de empresa, quem vê cada tarefa, lembretes (escolhas válidas, sino, dispensar, reagendar), janela e filtros da agenda, situação e histórico da tarefa, cancelar/reativar, cores e Prioridades na Personalização |
 | `tasks-e2e` | Fase 3 · entrega 1 no navegador: agenda em dia/semana/mês com cor por tipo e filtro, formulário de tarefa (interna, de contato, de empresa), situação no histórico, filtros e abas de Tarefas, sino de lembretes, cor de tipo e Prioridades na Personalização, celular e tema escuro |
+| `automations-api` | Fase 3 · entrega 2 pela API: só o Administrador mexe, tudo começa desligado, validação, cada automação (1, 2, 3, 4, 5, 6, 10) age uma vez só, falha registrada sem quebrar a ação da pessoa, pausar, Rodar agora e a rota da verificação diária com `CRON_SECRET` de teste, avisos (só a própria pessoa marca como lido), histórico e auditoria, nenhuma mensagem enviada |
+| `automations-e2e` | Fase 3 · entrega 2 no navegador: tela Automações (dez regras, Fase 5 travadas, ativar, ajustar, Rodar agora, histórico com o contato), aviso no sino abre o lead, Auditoria, celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
+
+A rota da verificação diária só funciona com `CRON_SECRET`: o `tests/run.sh`
+sobe o servidor de `automations-api` com um valor só de teste; nas outras
+suítes ela fica desligada.
 
 Dados de teste: `tests/fixtures/seed-base.ts` (usuários `vitor` Gestor,
 `joao` Comercial, `admin` Administrador com 2FA de teste; senha

@@ -2,6 +2,9 @@
 // statuses, how a template's {{n}} gets its value for each contact, and the
 // words that unsubscribe a lead when they answer on WhatsApp.
 
+/** How long after a campaign message an answer still counts as a reply to it (Campanhas, automação 10). */
+export const CAMPAIGN_REPLY_WINDOW = "3 days";
+
 export const CAMPAIGN_STATUS = [
   { id: "rascunho", label: "Rascunho" },
   { id: "enviando", label: "Enviando" },

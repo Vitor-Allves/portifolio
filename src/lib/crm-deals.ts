@@ -7,6 +7,7 @@
 import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
+import { afterDealStage } from "./crm-automation-hooks";
 import {
   STAGE_REQUIREMENT_LABEL,
   isClosedStage,
@@ -290,6 +291,7 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
     ]
   );
   await addEvent(client, contactId, "deal", { action: "created", dealId: id, title, valueCents, stage }, actor);
+  if (stage !== "novo") await afterDealStage(client, id, stage);
   await syncContactStage(client, contactId);
   return id;
 }
@@ -453,6 +455,7 @@ export async function updateDealTx(
   }
 
   if (stage !== current.stage) {
+    await afterDealStage(client, id, stage);
     await addEvent(
       client,
       current.contact_id,

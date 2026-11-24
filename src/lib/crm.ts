@@ -45,6 +45,7 @@ import {
 } from "./crm-core";
 import { createDealTx, listContactDeals, setContactStageTx, updateDealTx } from "./crm-deals";
 import { createTaskTx, listContactTasks } from "./crm-tasks";
+import { afterContactCreated, afterInbound, afterOwnersAssigned } from "./crm-automation-hooks";
 import type { InboundMessage, StatusUpdate } from "./whatsapp";
 import { effectiveCrmAccess } from "./crm-permissions";
 import type { StaffRole } from "./session-scope";
@@ -578,6 +579,8 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
       ]
     );
     await addEvent(client, id, "created", { via: "manual" }, actor);
+    await afterContactCreated(client, id, "manual");
+    if (ownerId) await afterOwnersAssigned(client, [{ contactId: id, ownerId }], actor);
     if (input.createDeal !== false) {
       await createDealTx(
         client,
@@ -797,6 +800,7 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
         const nameOf = (uid: string | null) => names.rows.find((n) => n.id === uid)?.name ?? null;
         set("owner_id", ownerId);
         await addEvent(client, id, "owner", { from: nameOf(current.owner_id), to: nameOf(ownerId) }, actor);
+        await afterOwnersAssigned(client, [{ contactId: id, ownerId }], actor);
       }
     }
 
@@ -903,6 +907,7 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
       );
       await addEvent(client, contactId, "created", { via: msg.referral ? "anuncio" : "whatsapp" }, null);
       await createDealTx(client, { contactId, title: msg.referral?.headline ? `${msg.profileName?.trim() || formatPhone(msg.from)} · anúncio` : undefined }, null);
+      await afterContactCreated(client, contactId, msg.referral ? "anuncio" : "whatsapp");
     }
 
     const inserted = await client.query(
@@ -948,6 +953,8 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
       await addEvent(client, contactId, "opt_out", { value: true, auto: true, text: msg.body?.trim().slice(0, 60) }, null);
       return { optedOut: { contactId, phone: msg.from } };
     }
+    // A real answer (not "SAIR", not from someone unsubscribed) may be a reply to a campaign.
+    if (!isNew && !found.rows[0].opted_out_at) await afterInbound(client, contactId, msg.timestamp);
     return { optedOut: null };
   });
 }

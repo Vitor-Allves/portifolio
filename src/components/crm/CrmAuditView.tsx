@@ -36,6 +36,23 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.campaign_cancel": "Cancelou campanha",
   "crm.campaign_delete": "Excluiu campanha",
   "crm.catalog_change": "Mudou a Personalização",
+  "crm.automation_change": "Mudou uma automação",
+  "crm.automation_run": "Rodou a verificação diária",
+};
+
+const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
+const CONFIG_LABEL: Record<string, string> = {
+  taskKind: "tipo de tarefa",
+  title: "título",
+  dueDays: "prazo",
+  priority: "prioridade",
+  owner: "responsável",
+  fallbackOwnerId: "responsável quando o lead não tem",
+  days: "dias",
+  reminderMinutes: "lembrete",
+  temperature: "temperatura",
+  notifyOwner: "aviso ao responsável",
+  sources: "origens",
 };
 
 const KIND_LABEL: Partial<Record<CrmEventKind, string>> = {
@@ -82,6 +99,17 @@ function details(r: AdminRow): string {
       return n(m.count, "contato", "contatos");
     case "crm.user_update":
       return [m.jobTitle, m.department].filter(Boolean).join(" · ") || "—";
+    case "crm.automation_change": {
+      const status = m.from !== m.to ? `${AUTOMATION_STATUS_LABEL[String(m.from)] ?? String(m.from)} → ${AUTOMATION_STATUS_LABEL[String(m.to)] ?? String(m.to)}` : "";
+      const changed = Array.isArray(m.changed) ? `ajustou ${(m.changed as string[]).map((k) => CONFIG_LABEL[k] ?? k).join(", ")}` : "";
+      return [status, changed].filter(Boolean).join(" · ") || "—";
+    }
+    case "crm.automation_run":
+      return (
+        Object.values(m as Record<string, { ok?: number; failed?: number }>)
+          .map((v) => `${n(v.ok, "ação feita", "ações feitas")}${v.failed ? `, ${n(v.failed, "falha", "falhas")}` : ""}`)
+          .join(" · ") || "nada ativo para rodar"
+      );
     default: {
       const parts = Object.entries(m)
         .filter(([, v]) => ["string", "number", "boolean"].includes(typeof v))

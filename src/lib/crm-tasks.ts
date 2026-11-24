@@ -20,7 +20,8 @@ import {
   type CrmTaskStatus,
 } from "./crm-types";
 import { optionLabel, requireOptionId } from "./crm-options";
-import { CrmInputError, addEvent, cleanText, iso, type CrmActor } from "./crm-core";
+import { afterTaskCreated } from "./crm-automation-hooks";
+import { CrmInputError, addEvent, cleanText, iso, type CrmActor, type CrmWriter } from "./crm-core";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -259,7 +260,7 @@ async function ownerName(client: Db, ownerId: string | null): Promise<string | n
 }
 
 /** One line in the task's own history. */
-export async function addTaskEvent(client: Db, taskId: string, action: string, payload: Record<string, unknown>, actor: CrmActor): Promise<void> {
+export async function addTaskEvent(client: Db, taskId: string, action: string, payload: Record<string, unknown>, actor: CrmWriter): Promise<void> {
   await client.query(`INSERT INTO crm_task_events (id, task_id, action, payload, user_id, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [
     randomUUID(),
     taskId,
@@ -291,7 +292,7 @@ export type NewTaskInput = {
   result?: unknown;
 };
 
-export async function createTaskTx(client: PoolClient, input: NewTaskInput, actor: CrmActor): Promise<string> {
+export async function createTaskTx(client: PoolClient, input: NewTaskInput, actor: CrmWriter): Promise<string> {
   const contactId = typeof input.contactId === "string" && input.contactId ? input.contactId : null;
   let companyId: string | null = null;
   let recordOwner: string | null = null;
@@ -352,6 +353,7 @@ export async function createTaskTx(client: PoolClient, input: NewTaskInput, acto
       actor?.userName ?? null,
     ]
   );
+  if (!done) await afterTaskCreated(client, id);
   await addTaskEvent(client, id, done ? "logged" : "created", { kind, title, priority, dueAt: dueAt?.toISOString() ?? null, allDay, owner: await ownerName(client, ownerId) }, actor);
   if (contactId) {
     await addEvent(

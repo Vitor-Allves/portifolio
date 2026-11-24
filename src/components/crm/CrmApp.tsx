@@ -44,6 +44,7 @@ import type { CrmCatalog } from "@/lib/crm-catalog";
 import CrmAgendaView from "./CrmAgendaView";
 import CrmTaskDialog, { type TaskDialogTarget, type TaskDraft } from "./CrmTaskDialog";
 import CrmReminderBell from "./CrmReminderBell";
+import CrmAutomationsView from "./CrmAutomationsView";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -477,6 +478,7 @@ function CrmAppInner({
           "companies",
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
           ...(caps.customize ? (["settings"] as const) : []),
+          ...(caps.manageAutomations ? (["automations"] as const) : []),
           ...(caps.manageTeam ? (["team", "audit"] as const) : []),
         ]}
         whatsappConfigured={whatsappConfigured}
@@ -505,7 +507,7 @@ function CrmAppInner({
               <p className="hidden sm:block text-[12.5px] text-crm-dim truncate">{section.description}</p>
             </div>
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              <CrmReminderBell version={dataVersion} onOpenTask={openTask} onShowTasks={() => setView("tasks")} />
+              <CrmReminderBell version={dataVersion} onOpenTask={openTask} onOpenContact={(id) => openContact(id)} onShowTasks={() => setView("tasks")} />
               <button type="button" onClick={() => setNewOpen(true)} aria-label="Novo contato" className={`${CRM_BTN_PRIMARY} shrink-0 gap-1`}>
                 <span aria-hidden="true">+</span>
                 <span className="hidden sm:inline">Novo contato</span>
@@ -670,6 +672,8 @@ function CrmAppInner({
           <CrmCampaignsView team={team} canSend={caps.sendCampaigns} templatesConfigured={templatesConfigured} onOpenContact={(id) => openContact(id, "conversa")} />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
+        ) : view === "automations" && caps.manageAutomations ? (
+          <CrmAutomationsView team={team} onOpenContact={(id) => openContact(id)} />
         ) : view === "audit" && caps.manageTeam ? (
           <CrmAuditView team={team} onOpenContact={(id) => openContact(id)} />
         ) : view === "team" && caps.manageTeam ? (

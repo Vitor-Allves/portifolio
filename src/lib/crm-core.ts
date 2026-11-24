@@ -8,6 +8,8 @@ import { companyKey, formatCnpj, isCrmTemperature, normalizeCnpj, type CrmEventK
 
 /** Who did it — null for things the system did on its own (an inbound message creating a contact, an automatic stage move). */
 export type CrmActor = { userId: string; userName: string } | null;
+/** Who writes a history line: a person (CrmActor), or an automation (no user id, its own name). */
+export type CrmWriter = { userId: string | null; userName: string } | null;
 
 /** A validation failure worth showing the user as-is (pt-BR), unlike an unexpected error. */
 export class CrmInputError extends Error {}
@@ -64,7 +66,7 @@ export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-export async function addEvent(client: PoolClient, contactId: string, kind: CrmEventKind, payload: Record<string, unknown>, actor: CrmActor) {
+export async function addEvent(client: PoolClient, contactId: string, kind: CrmEventKind, payload: Record<string, unknown>, actor: CrmWriter) {
   await client.query(
     `INSERT INTO crm_events (id, contact_id, kind, payload, user_id, user_name) VALUES ($1, $2, $3, $4, $5, $6)`,
     [randomUUID(), contactId, kind, JSON.stringify(payload), actor?.userId ?? null, actor?.userName ?? "Sistema"]

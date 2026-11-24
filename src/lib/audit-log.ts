@@ -37,7 +37,9 @@ export type AuditAction =
   | "crm.user_password_reset"
   | "crm.session_end"
   | "crm.portfolio_assign"
-  | "crm.portfolio_transfer";
+  | "crm.portfolio_transfer"
+  | "crm.automation_change"
+  | "crm.automation_run";
 
 export type AuditActorKind = "admin" | "client" | "system";
 
