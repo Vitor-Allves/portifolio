@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CRM_STAGES, stageLabel, type CrmConversation, type CrmResponseStats, type CrmStage, type CrmTeamMember } from "@/lib/crm-types";
 import { CRM_FILTER, CRM_INPUT, CRM_LINK_BTN, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
-import { chatTime, initials, windowLabel } from "./crm-format";
+import { chatTime, initials, minutesLabel, windowLabel } from "./crm-format";
 import { TagChip, useCatalog } from "./crm-catalog-context";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
@@ -31,13 +31,6 @@ export function waitLabel(sinceIso: string, now: number): string {
 }
 
 /** Minutes as "45 min" / "2 h 10 min". */
-function minutesLabel(m: number | null): string {
-  if (m === null) return "—";
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  return `${h} h${m % 60 ? ` ${m % 60} min` : ""}`;
-}
-
 function ConversationRow({ c, selected, now, currentUserId, onOpen }: { c: CrmConversation; selected: boolean; now: number; currentUserId: string; onOpen: () => void }) {
   const { tag } = useCatalog();
   const unread = c.unreadCount > 0;

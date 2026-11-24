@@ -129,3 +129,45 @@ export const TASK_STATE_TONE: Record<TaskState, string> = {
   later: "text-crm-dim",
   none: "text-crm-faint",
 };
+
+/** Clock minutes → "30 min", "2 h 15 min"; null → "—". */
+export function minutesLabel(m: number | null): string {
+  if (m === null) return "—";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return `${h} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+/** Period presets shared by the Painel and Metas e produtividade. */
+export type Preset = "mes" | "mes_passado" | "7d" | "30d" | "90d" | "ano" | "custom";
+export const PRESETS: { id: Preset; label: string }[] = [
+  { id: "mes", label: "Este mês" },
+  { id: "mes_passado", label: "Mês passado" },
+  { id: "7d", label: "Últimos 7 dias" },
+  { id: "30d", label: "Últimos 30 dias" },
+  { id: "90d", label: "Últimos 90 dias" },
+  { id: "ano", label: "Este ano" },
+  { id: "custom", label: "Outro período" },
+];
+
+/** [from, to] (inclusive Brasília days) for a preset. */
+export function presetRange(p: Preset, today: string): [string, string] {
+  const month = today.slice(0, 7);
+  switch (p) {
+    case "mes_passado": {
+      const first = `${month}-01`;
+      const last = addDays(first, -1);
+      return [`${last.slice(0, 7)}-01`, last];
+    }
+    case "7d":
+      return [addDays(today, -6), today];
+    case "30d":
+      return [addDays(today, -29), today];
+    case "90d":
+      return [addDays(today, -89), today];
+    case "ano":
+      return [`${today.slice(0, 4)}-01-01`, today];
+    default:
+      return [`${month}-01`, today];
+  }
+}

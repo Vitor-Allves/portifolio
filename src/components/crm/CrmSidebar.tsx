@@ -17,6 +17,7 @@ export type CrmView =
   | "campaigns"
   | "clients"
   | "followup"
+  | "goals"
   | "settings"
   | "automations"
   | "team"
@@ -126,6 +127,15 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
     mascot: "titanWin",
   },
   {
+    group: "gestao",
+    id: "goals",
+    label: "Metas e produtividade",
+    hint: "Metas do mês e quem fez o quê",
+    description: "As metas do mês da equipe e de cada pessoa, com o quanto já foi feito, e a produtividade de cada um no período: leads, reuniões, propostas, ganhos, tarefas, conversas e tempo de resposta.",
+    tip: "A marca na barra mostra o ritmo esperado até hoje. Administrador e Gestor definem as metas; dá para copiar as do mês anterior.",
+    mascot: "titanWin",
+  },
+  {
     group: "admin",
     id: "settings",
     label: "Personalização",
@@ -167,6 +177,9 @@ const ICONS: Record<CrmView, React.ReactNode> = {
   automations: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />,
   audit: <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1 13.6-3.3-3.3 1.4-1.4 1.9 1.9 4.9-4.9 1.4 1.4-6.3 6.3Z" />,
   dashboard: <path d="M4 13h4v7H4v-7Zm6-9h4v16h-4V4Zm6 6h4v10h-4V10Z" />,
+  goals: (
+    <path d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2Zm0 4a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V6Zm0 4a2 2 0 1 0 2 2h-2v-2Zm3.6-6.4L13 6.2V11h4.8l2.6-2.6L18 8V6l-2.4-2.4Z" />
+  ),
   board: <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />,
   conversations: (
     <path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v10.5A1.5 1.5 0 0 1 20 17H9.2l-4.4 3.7A.5.5 0 0 1 4 20.3V17a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5Zm3 4.5v1.8h10V8H7Zm0 3.8v1.8h7v-1.8H7Z" />

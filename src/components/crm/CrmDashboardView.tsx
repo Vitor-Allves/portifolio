@@ -11,42 +11,10 @@ import {
   type CrmTeamMember,
 } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_FILTER, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_TD, CRM_TH } from "./crm-styles";
-import { addDays, dateTime, relativeTime, shortDate, spDate } from "./crm-format";
+import { PRESETS, dateTime, presetRange, relativeTime, shortDate, spDate, type Preset } from "./crm-format";
 import { Mascot } from "./crm-brand";
+import { GoalsSummary } from "./CrmGoalsView";
 import { useCatalog } from "./crm-catalog-context";
-
-type Preset = "mes" | "mes_passado" | "7d" | "30d" | "90d" | "ano" | "custom";
-const PRESETS: { id: Preset; label: string }[] = [
-  { id: "mes", label: "Este mês" },
-  { id: "mes_passado", label: "Mês passado" },
-  { id: "7d", label: "Últimos 7 dias" },
-  { id: "30d", label: "Últimos 30 dias" },
-  { id: "90d", label: "Últimos 90 dias" },
-  { id: "ano", label: "Este ano" },
-  { id: "custom", label: "Outro período" },
-];
-
-/** [from, to] (inclusive Brasília days) for a preset. */
-function presetRange(p: Preset, today: string): [string, string] {
-  const month = today.slice(0, 7);
-  switch (p) {
-    case "mes_passado": {
-      const first = `${month}-01`;
-      const last = addDays(first, -1);
-      return [`${last.slice(0, 7)}-01`, last];
-    }
-    case "7d":
-      return [addDays(today, -6), today];
-    case "30d":
-      return [addDays(today, -29), today];
-    case "90d":
-      return [addDays(today, -89), today];
-    case "ano":
-      return [`${today.slice(0, 4)}-01-01`, today];
-    default:
-      return [`${month}-01`, today];
-  }
-}
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
 const brl = (c: number | null) => (c === null ? "—" : formatBRL(c, { compact: true }) || "R$ 0");
@@ -371,6 +339,7 @@ export default function CrmDashboardView({
   version,
   now,
   canExport = false,
+  onOpenGoals,
   onOpenContact,
   onOpenClient,
   onOpenTask,
@@ -383,6 +352,8 @@ export default function CrmDashboardView({
   now: number;
   /** "Exportar relatórios". */
   canExport?: boolean;
+  /** Opens Metas e produtividade. */
+  onOpenGoals?: () => void;
   onOpenContact?: (contactId: string) => void;
   onOpenClient?: (clientId: string) => void;
   onOpenTask?: (taskId: string) => void;
@@ -566,6 +537,8 @@ export default function CrmDashboardView({
             Valor vendido = valor negociado nas oportunidades ganhas. Receita recorrente = soma mensal dos contratos vigentes. Faturamento emitido e valor recebido não
             são controlados pelo CRM.
           </p>
+
+          <GoalsSummary owner={owner} currentUserId={currentUserId} seeAll={seeAll} version={version} now={now} onOpen={onOpenGoals} />
 
           {d.campaigns && (
             <Card title="Desempenho das campanhas">
