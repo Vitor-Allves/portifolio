@@ -1,7 +1,7 @@
 // Personalização do CRM (especificação v1.0, Fase 1): the editable lists and
 // tags, shared by the server and the screens. Pure — no database, no env.
 //
-// The defaults below are the seed of schema v9. Codes (ids) never change
+// The defaults below are the seed of schema v9 (departments: v11). Codes (ids) never change
 // once a record uses them; only labels, order and archiving do.
 
 export const OPTION_KINDS = [
@@ -11,6 +11,7 @@ export const OPTION_KINDS = [
   { id: "lost_reason", label: "Motivos de perda", singular: "motivo de perda", hint: "Perguntado quando uma oportunidade vai para Perdido." },
   { id: "won_reason", label: "Motivos de ganho", singular: "motivo de ganho", hint: "Por que fechamos o negócio." },
   { id: "task_kind", label: "Tipos de tarefa", singular: "tipo de tarefa", hint: "Tipos de tarefa e atividade da agenda." },
+  { id: "department", label: "Departamentos", singular: "departamento", hint: "Áreas da equipe, usadas em Usuários e permissões." },
 ] as const;
 
 export type OptionKind = (typeof OPTION_KINDS)[number]["id"];
@@ -54,6 +55,14 @@ export const DEFAULT_OPTIONS: Record<OptionKind, Seed[]> = {
     { id: "whatsapp", label: "WhatsApp" },
     { id: "email", label: "E-mail" },
     { id: "tarefa", label: "Tarefa", locked: true },
+  ],
+  // Seeded by schema v11 (Fase 2); editable like any list.
+  department: [
+    { id: "comercial", label: "Comercial" },
+    { id: "marketing", label: "Marketing" },
+    { id: "operacao", label: "Operação" },
+    { id: "atendimento", label: "Atendimento" },
+    { id: "diretoria", label: "Diretoria" },
   ],
 };
 

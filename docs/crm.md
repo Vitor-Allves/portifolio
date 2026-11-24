@@ -76,6 +76,10 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   arquivamento) e `crm_contact_tags` (qual contato tem qual etiqueta, quem
   aplicou e por onde: manual, importação, campanha, automação). Etiqueta não
   se apaga, só se arquiva; quem já tem continua com ela.
+- `internal_users` (a mesma conta do Intelligence) guarda, para o CRM: o
+  perfil (`crm_role`), as exceções individuais de permissão
+  (`crm_permissions`, só o que difere do perfil), cargo (`crm_job_title`) e
+  departamento (`crm_department`, da lista Departamentos). Desde a v11.
 - `crm_imports` — cada importação de planilha (quem, quando, contagens, se foi
   desfeita). `crm_quick_replies` — respostas rápidas.
 
@@ -100,7 +104,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Empresas: dados, CNPJ, situação, etiquetas | sim | sim | sim | sim |
   | Empresas: responsável pela conta | qualquer um | qualquer um | só assumir sem dono / soltar a sua | não |
   | Personalização (listas e etiquetas) | sim | não | não | não |
-  | Equipe (definir perfis) | sim | não | não | não |
+  | Arquivar e restaurar contatos | sim | sim | nos seus | sim |
+  | Usuários e permissões (perfis, exceções, cargos, logins só CRM) | sim | não | não | não |
 
   Lead de outra pessoa, para o Comercial, responde como "não encontrado".
   O Administrador geral do Intelligence é sempre Administrador do CRM; ninguém
@@ -108,6 +113,25 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   Intelligence (administrador geral/administrador → Administrador, gestor →
   Gestor, analista → Comercial). Toda troca de perfil vai para a auditoria
   (`crm.role_change`, com de → para).
+
+  **Permissões por módulo e ação (Fase 2):** a tabela acima é o padrão de
+  cada perfil. O Administrador pode abrir exceções para uma pessoa (liberar
+  ou tirar uma permissão), em Usuários e permissões. Valem no servidor, na
+  próxima ação da pessoa, e vão para a auditoria (`crm.permission_change`,
+  com antes → depois). "Usuários e permissões" nunca vira exceção: só o
+  perfil Administrador dá esse poder. Ninguém muda as próprias permissões; o
+  Administrador geral tem todas. Dependências: disparar campanhas exige ver
+  campanhas; arquivar e importar exigem editar contatos.
+
+  **Logins só do CRM:** o Administrador do CRM cria o acesso de quem só usa o
+  CRM (perfil "Analista" no Intelligence, sem nenhuma empresa: lá não vê
+  nada; ao entrar, vai direto para o CRM). A senha temporária aparece uma vez
+  e a pessoa cria a própria no primeiro acesso. Criar, gerar senha nova e
+  desativar pedem a senha de quem está administrando e vão para a auditoria
+  (`crm.user_create`, `crm.user_password_reset`, `crm.user_deactivate`; a
+  senha nunca é gravada no registro). Quem também usa o Intelligence continua
+  sendo gerenciado lá, pelo administrador geral. Desativar não apaga nada:
+  leads, tarefas e histórico continuam com o nome da pessoa.
 
 - **Sem duplicidade:** telefone (as duas grafias de celular BR, com e sem o 9)
   e e-mail (sem diferenciar maiúsculas) são únicos — no cadastro, na edição e
@@ -173,6 +197,26 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 2, entrega 1: usuários e permissões (schema v11)
+
+- **Usuários e permissões** (Administrador): para cada pessoa, perfil,
+  cargo, departamento, situação (ativa ou desativada) e exceções de
+  permissão por módulo e ação (contatos e empresas, funil/tarefas/carteiras,
+  conversas, campanhas, administração). Os quatro perfis viram o padrão e
+  reproduzem exatamente o que cada um podia antes.
+- Permissão nova "Arquivar e restaurar contatos" (Excluir), separada de
+  editar; todos os perfis continuam com ela.
+- **Logins só do CRM** criados pelo Administrador do CRM, com senha
+  temporária mostrada uma vez; gerar senha nova e desativar, sempre
+  confirmando a senha de quem administra.
+- **Departamentos** viram uma lista da Personalização (Comercial, Marketing,
+  Operação, Atendimento, Diretoria, editável).
+- Personalização passa a contar também o uso de serviços, motivos de ganho,
+  departamentos e etiquetas de empresas.
+- Banco v11: só acrescenta colunas em `internal_users`; ninguém começa com
+  exceções.
+- Testes: `team-api` e `team-e2e` em `tests/`.
 
 ### Especificação-mestra v1.0 — Fase 1, entrega 2: campos de contatos, empresas e oportunidades (schema v10)
 

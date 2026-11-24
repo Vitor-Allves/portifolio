@@ -27,6 +27,8 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `catalog-e2e` | Menu agrupado, tela de Personalização, etiqueta no painel do contato, filtro por etiqueta, card do funil, celular e tema escuro |
 | `fields-api` | Entrega 2 pela API: CNPJ (inclusive alfanumérico), aviso de SSL, campos novos do contato e filtros, exigência por etapa (Proposta e Ganho), valor negociado no Painel, origem/temperatura da oportunidade, empresas (CNPJ único, situação, responsável por perfil, etiquetas, decisores), importação com CNPJ, exportação |
 | `fields-e2e` | Entrega 2 no navegador: diálogo ao mover para Proposta e Ganho, card e filtros do funil, campos no painel do contato, lista de Contatos, empresa com CNPJ, celular e tema escuro |
+| `team-api` | Fase 2 pela API: perfis iguais a antes, exceções valendo no servidor (exportar, ver todos, funil, arquivar), "Usuários e permissões" nunca por exceção, ninguém muda o próprio, cargo/departamento, login só do CRM (criar, primeiro acesso, senha nova, desativar) e auditoria |
+| `team-e2e` | Fase 2 no navegador: exceção e cargo no painel da pessoa, nova pessoa com senha temporária, desativar, Departamentos na Personalização, exceção valendo para a pessoa, celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Dados de teste: `tests/fixtures/seed-base.ts` (usuários `vitor` Gestor,

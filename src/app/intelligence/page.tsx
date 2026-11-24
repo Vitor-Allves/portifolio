@@ -7,6 +7,7 @@ import { getClientConsultantInfo } from "@/lib/client-access";
 import { resolveReportSettings, type ReportSettingsRoleKind } from "@/lib/client-permissions";
 import { listInternalIndicatorIds } from "@/lib/internal-indicators";
 import { DbConfigError } from "@/lib/db";
+import { crmSessionFor } from "@/lib/crm-access";
 import Dashboard from "@/components/analise/Dashboard";
 import NotConfigured from "@/components/analise/NotConfigured";
 
@@ -39,6 +40,12 @@ export default async function AnalisePage() {
   }
   if (scope.mustChangePassword) {
     redirect("/intelligence/trocar-senha/");
+  }
+  // A CRM-only login (Analista with no companies, created in the CRM) has
+  // nothing to see here: it works in the CRM.
+  if (scope.kind === "staff" && scope.role === "analista" && scope.accountIds.length === 0) {
+    const crm = await crmSessionFor(scope.userId, scope.userName, scope.role).catch(() => null);
+    if (crm) redirect("/crm/");
   }
 
   const allowedAccountIds = resolveAllowedAccountIds(scope) ?? undefined;

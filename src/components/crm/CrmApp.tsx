@@ -26,7 +26,7 @@ import CrmConversationsView from "./CrmConversationsView";
 import CrmTeamView from "./CrmTeamView";
 import CrmCampaignsView from "./CrmCampaignsView";
 import CrmDashboardView from "./CrmDashboardView";
-import { crmAccessLabel, crmCapabilities, type CrmRole } from "@/lib/crm-permissions";
+import { crmAccessLabel, type CrmCapabilities, type CrmRole } from "@/lib/crm-permissions";
 import CrmContactPanel from "./CrmContactPanel";
 import CrmNewContactDialog from "./CrmNewContactDialog";
 import CrmContactsView from "./CrmContactsView";
@@ -58,6 +58,9 @@ type CrmAppProps = {
   initialSidebarCollapsed: boolean;
   /** The CRM profile — the server enforces it; the screens hide what it can't do. */
   role: CrmRole;
+  /** What this person may do: the profile plus their individual exceptions (Fase 2). */
+  caps: CrmCapabilities;
+  showIntelligenceLink: boolean;
   /** Personalização: lists and tags. */
   initialCatalog: CrmCatalog;
 };
@@ -261,8 +264,9 @@ function CrmAppInner({
   initialTheme,
   initialSidebarCollapsed,
   role,
+  caps,
+  showIntelligenceLink,
 }: Omit<CrmAppProps, "initialCatalog">) {
-  const caps = crmCapabilities(role);
   const catalog = useCatalog();
   // Without the right to reassign, owner pickers offer only oneself (Comercial) or no one (Marketing).
   const ownerChoices = caps.assignAnyOwner ? team : caps.editPipeline ? team.filter((m) => m.id === currentUserId) : [];
@@ -465,6 +469,7 @@ function CrmAppInner({
         ]}
         whatsappConfigured={whatsappConfigured}
         initialTheme={initialTheme}
+        showIntelligenceLink={showIntelligenceLink}
       />
 
       <div className="flex-1 min-w-0">

@@ -53,7 +53,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -763,6 +763,25 @@ async function ensureSchema(): Promise<void> {
     );
 
     await done(10);
+  }
+
+  if (current < 11) {
+    // v11 — Fase 2, entrega 1 (especificação v1.0): equipe. Each person's
+    // individual permission exceptions on top of their CRM profile, plus
+    // cargo and departamento. Only columns are added; everyone starts with
+    // no exceptions, so every profile keeps exactly what it could do before.
+    await db.query(`ALTER TABLE internal_users ADD COLUMN IF NOT EXISTS crm_permissions JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    await db.query(`ALTER TABLE internal_users ADD COLUMN IF NOT EXISTS crm_job_title TEXT`);
+    // A crm_options id of kind "department" (Personalização → Departamentos).
+    await db.query(`ALTER TABLE internal_users ADD COLUMN IF NOT EXISTS crm_department TEXT`);
+    for (const [i, o] of DEFAULT_OPTIONS.department.entries()) {
+      await db.query(
+        `INSERT INTO crm_options (kind, id, label, sort, locked) VALUES ('department', $1, $2, $3, $4) ON CONFLICT (kind, id) DO NOTHING`,
+        [o.id, o.label, i, o.locked ?? false]
+      );
+    }
+
+    await done(11);
   }
 }
 

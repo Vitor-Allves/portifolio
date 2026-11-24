@@ -54,20 +54,21 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 10;
+const LATEST = 11;
 
-// Back to v7: undo exactly what v10 (campos da entrega 2), v9 (Personalização) and v8 (Campanhas) added.
+// Back to v7: undo exactly what v11 (equipe), v10 (campos da entrega 2), v9 (Personalização) and v8 (Campanhas) added.
 async function downgradeToV7(name) {
   await query(
     name,
-    `DROP TABLE crm_company_tags;
+    `ALTER TABLE internal_users DROP COLUMN crm_permissions, DROP COLUMN crm_job_title, DROP COLUMN crm_department;
+     DROP TABLE crm_company_tags;
      ALTER TABLE crm_contacts DROP COLUMN temperature, DROP COLUMN service_interest, DROP COLUMN return_at, DROP COLUMN is_decision_maker;
      ALTER TABLE crm_companies DROP COLUMN legal_name, DROP COLUMN cnpj, DROP COLUMN state, DROP COLUMN address, DROP COLUMN owner_id, DROP COLUMN status;
      ALTER TABLE crm_deals DROP COLUMN service, DROP COLUMN negotiated_cents, DROP COLUMN source, DROP COLUMN temperature, DROP COLUMN won_reason, DROP COLUMN won_note;
      DROP TABLE crm_contact_tags; DROP TABLE crm_tags; DROP TABLE crm_options;
      ALTER TABLE crm_messages DROP COLUMN campaign_id;
      DROP TABLE crm_campaign_recipients; DROP TABLE crm_campaigns;
-     DELETE FROM schema_migrations WHERE version IN (8, 9, 10);`
+     DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11);`
   );
 }
 
@@ -108,6 +109,10 @@ ok(Number(deal.value_cents) === 150000 && deal.stage === "proposta", "v10: an ex
 const contact = (await query(B, `SELECT temperature, service_interest, return_at, is_decision_maker FROM crm_contacts WHERE id = 'keep-me'`))[0];
 ok(contact.temperature === null && contact.service_interest === null && contact.return_at === null && contact.is_decision_maker === false, "v10: existing contact gets empty new fields");
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_companies WHERE status IS NOT NULL OR cnpj IS NOT NULL`))[0].n === 0, "v10: no company gets an invented status or CNPJ");
+// v11: departments list seeded; nobody gets permission exceptions.
+const departments = (await query(B, `SELECT label FROM crm_options WHERE kind = 'department' ORDER BY sort`)).map((r) => r.label).join(",");
+ok(departments === "Comercial,Marketing,Operação,Atendimento,Diretoria", `v11: departments seeded (${departments})`);
+ok((await query(B, `SELECT count(*)::int AS n FROM internal_users WHERE crm_permissions <> '{}'::jsonb`))[0].n === 0, "v11: no one starts with permission exceptions");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

@@ -960,7 +960,7 @@ export default function CrmContactPanel({
                           Marcar descadastro
                         </button>
                       )}
-                      {detail.archivedAt ? (
+                      {!caps.archiveContacts ? null : detail.archivedAt ? (
                         <button type="button" onClick={() => void patch({ archived: false })} className={CRM_BTN_OUTLINE}>
                           Restaurar contato
                         </button>

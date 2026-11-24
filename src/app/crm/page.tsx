@@ -82,6 +82,9 @@ export default async function CrmPage() {
         initialTheme={theme}
         initialSidebarCollapsed={sidebarCollapsed}
         role={session.role}
+        caps={session.caps}
+        // A CRM-only login (no companies in the Intelligence) has nothing to go back to there.
+        showIntelligenceLink={scope.role === "administrador_geral" || scope.accountIds.length > 0}
         initialCatalog={loaded.catalog}
       />
     );

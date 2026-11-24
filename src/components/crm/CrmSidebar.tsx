@@ -160,6 +160,8 @@ type SidebarProps = {
   sections: CrmView[];
   whatsappConfigured: boolean;
   initialTheme: CrmTheme | null;
+  /** false for a CRM-only login, which has nothing in the Intelligence. */
+  showIntelligenceLink?: boolean;
 };
 
 // The active item uses the same silver pill as the Intelligence menu.
@@ -177,6 +179,7 @@ function SidebarContent({
   sections,
   whatsappConfigured,
   initialTheme,
+  showIntelligenceLink = true,
 }: Omit<SidebarProps, "mobileOpen" | "onCloseMobile"> & { showCollapseToggle: boolean }) {
   const section = CRM_SECTIONS.find((s) => s.id === active) ?? CRM_SECTIONS[0];
   return (
@@ -280,7 +283,7 @@ function SidebarContent({
           )}
           <CrmThemeToggle initialTheme={initialTheme} />
         </div>
-        {!collapsed && (
+        {!collapsed && showIntelligenceLink && (
           <Link
             href="/intelligence/"
             className="inline-flex items-center gap-1.5 text-[12px] text-crm-header-dim hover:text-crm-header-text transition-colors duration-200"
