@@ -19,7 +19,7 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | Conjunto | O que confere |
 | --- | --- |
 | `schema` | Banco criado do zero e bancos atualizados da v7 e da v12 ficam idênticos; dados existentes sobrevivem (tarefas ganham situação a partir do que estava gravado); prévia da Vercel não altera a estrutura |
-| `dashboard-data` | Todos os números do Painel (Fase 4) para outubro/2026, conferidos à mão |
+| `dashboard-data` | Todos os números do Painel (Fase 4, mais leads trabalhados, contatos finalizados, propostas aprovadas e por serviço) para outubro/2026, conferidos à mão |
 | `dashboard-e2e` | Painel no navegador: página inicial, filtros, Comercial vê só os seus, todas as seções abrem, tema escuro, celular |
 | `campaigns-api` | Campanhas pela API: perfis, quem fica de fora, variáveis, "SAIR", envios simultâneos sem duplicar, entregue/lida/resposta, limite da Meta, cancelar, envio interrompido |
 | `campaigns-e2e` | Campanhas no navegador: Marketing monta, Gestor envia, resultados, conversa marcada, tema escuro, celular |

@@ -80,6 +80,32 @@ const SETS = {
   /** Tarefas concluídas no período. */
   tasksDone: (b: B, f: DashboardFilters, from: Date, to: Date) =>
     `FROM ${FROM_TASK} WHERE (t.contact_id IS NULL OR c.archived_at IS NULL) AND t.canceled_at IS NULL AND t.done_at >= ${b.p(from)} AND t.done_at < ${b.p(to)}${ownerIs(b, f, "t.owner_id")}${dims(b, f, "contact")}`,
+  /**
+   * Leads trabalhados no período: contatos em que alguém da equipe agiu —
+   * mensagem enviada (campanha não conta), tarefa concluída ou um registro
+   * feito por uma pessoa no histórico (etapa, nota, próxima ação,
+   * oportunidade, proposta, diagnóstico). Automações não contam.
+   */
+  worked: (b: B, f: DashboardFilters, from: Date, to: Date) => {
+    const ps = b.p(from);
+    const pe = b.p(to);
+    return `FROM ${FROM_CONTACT} WHERE c.archived_at IS NULL AND (
+        EXISTS (SELECT 1 FROM crm_messages m WHERE m.contact_id = c.id AND m.direction = 'out' AND m.sent_by IS NOT NULL AND m.campaign_id IS NULL
+                  AND m.created_at >= ${ps} AND m.created_at < ${pe})
+        OR EXISTS (SELECT 1 FROM crm_tasks tw WHERE tw.contact_id = c.id AND tw.canceled_at IS NULL AND tw.done_at >= ${ps} AND tw.done_at < ${pe})
+        OR EXISTS (SELECT 1 FROM crm_events ev WHERE ev.contact_id = c.id AND ev.user_id IS NOT NULL
+                     AND ev.kind IN ('stage', 'note', 'next_action', 'deal', 'proposal', 'diagnosis') AND ev.created_at >= ${ps} AND ev.created_at < ${pe})
+      )${ownerIs(b, f, "c.owner_id")}${dims(b, f, "contact")}`;
+  },
+  /** Contatos finalizados no período: com uma oportunidade encerrada (ganha ou perdida, inclusive oportunidade futura). */
+  finished: (b: B, f: DashboardFilters, from: Date, to: Date) =>
+    `FROM ${FROM_CONTACT} WHERE c.archived_at IS NULL AND EXISTS (
+       SELECT 1 FROM crm_deals d WHERE d.contact_id = c.id AND d.stage IN ('ganho', 'perdido') AND d.closed_at >= ${b.p(from)} AND d.closed_at < ${b.p(to)}${ownerIs(b, f, "d.owner_id")}
+     )${dims(b, f, "contact")}`,
+  /** Propostas aprovadas no período (pelo link ou registradas pela equipe); o responsável é o da oportunidade. */
+  approved: (b: B, f: DashboardFilters, from: Date, to: Date) =>
+    `FROM crm_proposals p JOIN (${FROM_DEAL}) ON d.id = p.deal_id
+     WHERE c.archived_at IS NULL AND p.status = 'aprovada' AND p.decided_at >= ${b.p(from)} AND p.decided_at < ${b.p(to)}${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}`,
   /** Abertas agora. */
   open: (b: B, f: DashboardFilters) =>
     `FROM ${FROM_DEAL} WHERE c.archived_at IS NULL AND d.stage NOT IN ('ganho', 'perdido')${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}${stageIs(b, f)}`,
@@ -127,7 +153,7 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
     const sql = make(b);
     return db.query(sql, b.values);
   };
-  const [leads, deals, stages, won, lost, tasks, meetingTasks] = await Promise.all([
+  const [leads, deals, stages, won, lost, tasks, meetingTasks, worked, finished, approved] = await Promise.all([
     run((b) => `SELECT count(*) AS n ${SETS.leads(b, f, s, e)}`),
     run((b) => `SELECT count(*) AS n ${SETS.deals(b, f, s, e)}`),
     run((b) => `SELECT count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals FROM (${stageReached(b, f, s, e)}) x`),
@@ -142,6 +168,9 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
     run((b) => `SELECT count(*) AS n, COALESCE(sum(d.value_cents), 0) AS value ${SETS.closed("perdido")(b, f, s, e)}`),
     run((b) => `SELECT count(*) AS n ${SETS.tasksDone(b, f, s, e)}`),
     run((b) => `SELECT count(*) AS n ${SETS.meetings(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.worked(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.finished(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.approved(b, f, s, e)}`),
   ]);
   const w = won.rows[0];
   const wonN = n(w.n);
@@ -159,6 +188,9 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
     avgTicketCents: n(w.valued) > 0 ? Math.round(n(w.value) / n(w.valued)) : null,
     avgCycleDays: w.cycle === null ? null : Math.round(Number(w.cycle) * 10) / 10,
     tasksDone: n(tasks.rows[0].n),
+    workedLeads: n(worked.rows[0].n),
+    finishedContacts: n(finished.rows[0].n),
+    proposalsApproved: n(approved.rows[0].n),
   };
 }
 
@@ -213,7 +245,7 @@ export async function getDashboard(
     listStages(db),
   ]);
 
-  const [current, previous, open, overdue, today, stalled, closedByStage, leadDays, wonDays, losses, sourceLeads, sourceWon, people, lastActivity, mrr, campaigns] =
+  const [current, previous, open, overdue, today, stalled, closedByStage, leadDays, wonDays, losses, sourceLeads, sourceWon, people, lastActivity, mrr, campaigns, serviceLeads, serviceWon] =
     await Promise.all([
       metrics(from, to, f),
       metrics(previousFrom, previousTo, f),
@@ -278,6 +310,12 @@ export async function getDashboard(
         ? run<{ n: string; value: string }>((b) => `SELECT count(*) AS n, COALESCE(sum(x.monthly), 0) AS value FROM (${mrrClients(b, f)}) x`)
         : Promise.resolve(null),
       viewer.seeCampaigns ? listCampaigns() : Promise.resolve(null),
+      // Por serviço: the lead's service of interest; a won opportunity's own service (else its lead's).
+      run<{ service: string | null; count: string }>((b) => `SELECT c.service_interest AS service, count(*) AS count ${SETS.leads(b, f, s, e)} GROUP BY 1`),
+      run<{ service: string | null; count: string; value: string }>(
+        (b) => `SELECT COALESCE(d.service, c.service_interest) AS service, count(*) AS count, COALESCE(sum(COALESCE(d.negotiated_cents, d.value_cents)), 0) AS value
+                ${SETS.closed("ganho")(b, f, s, e)} GROUP BY 1`
+      ),
     ]);
 
   const openBy = new Map(open.rows.map((r) => [r.stage, r]));
@@ -317,6 +355,14 @@ export async function getDashboard(
     .map((id) => ({ source: id, newLeads: leadsBy.get(id) ?? 0, won: n(wonBy.get(id)?.count), wonValueCents: n(wonBy.get(id)?.value) }))
     .filter((x) => x.newLeads > 0 || x.won > 0)
     .sort((a, b) => (sourceOrder.get(a.source) ?? 999) - (sourceOrder.get(b.source) ?? 999) || a.source.localeCompare(b.source));
+
+  const svcLeads = new Map(serviceLeads.rows.map((r) => [r.service ?? "", n(r.count)]));
+  const svcWon = new Map(serviceWon.rows.map((r) => [r.service ?? "", r]));
+  // Most leads first; "não informado" ("") last.
+  const services = [...new Set([...svcLeads.keys(), ...svcWon.keys()])]
+    .map((id) => ({ service: id || null, newLeads: svcLeads.get(id) ?? 0, won: n(svcWon.get(id)?.count), wonValueCents: n(svcWon.get(id)?.value) }))
+    .filter((x) => x.newLeads > 0 || x.won > 0)
+    .sort((a, b) => (a.service === null ? 1 : 0) - (b.service === null ? 1 : 0) || b.newLeads - a.newLeads || b.won - a.won || (a.service ?? "").localeCompare(b.service ?? ""));
 
   const peopleBy = new Map(people.rows.map((r) => [r.owner_id, r]));
   const lastBy = new Map(lastActivity.rows.map((r) => [r.user_id, iso(r.at)]));
@@ -381,6 +427,7 @@ export async function getDashboard(
     series,
     lossReasons,
     sources,
+    services,
     team: teamRows,
   };
 }
@@ -396,8 +443,30 @@ export type OwnerMetrics = {
   tasksDone: number;
   /** Right now. */
   tasksOverdue: number;
+  /** Leads trabalhados (by the lead's owner). */
+  worked: number;
+  /** Follow-ups: concluded tasks of the types Follow-up and Retorno comercial. */
+  followUps: number;
+  proposalsApproved: number;
+  /** Right now: leads (not archived) they're responsible for. */
+  assigned: number;
 };
-const NO_METRICS: OwnerMetrics = { leads: 0, meetings: 0, proposals: 0, wonCount: 0, wonValueCents: 0, lostCount: 0, tasksDone: 0, tasksOverdue: 0 };
+const NO_METRICS: OwnerMetrics = {
+  leads: 0,
+  meetings: 0,
+  proposals: 0,
+  wonCount: 0,
+  wonValueCents: 0,
+  lostCount: 0,
+  tasksDone: 0,
+  tasksOverdue: 0,
+  worked: 0,
+  followUps: 0,
+  proposalsApproved: 0,
+  assigned: 0,
+};
+/** Task types that count as a follow-up. */
+const FOLLOW_UP_KINDS = ["follow_up", "retorno_comercial"];
 
 /**
  * The Painel's numbers of a period split by responsável (lead / opportunity /
@@ -414,7 +483,7 @@ export async function ownerMetrics(from: string, to: string, only: string | null
     const sql = make(b);
     return db.query<{ owner: string | null; n?: string; value?: string; meetings?: string; proposals?: string }>(sql, b.values);
   };
-  const [leads, stages, won, lost, done, overdue, meetingTasks] = await Promise.all([
+  const [leads, stages, won, lost, done, overdue, meetingTasks, worked, followUps, approved, assigned] = await Promise.all([
     run((b) => `SELECT c.owner_id AS owner, count(*) AS n ${SETS.leads(b, f, s, e)} GROUP BY 1`),
     run(
       (b) => `SELECT x.owner, count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals
@@ -425,6 +494,10 @@ export async function ownerMetrics(from: string, to: string, only: string | null
     run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.tasksDone(b, f, s, e)} GROUP BY 1`),
     run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.pendingTasks("overdue")(b, f)} GROUP BY 1`),
     run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.meetings(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT c.owner_id AS owner, count(*) AS n ${SETS.worked(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.tasksDone(b, f, s, e)} AND t.kind = ANY(${b.p(FOLLOW_UP_KINDS)}) GROUP BY 1`),
+    run((b) => `SELECT d.owner_id AS owner, count(*) AS n ${SETS.approved(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT c.owner_id AS owner, count(*) AS n FROM crm_contacts c WHERE c.archived_at IS NULL${ownerIs(b, f, "c.owner_id")} GROUP BY 1`),
   ]);
   const out = new Map<string | null, OwnerMetrics>();
   const of = (owner: string | null) => {
@@ -442,6 +515,10 @@ export async function ownerMetrics(from: string, to: string, only: string | null
   for (const r of lost.rows) of(r.owner).lostCount = n(r.n);
   for (const r of done.rows) of(r.owner).tasksDone = n(r.n);
   for (const r of overdue.rows) of(r.owner).tasksOverdue = n(r.n);
+  for (const r of worked.rows) of(r.owner).worked = n(r.n);
+  for (const r of followUps.rows) of(r.owner).followUps = n(r.n);
+  for (const r of approved.rows) of(r.owner).proposalsApproved = n(r.n);
+  for (const r of assigned.rows) of(r.owner).assigned = n(r.n);
   return out;
 }
 
@@ -469,6 +546,9 @@ export const DASHBOARD_METRICS = [
   "deals",
   "meetings",
   "proposals",
+  "approved",
+  "worked",
+  "finished",
   "won",
   "lost",
   "tasksDone",
@@ -573,6 +653,24 @@ export async function listDashboardRecords(
       order = "at DESC NULLS LAST, id";
       break;
     }
+    case "worked":
+    case "finished":
+      kind = "contact";
+      sql = `SELECT c.id, c.id AS contact_id, c.name AS title, COALESCE(co.name, c.company) AS detail, u.name AS owner_name, NULL::bigint AS value_cents,
+                    ${
+                      metric === "worked"
+                        ? "c.updated_at"
+                        : "(SELECT max(dd.closed_at) FROM crm_deals dd WHERE dd.contact_id = c.id AND dd.stage IN ('ganho', 'perdido'))"
+                    } AS at
+             ${withOwner(metric === "worked" ? SETS.worked(b, f, s, e) : SETS.finished(b, f, s, e), "LEFT JOIN internal_users u ON u.id = c.owner_id")}`;
+      order = "at DESC NULLS LAST, id";
+      break;
+    case "approved":
+      sql = `SELECT d.id, d.contact_id, 'Proposta nº ' || lpad(p.number::text, 4, '0') || ' · ' || p.title AS title, d.stage, c.name AS contact_name,
+                    co.name AS company_name, u.name AS owner_name, p.total_cents AS value_cents, p.decided_at AS at
+             ${withOwner(SETS.approved(b, f, s, e), DEAL_JOIN_OWNER)}`;
+      order = "at DESC, id";
+      break;
     case "tasksDone":
     case "overdue":
     case "today": {

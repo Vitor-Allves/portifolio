@@ -267,6 +267,11 @@ export async function getProductivity(s: Viewer, from: string, to: string): Prom
     conversion: m.wonCount + m.lostCount > 0 ? m.wonCount / (m.wonCount + m.lostCount) : null,
     tasksDone: m.tasksDone,
     tasksOverdue: m.tasksOverdue,
+    worked: m.worked,
+    followUps: m.followUps,
+    proposalsApproved: m.proposalsApproved,
+    avgTicketCents: m.wonCount > 0 ? Math.round(m.wonValueCents / m.wonCount) : null,
+    assigned: m.assigned,
     ...extra,
   });
   const personExtra = (id: string | null) => {
@@ -291,7 +296,8 @@ export async function getProductivity(s: Viewer, from: string, to: string): Prom
   const rows = members.map((m) => line(m.id, m.name));
   if (seeAll) {
     const u = by.get(null);
-    if (u && u.leads + u.meetings + u.proposals + u.wonCount + u.lostCount + u.tasksDone + u.tasksOverdue > 0) rows.push(line(null, "Sem responsável"));
+    if (u && u.leads + u.meetings + u.proposals + u.wonCount + u.lostCount + u.tasksDone + u.tasksOverdue + u.worked + u.proposalsApproved + u.assigned > 0)
+      rows.push(line(null, "Sem responsável"));
   }
   let teamNumbers: CrmProductivityNumbers | null = null;
   if (seeAll) {

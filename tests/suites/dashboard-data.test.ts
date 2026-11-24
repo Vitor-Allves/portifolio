@@ -8,9 +8,9 @@ import { listTeam } from "../../src/lib/crm";
   const team = await listTeam();
   const d = await getDashboard("2026-10-01", "2026-10-31", null, team);
   assert.equal(d.previousFrom, "2026-08-31"); assert.equal(d.previousTo, "2026-09-30");
-  assert.deepEqual(d.current, { newLeads: 4, newDeals: 5, meetings: 2, proposals: 2, wonCount: 1, wonValueCents: 500000, lostCount: 1, lostValueCents: 200000, conversion: 0.5, avgTicketCents: 500000, avgCycleDays: 10, tasksDone: 2 });
+  assert.deepEqual(d.current, { newLeads: 4, newDeals: 5, meetings: 2, proposals: 2, wonCount: 1, wonValueCents: 500000, lostCount: 1, lostValueCents: 200000, conversion: 0.5, avgTicketCents: 500000, avgCycleDays: 10, tasksDone: 2, workedLeads: 4, finishedContacts: 2, proposalsApproved: 0 });
   console.log("ok — current period (archived contact, canceled task and events outside the month left out)");
-  assert.deepEqual(d.previous, { newLeads: 1, newDeals: 1, meetings: 1, proposals: 0, wonCount: 1, wonValueCents: 0, lostCount: 0, lostValueCents: 0, conversion: 1, avgTicketCents: null, avgCycleDays: 10, tasksDone: 1 });
+  assert.deepEqual(d.previous, { newLeads: 1, newDeals: 1, meetings: 1, proposals: 0, wonCount: 1, wonValueCents: 0, lostCount: 0, lostValueCents: 0, conversion: 1, avgTicketCents: null, avgCycleDays: 10, tasksDone: 1, workedLeads: 1, finishedContacts: 1, proposalsApproved: 0 });
   console.log("ok — previous period (legacy stage event without opportunity counts once; won without value → no ticket)");
   assert.deepEqual(d.openNow, { count: 3, valueCents: 400000 });
   assert.deepEqual(d.tasksNow, { overdue: 1, today: 1 });
@@ -29,7 +29,9 @@ import { listTeam } from "../../src/lib/crm";
   assert.deepEqual(d.sources.map((s: { source: string; newLeads: number; won: number; wonValueCents: number }) => [s.source, s.newLeads, s.won, s.wonValueCents]), [
     ["anuncio", 1, 0, 0], ["bni", 1, 0, 0], ["site", 1, 0, 0], ["indicacao", 1, 1, 500000],
   ]);
-  console.log("ok — loss reasons and sources");
+  // Por serviço: nobody informed a service in the fixtures — all under "não informado".
+  assert.deepEqual(d.services, [{ service: null, newLeads: 4, won: 1, wonValueCents: 500000 }]);
+  console.log("ok — loss reasons, sources and services");
   const row = (name: string) => d.team.find((r: { name: string }) => r.name === name)!;
   assert.deepEqual(
     [row("Vitor").openCount, row("Vitor").openValueCents, row("Vitor").wonCount, row("Vitor").wonValueCents, row("Vitor").lostCount, row("Vitor").conversion, row("Vitor").tasksDone, row("Vitor").tasksOverdue],

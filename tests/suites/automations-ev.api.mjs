@@ -160,6 +160,15 @@ ok(
 );
 await anon.dispose();
 
+// ---- the Painel and the productivity count the approvals (item 12) ----
+const month = `from=${today.slice(0, 7)}-01&to=${today}`;
+const dash = (await json(await admin.get(`${BASE}/api/crm/dashboard/?${month}`))).body.dashboard;
+ok(dash.current.proposalsApproved === 2, `the Painel counts the 2 approved proposals (${dash.current.proposalsApproved})`);
+const ap = (await json(await admin.get(`${BASE}/api/crm/dashboard/records/?${month}&metric=approved`))).body;
+ok(ap.total === 2 && ap.rows.every((x) => x.kind === "deal" && /^Proposta nº 000[12] · /.test(x.title)), "…and lists them, each opening its opportunity");
+const prod = (await json(await admin.get(`${BASE}/api/crm/productivity/?${month}`))).body.productivity;
+ok(prod.rows.find((x) => x.name === "João").proposalsApproved === 2, "João's productivity: 2 approved");
+
 // ---- audit of the changes ----
 ok(
   Number(await sql(`SELECT count(*) FROM audit_log WHERE action = 'crm.automation_change' AND target_id = ANY($1)`, [NEW])) >= 6,

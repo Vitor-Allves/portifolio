@@ -77,6 +77,9 @@ const METRIC_TITLE: Record<string, string> = {
   deals: "Oportunidades abertas no período",
   meetings: "Reuniões agendadas no período",
   proposals: "Propostas enviadas no período",
+  approved: "Propostas aprovadas no período",
+  worked: "Leads trabalhados no período",
+  finished: "Contatos finalizados no período",
   won: "Negócios ganhos no período",
   lost: "Negócios perdidos no período",
   tasksDone: "Tarefas concluídas no período",
@@ -500,9 +503,18 @@ export default function CrmDashboardView({
           {c && p && (
             <section aria-label="Indicadores do período" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
               <Tile label="Novos leads" value={String(c.newLeads)} now={c.newLeads} before={p.newLeads} note={vs} onOpen={() => setRecords("leads")} />
+              <Tile
+                label="Leads trabalhados"
+                value={String(c.workedLeads)}
+                now={c.workedLeads}
+                before={p.workedLeads}
+                note="mensagem, tarefa ou registro"
+                onOpen={() => setRecords("worked")}
+              />
               <Tile label="Novas oportunidades" value={String(c.newDeals)} now={c.newDeals} before={p.newDeals} onOpen={() => setRecords("deals")} />
               <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} note="tarefas do tipo Reunião" onOpen={() => setRecords("meetings")} />
               <Tile label="Propostas enviadas" value={String(c.proposals)} now={c.proposals} before={p.proposals} onOpen={() => setRecords("proposals")} />
+              <Tile label="Propostas aprovadas" value={String(c.proposalsApproved)} now={c.proposalsApproved} before={p.proposalsApproved} onOpen={() => setRecords("approved")} />
               <Tile
                 label="Ganhos"
                 value={String(c.wonCount)}
@@ -519,6 +531,14 @@ export default function CrmDashboardView({
                 goodWhenUp={false}
                 note={c.lostValueCents > 0 ? brl(c.lostValueCents) : null}
                 onOpen={() => setRecords("lost")}
+              />
+              <Tile
+                label="Contatos finalizados"
+                value={String(c.finishedContacts)}
+                now={c.finishedContacts}
+                before={p.finishedContacts}
+                note="com oportunidade encerrada"
+                onOpen={() => setRecords("finished")}
               />
               <Tile label="Conversão" value={pct(c.conversion)} now={c.conversion} before={p.conversion} note="ganhos ÷ fechados" />
               <Tile label="Ticket médio" value={brl(c.avgTicketCents)} now={c.avgTicketCents} before={p.avgTicketCents} />
@@ -608,6 +628,20 @@ export default function CrmDashboardView({
                   rows={d.sources.map((s) => ({
                     key: s.source,
                     label: label("source", s.source),
+                    value: s.newLeads,
+                    figure: `${s.newLeads} lead${s.newLeads === 1 ? "" : "s"} · ${s.won} ganho${s.won === 1 ? "" : "s"}${s.wonValueCents > 0 ? ` (${brl(s.wonValueCents)})` : ""}`,
+                  }))}
+                />
+              )}
+            </Card>
+            <Card title="Por serviço">
+              {d.services.length === 0 ? (
+                <p className="text-[12.5px] text-crm-dim">Nenhum lead novo nem venda no período.</p>
+              ) : (
+                <HBars
+                  rows={d.services.map((s) => ({
+                    key: s.service ?? "sem_servico",
+                    label: s.service ? label("service", s.service) : "Serviço não informado",
                     value: s.newLeads,
                     figure: `${s.newLeads} lead${s.newLeads === 1 ? "" : "s"} · ${s.won} ganho${s.won === 1 ? "" : "s"}${s.wonValueCents > 0 ? ` (${brl(s.wonValueCents)})` : ""}`,
                   }))}

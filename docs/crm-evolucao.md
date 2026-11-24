@@ -140,6 +140,12 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   aprovada), com prazos, responsáveis e ações configuráveis; mensagens de
   WhatsApp agendadas (texto ou modelo), canceláveis, com as regras de envio
   conferidas de novo no horário e o motivo quando não saem.
-- [ ] 8b. Indicadores de produtividade
+- [x] 8b. Indicadores — Painel com leads trabalhados, contatos finalizados
+  e propostas aprovadas (cada um com a lista), comparação por serviço;
+  produtividade por pessoa com atribuídos, trabalhados, follow-ups,
+  aprovadas, perdidos e ticket médio. Já existiam: leads recebidos,
+  propostas enviadas, vendas, perdas, conversão, ticket médio, receita
+  recorrente, pipeline, negociações paradas, reuniões, atividades, tarefas
+  atrasadas e comparação por vendedor, período e origem.
 - [ ] 9. Relatórios, Intelligence, LGPD
 - [ ] 10. Documentação e testes finais

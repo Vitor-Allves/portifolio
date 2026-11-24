@@ -548,6 +548,28 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
 ## Registro de alterações
 
+### Evolução v1.0 — indicadores de produtividade
+
+- **Painel** (especificação, item 12): três números novos, cada um com a
+  lista dos registros por trás — **leads trabalhados** (contatos em que
+  alguém da equipe agiu no período: mensagem enviada fora de campanha,
+  tarefa concluída ou registro de uma pessoa no histórico — etapa, nota,
+  próxima ação, oportunidade, proposta, diagnóstico; automações não contam),
+  **contatos finalizados** (com uma oportunidade encerrada, ganha ou
+  perdida) e **propostas aprovadas** (pelo módulo de propostas; abre a
+  oportunidade). Nova seção **Por serviço**: leads novos pelo serviço de
+  interesse e vendas pelo serviço da oportunidade (ou do lead). A planilha
+  do Painel traz os números e a seção novos.
+- **Produtividade por pessoa** (Metas e produtividade): passa a mostrar
+  leads atribuídos (agora), leads trabalhados, follow-ups (tarefas de
+  Follow-up e Retorno comercial concluídas), propostas aprovadas, perdidos e
+  ticket médio, além do que já tinha; a planilha ganha as mesmas colunas (no
+  fim). Os totais da equipe continuam iguais aos do Painel.
+- Sem mudança no banco. Testes: `dashboard-data` (números conferidos à mão),
+  `dashboard-reports-api` (cada número novo = sua lista), `goals-api`
+  (totais da equipe e indicadores individuais) e `automations-ev-api`
+  (propostas aprovadas no Painel e na produtividade).
+
 ### Evolução v1.0 — automações 11–16 e mensagens agendadas (schema v27)
 
 - **Seis automações novas** (especificação, item 7), no mesmo motor, com

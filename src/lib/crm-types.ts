@@ -664,6 +664,12 @@ export type CrmDashboardMetrics = {
   /** Mean days from opening to winning. */
   avgCycleDays: number | null;
   tasksDone: number;
+  /** Contacts someone on the team worked on in the period (message, finished task, a person's record in the history). */
+  workedLeads: number;
+  /** Contacts with an opportunity closed (won or lost) in the period. */
+  finishedContacts: number;
+  /** Proposals approved in the period (proposals module). */
+  proposalsApproved: number;
 };
 
 export type CrmDashboard = {
@@ -689,6 +695,8 @@ export type CrmDashboard = {
   series: { start: string; label: string; newLeads: number; won: number }[];
   lossReasons: { reason: CrmLostReason | "sem_motivo"; count: number; valueCents: number }[];
   sources: { source: CrmSource; newLeads: number; won: number; wonValueCents: number }[];
+  /** Por serviço (null = not informed): new leads by service of interest; won opportunities by their service. */
+  services: { service: string | null; newLeads: number; won: number; wonValueCents: number }[];
   team: {
     ownerId: string | null;
     name: string;
@@ -769,6 +777,15 @@ export type CrmProductivityNumbers = {
   tasksDone: number;
   /** Right now, not in the period. */
   tasksOverdue: number;
+  /** Leads trabalhados in the period (by the lead's owner). */
+  worked: number;
+  /** Concluded Follow-up / Retorno comercial tasks. */
+  followUps: number;
+  proposalsApproved: number;
+  /** Won value ÷ won count; null without sales. */
+  avgTicketCents: number | null;
+  /** Right now: leads they're responsible for. */
+  assigned: number;
   /** Contacts they wrote to on WhatsApp (campaigns don't count). */
   conversations: number;
   messagesSent: number;
