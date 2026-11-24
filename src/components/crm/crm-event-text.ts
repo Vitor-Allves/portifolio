@@ -72,6 +72,19 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
     }
     case "automation":
       return `Automação: ${String(p.text ?? "")}`;
+    case "attendance":
+      switch (p.action) {
+        case "assumed":
+          return `${String(p.to)} assumiu o atendimento${p.via === "resposta" ? " (ao responder)" : ""}`;
+        case "takeover":
+          return `${String(p.to)} assumiu o atendimento no lugar de ${String(p.from)}`;
+        case "transferred":
+          return `Atendimento transferido${p.from ? ` de ${String(p.from)}` : ""} para ${String(p.to)}`;
+        case "ended":
+          return `Atendimento encerrado${p.from ? ` (era de ${String(p.from)})` : ""}`;
+        default:
+          return "Atendimento";
+      }
     case "tag": {
       const via = p.via && p.via !== "manual" ? ` (${TAG_VIA.find((v) => v.id === p.via)?.label ?? String(p.via)})` : "";
       return p.action === "removed" ? `Etiqueta removida: ${String(p.label)}` : `Etiqueta adicionada: ${String(p.label)}${via}`;

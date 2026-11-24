@@ -25,7 +25,8 @@ import CrmLostDialog from "./CrmLostDialog";
 import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
 import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
 import CrmTagsEditor from "./CrmTagsEditor";
-import { SegmentSelect, TagChips, useCatalog } from "./crm-catalog-context";
+import { SegmentSelect, TagChip, TagChips, useCatalog } from "./crm-catalog-context";
+import type { TaskDraft } from "./CrmTaskDialog";
 import { describeEvent } from "./crm-event-text";
 
 type CrmContactPanelProps = {
@@ -50,6 +51,8 @@ type CrmContactPanelProps = {
   caps: CrmCapabilities;
   /** Opens a task in the full task form (description, priority, history...). */
   onOpenTask?: (taskId: string) => void;
+  /** Opens the task form for a new task (the conversation's "+ Tarefa"). */
+  onNewTask?: (draft: TaskDraft) => void;
   /** Bumped when a task was saved in the task form: reload this contact. */
   tasksVersion?: number;
 };
@@ -305,9 +308,12 @@ export default function CrmContactPanel({
   embedded = false,
   caps,
   onOpenTask,
+  onNewTask,
   tasksVersion = 0,
 }: CrmContactPanelProps) {
-  const { label, options } = useCatalog();
+  const { label, options, tag: tagById, tagGroups } = useCatalog();
+  const [newDealFromChat, setNewDealFromChat] = useState(false);
+  const [busyAttendance, setBusyAttendance] = useState(false);
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -389,10 +395,11 @@ export default function CrmContactPanel({
 
   async function send(body: Record<string, unknown>) {
     setSending(true);
+    // Someone else attending: the button says "Assumir e responder", so sending takes the conversation over.
     const res = await fetch(`/api/crm/contacts/${contactId}/messages/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, takeover: attendedByOther }),
     });
     setSending(false);
     if (!res.ok) {
@@ -424,6 +431,34 @@ export default function CrmContactPanel({
     await load();
   }
 
+  /** Atendimento: assume / transfer / end. */
+  async function attendance(body: Record<string, unknown>) {
+    setBusyAttendance(true);
+    const res = await fetch(`/api/crm/contacts/${contactId}/attendance/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setBusyAttendance(false);
+    if (!res.ok) return setActionError(await errorFrom(res, "Não foi possível mudar o atendimento."));
+    setActionError(null);
+    await load();
+    onChanged();
+  }
+
+  async function attendanceTag(method: "POST" | "DELETE", tagId: string) {
+    const res = await fetch(`/api/crm/contacts/${contactId}/tags/${method === "DELETE" ? `?tagId=${encodeURIComponent(tagId)}` : ""}`, {
+      method,
+      headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+      body: method === "POST" ? JSON.stringify({ tagId }) : undefined,
+    });
+    if (!res.ok) return setActionError(await errorFrom(res, "Não foi possível mudar a etiqueta."));
+    setActionError(null);
+    await load();
+    onChanged();
+  }
+
+  const attendedByOther = Boolean(detail?.attendantId && detail.attendantId !== currentUserId);
   const windowOpen = detail ? serviceWindowRemainingMs(detail.lastInboundAt, now) > 0 : false;
   const win = detail ? windowLabel(detail.lastInboundAt, now) : null;
   const fields: ContactForm | null =
@@ -681,7 +716,10 @@ export default function CrmContactPanel({
                     type="button"
                     role="tab"
                     aria-selected={tab === t}
-                    onClick={() => setTab(t)}
+                    onClick={() => {
+                      setNewDealFromChat(false);
+                      setTab(t);
+                    }}
                     className={crmSegment(tab === t)}
                   >
                     {t === "conversa" ? "Conversa" : t === "negocio" ? "Negócio e tarefas" : "Detalhes e histórico"}
@@ -706,6 +744,7 @@ export default function CrmContactPanel({
                 onSelectDeal={setDealPick}
                 now={now}
                 onOpenTask={onOpenTask}
+                startNewDeal={newDealFromChat}
                 onReload={async () => {
                   await load();
                   onChanged();
@@ -713,6 +752,92 @@ export default function CrmContactPanel({
               />
             ) : tab === "conversa" ? (
               <>
+                <section aria-label="Atendimento" className="border-b border-crm-line px-5 py-2 space-y-1.5 text-[12px]">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                    <span className={attendedByOther ? "text-crm-amber font-medium" : "text-crm-dim"}>
+                      {!detail.attendantId
+                        ? "Ninguém está atendendo."
+                        : `${detail.attendantId === currentUserId ? "Você está atendendo" : `${detail.attendantName} está atendendo`}${
+                            detail.attendantSince ? ` desde ${dateTime(detail.attendantSince)}` : ""
+                          }.`}
+                    </span>
+                    {caps.sendWhatsApp && detail.attendantId !== currentUserId && (
+                      <button type="button" disabled={busyAttendance} onClick={() => void attendance({ action: "assume" })} className={`${CRM_LINK_BTN} !text-[12px]`}>
+                        Assumir
+                      </button>
+                    )}
+                    {caps.sendWhatsApp && (detail.attendantId === currentUserId || !detail.attendantId || caps.assignAnyOwner) && (
+                      <select
+                        value=""
+                        disabled={busyAttendance}
+                        onChange={(e) => e.target.value && void attendance({ action: "transfer", toUserId: e.target.value })}
+                        aria-label="Transferir atendimento"
+                        className="rounded-full border border-crm-line bg-crm-card px-2 py-0.5 text-[12px] text-crm-dim max-w-[11rem]"
+                      >
+                        <option value="">Transferir para…</option>
+                        {team
+                          .filter((m) => m.id !== detail.attendantId)
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                    {caps.sendWhatsApp && detail.attendantId && (detail.attendantId === currentUserId || caps.assignAnyOwner) && (
+                      <button type="button" disabled={busyAttendance} onClick={() => void attendance({ action: "end" })} className="text-[12px] text-crm-dim hover:text-crm-text">
+                        Encerrar
+                      </button>
+                    )}
+                    <span className="ml-auto flex items-center gap-3">
+                      {onNewTask && caps.editPipeline && (
+                        <button type="button" onClick={() => onNewTask({ contactId: detail.id, contactName: detail.name })} className={`${CRM_LINK_BTN} !text-[12px]`}>
+                          + Tarefa
+                        </button>
+                      )}
+                      {caps.editPipeline && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewDealFromChat(true);
+                            setTab("negocio");
+                          }}
+                          className={`${CRM_LINK_BTN} !text-[12px]`}
+                        >
+                          + Oportunidade
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  {(() => {
+                    const group = tagGroups.find((g) => g.id === "atendimento");
+                    const mine = detail.tagIds.map((id) => tagById(id)).filter((t) => t && t.category === "atendimento");
+                    const free = (group?.tags ?? []).filter((t) => !detail.tagIds.includes(t.id));
+                    if (!group || (mine.length === 0 && !caps.editContacts)) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5" aria-label="Etiquetas de atendimento">
+                        {mine.map((t) => (
+                          <TagChip key={t!.id} tag={t!} small onRemove={caps.editContacts ? () => void attendanceTag("DELETE", t!.id) : undefined} />
+                        ))}
+                        {caps.editContacts && free.length > 0 && (
+                          <select
+                            value=""
+                            onChange={(e) => e.target.value && void attendanceTag("POST", e.target.value)}
+                            aria-label="Etiqueta de atendimento"
+                            className="rounded-full border border-dashed border-crm-line bg-transparent px-2 py-0.5 text-[11px] text-crm-dim"
+                          >
+                            <option value="">+ Etiqueta</option>
+                            {free.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </section>
                 <div ref={messagesRef} className="flex-1 overflow-y-auto bg-crm-sunken px-5 py-4 space-y-2.5">
                   {detail.messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-6">
@@ -747,6 +872,11 @@ export default function CrmContactPanel({
                         aria-label="Mensagem"
                         className={CRM_INPUT}
                       />
+                      {attendedByOther && (
+                        <p className="text-[11.5px] text-crm-amber">
+                          {detail.attendantName} está atendendo esta conversa. Ao enviar, você assume o atendimento (fica no histórico).
+                        </p>
+                      )}
                       <div className="flex flex-wrap items-center gap-2">
                         <QuickReplies quickReplies={quickReplies} onPick={(b) => setText((t) => (t ? `${t}\n${b}` : b))} onChange={onQuickRepliesChange} />
                         <button
@@ -761,7 +891,7 @@ export default function CrmContactPanel({
                           disabled={sending || !text.trim()}
                           className={`ml-auto ${CRM_BTN_PRIMARY}`}
                         >
-                          {sending ? "Enviando..." : "Enviar"}
+                          {sending ? "Enviando..." : attendedByOther ? "Assumir e responder" : "Enviar"}
                         </button>
                       </div>
                     </form>

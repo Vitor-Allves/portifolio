@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -910,6 +910,26 @@ async function ensureSchema(): Promise<void> {
     }
 
     await done(14);
+  }
+
+  if (current < 15) {
+    // v15 — Fase 4, entrega 1 (especificação v1.0): conversas. Who is
+    // answering a conversation right now (atendimento — not the same as the
+    // lead's owner) and since when; the "Atendimento" tags. Only additions:
+    // no conversation starts with someone attending it.
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS attendant_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL`);
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS attendant_since TIMESTAMPTZ`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_contacts_attendant_idx ON crm_contacts (attendant_id) WHERE attendant_id IS NOT NULL`);
+    // Response times read messages by period.
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_messages_created_idx ON crm_messages (created_at)`);
+    for (const [i, t] of DEFAULT_TAGS.filter((t) => t.category === "atendimento").entries()) {
+      await db.query(
+        `INSERT INTO crm_tags (id, category, label, color, sort) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
+        [t.id, t.category, t.label, t.color, i]
+      );
+    }
+
+    await done(15);
   }
 }
 

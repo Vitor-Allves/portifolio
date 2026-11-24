@@ -92,6 +92,7 @@ export const TAG_CATEGORIES = [
   { id: "origem", label: "Origem", hint: "Todos os caminhos por onde o lead chegou (pode ter vários)." },
   { id: "acao", label: "Ação", hint: "O que foi feito com o lead." },
   { id: "classificacao", label: "Classificação", hint: "Situação do lead. Temperatura (frio, morno, quente) é um campo à parte." },
+  { id: "atendimento", label: "Atendimento", hint: "Situação da conversa no WhatsApp (aguardando cliente, dúvida, suporte...)." },
 ] as const;
 
 export type TagCategory = (typeof TAG_CATEGORIES)[number]["id"];
@@ -131,6 +132,12 @@ export const DEFAULT_TAGS: { id: string; category: TagCategory; label: string; c
   { id: "acao-retorno-espontaneo", category: "acao", label: "Retorno espontâneo", color: "verde" },
   { id: "classificacao-cliente-ativo", category: "classificacao", label: "Cliente ativo", color: "verde" },
   { id: "classificacao-em-negociacao", category: "classificacao", label: "Em negociação", color: "amarelo" },
+  // v15 (Fase 4): etiquetas de atendimento.
+  { id: "atendimento-aguardando-cliente", category: "atendimento", label: "Aguardando cliente", color: "amarelo" },
+  { id: "atendimento-duvida", category: "atendimento", label: "Dúvida", color: "azul" },
+  { id: "atendimento-suporte", category: "atendimento", label: "Suporte", color: "turquesa" },
+  { id: "atendimento-reclamacao", category: "atendimento", label: "Reclamação", color: "vermelho" },
+  { id: "atendimento-urgente", category: "atendimento", label: "Urgente", color: "roxo" },
 ];
 
 /** How a tag got onto a contact. */

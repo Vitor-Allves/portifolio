@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sessionScopeFromRequest, hasDataAccess } from "./auth-context";
 import { DbConfigError } from "./db";
 import { CrmInputError } from "./crm";
-import { CrmForbiddenError, CrmNotFoundError } from "./crm-core";
+import { CrmConflictError, CrmForbiddenError, CrmNotFoundError } from "./crm-core";
 import { crmSessionFor, type CrmSession } from "./crm-access";
 import { WhatsAppApiError, WhatsAppConfigError } from "./whatsapp";
 import { InvalidUsernameError, UsernameTakenError } from "./username-registry";
@@ -30,6 +30,7 @@ export function crmErrorResponse(err: unknown, where: string): NextResponse {
   if (err instanceof CrmInputError) return NextResponse.json({ error: err.message }, { status: 400 });
   if (err instanceof CrmForbiddenError) return NextResponse.json({ error: err.message }, { status: 403 });
   if (err instanceof CrmNotFoundError) return NextResponse.json({ error: err.message }, { status: 404 });
+  if (err instanceof CrmConflictError) return NextResponse.json({ error: err.message, conflict: true }, { status: 409 });
   if (err instanceof UsernameTakenError) return NextResponse.json({ error: err.message }, { status: 409 });
   if (err instanceof InvalidUsernameError) return NextResponse.json({ error: err.message }, { status: 400 });
   if (err instanceof WhatsAppConfigError) {

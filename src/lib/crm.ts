@@ -92,6 +92,9 @@ type CardRow = {
   task_title: string | null;
   task_due_at: Date | null;
   task_all_day: boolean | null;
+  attendant_id: string | null;
+  attendant_name: string | null;
+  attendant_since: Date | null;
 };
 
 // Company name, segment and city come from the linked company when there is
@@ -113,10 +116,12 @@ const CARD_SELECT = `
            (SELECT max(e.created_at) FROM crm_events e WHERE e.contact_id = c.id AND e.kind = 'note'),
            (SELECT max(t.done_at) FROM crm_tasks t WHERE t.contact_id = c.id AND t.done_at IS NOT NULL)
          ) AS last_interaction_at,
-         nt.id AS task_id, nt.kind AS task_kind, nt.title AS task_title, nt.due_at AS task_due_at, nt.all_day AS task_all_day
+         nt.id AS task_id, nt.kind AS task_kind, nt.title AS task_title, nt.due_at AS task_due_at, nt.all_day AS task_all_day,
+         c.attendant_id, au.name AS attendant_name, c.attendant_since
   FROM crm_contacts c
   LEFT JOIN crm_companies co ON co.id = c.company_id
   LEFT JOIN internal_users u ON u.id = c.owner_id
+  LEFT JOIN internal_users au ON au.id = c.attendant_id
   -- Próxima atividade: the earliest pending task.
   LEFT JOIN LATERAL (
     SELECT t.id, t.kind, t.title, t.due_at, t.all_day FROM crm_tasks t
@@ -163,6 +168,9 @@ function mapCard(r: CardRow): CrmContactCard {
       r.task_id && r.task_kind
         ? { id: r.task_id, kind: r.task_kind, title: r.task_title ?? "", dueAt: iso(r.task_due_at), allDay: r.task_all_day ?? true }
         : null,
+    attendantId: r.attendant_id,
+    attendantName: r.attendant_name,
+    attendantSince: iso(r.attendant_since),
   };
 }
 
@@ -407,11 +415,20 @@ export async function listUnreadContacts(visibleTo: string | null = null): Promi
 }
 
 
-export type ConversationFilters = Pick<ContactFilters, "q" | "owner" | "currentUserId" | "visibleTo"> & {
+export type ConversationFilters = Pick<ContactFilters, "q" | "owner" | "currentUserId" | "visibleTo" | "tag"> & {
   /** Only conversations with an opportunity in this funnel stage. */
   stage?: string;
   unread?: boolean;
+  /** Atendimento: "mine" | "none" | a user id. */
+  attendant?: string;
+  /** Only conversations waiting for our answer (the newest message is the contact's). */
+  waiting?: boolean;
 };
+
+/** The contact's first message after our last one (null when we answered last, or nothing came from them). */
+const WAITING_SINCE = `(SELECT min(m.created_at) FROM crm_messages m
+   WHERE m.contact_id = x.id AND m.direction = 'in'
+     AND m.created_at > COALESCE((SELECT max(o.created_at) FROM crm_messages o WHERE o.contact_id = x.id AND o.direction = 'out'), '-infinity'))`;
 
 /**
  * WhatsApp conversations — active contacts with at least one message — newest
@@ -422,10 +439,21 @@ export async function listConversations(
   f: ConversationFilters,
   opts: { before?: string | null; limit?: number } = {}
 ): Promise<{ rows: CrmConversation[]; next: string | null; unreadTotal: number }> {
-  const { sql, values } = contactWhere({ q: f.q, owner: f.owner, currentUserId: f.currentUserId, visibleTo: f.visibleTo });
+  const { sql, values } = contactWhere({ q: f.q, owner: f.owner, currentUserId: f.currentUserId, visibleTo: f.visibleTo, tag: f.tag });
   const unreadScope = contactWhere({ visibleTo: f.visibleTo });
   const extra = ["c.last_message_at IS NOT NULL"];
   if (f.unread) extra.push("c.unread_count > 0");
+  if (f.attendant === "mine" && f.currentUserId) {
+    values.push(f.currentUserId);
+    extra.push(`c.attendant_id = $${values.length}`);
+  } else if (f.attendant === "none") {
+    extra.push("c.attendant_id IS NULL");
+  } else if (f.attendant && f.attendant !== "all") {
+    values.push(f.attendant);
+    extra.push(`c.attendant_id = $${values.length}`);
+  }
+  // The newest message is the contact's: waiting for us.
+  if (f.waiting) extra.push("c.last_inbound_at IS NOT NULL AND c.last_inbound_at >= c.last_message_at");
   if (f.stage && isCrmStage(f.stage)) {
     values.push(f.stage);
     extra.push(`EXISTS (SELECT 1 FROM crm_deals d WHERE d.contact_id = c.id AND d.stage = $${values.length})`);
@@ -441,8 +469,8 @@ export async function listConversations(
   values.push(limit + 1);
   const db = await getDb();
   const [list, unread] = await Promise.all([
-    db.query<CardRow & { deal_stages: string[] }>(
-      `SELECT x.*, ARRAY(SELECT DISTINCT d.stage FROM crm_deals d WHERE d.contact_id = x.id) AS deal_stages
+    db.query<CardRow & { deal_stages: string[]; waiting_since: Date | null }>(
+      `SELECT x.*, ARRAY(SELECT DISTINCT d.stage FROM crm_deals d WHERE d.contact_id = x.id) AS deal_stages, ${WAITING_SINCE} AS waiting_since
        FROM (${CARD_SELECT} ${sql} AND ${extra.join(" AND ")}
              ORDER BY c.last_message_at DESC, c.id DESC LIMIT $${values.length}) x
        ORDER BY x.last_message_at DESC, x.id DESC`,
@@ -454,6 +482,7 @@ export async function listConversations(
   const rows = list.rows.slice(0, limit).map((r) => ({
     ...mapCard(r),
     dealStages: r.deal_stages.filter(isCrmStage).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+    waitingSince: iso(r.waiting_since),
   }));
   const last = rows[rows.length - 1];
   return {
@@ -890,6 +919,12 @@ export async function recordOutbound(
  * archived lead that writes again comes back to the board.
  */
 export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { contactId: string; phone: string } | null }> {
+  // WhatsApp's timestamp has whole seconds only: a reply arriving in the same
+  // second as our last message would sort before it (and the conversation
+  // wouldn't read as waiting). A fresh delivery is stamped with the arrival
+  // time; a late redelivery keeps WhatsApp's time.
+  const age = Date.now() - msg.timestamp.getTime();
+  const at = age >= -60_000 && age < 10_000 ? new Date() : msg.timestamp;
   return withTransaction(async (client) => {
     const found = await client.query<{ id: string; stage: string; archived_at: Date | null; opted_out_at: Date | null }>(
       `SELECT id, stage, archived_at, opted_out_at FROM crm_contacts WHERE phone = ANY($1) ORDER BY created_at LIMIT 1 FOR UPDATE`,
@@ -914,7 +949,7 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
       `INSERT INTO crm_messages (id, contact_id, wa_message_id, direction, type, body, media_id, media_mime, status, created_at)
        VALUES ($1, $2, $3, 'in', $4, $5, $6, $7, 'received', $8)
        ON CONFLICT (wa_message_id) DO NOTHING`,
-      [randomUUID(), contactId, msg.waMessageId, msg.type, msg.body, msg.mediaId, msg.mediaMime, msg.timestamp]
+      [randomUUID(), contactId, msg.waMessageId, msg.type, msg.body, msg.mediaId, msg.mediaMime, at]
     );
     if (inserted.rowCount === 0) return { optedOut: null };
 
@@ -929,7 +964,7 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
            archived_at = NULL,
            updated_at = now()
        WHERE id = $1`,
-      [contactId, msg.timestamp, preview(msg.type, msg.body, null), msg.referral ? JSON.stringify(msg.referral) : null]
+      [contactId, at, preview(msg.type, msg.body, null), msg.referral ? JSON.stringify(msg.referral) : null]
     );
     if (!isNew && found.rows[0].archived_at) {
       await addEvent(client, contactId, "restored", { auto: true }, null);
@@ -954,7 +989,7 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
       return { optedOut: { contactId, phone: msg.from } };
     }
     // A real answer (not "SAIR", not from someone unsubscribed) may be a reply to a campaign.
-    if (!isNew && !found.rows[0].opted_out_at) await afterInbound(client, contactId, msg.timestamp);
+    if (!isNew && !found.rows[0].opted_out_at) await afterInbound(client, contactId, at);
     return { optedOut: null };
   });
 }

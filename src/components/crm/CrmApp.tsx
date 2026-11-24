@@ -635,6 +635,7 @@ function CrmAppInner({
             team={team}
             version={dataVersion}
             now={now}
+            currentUserId={currentUserId}
             selectedId={conversationsBeside ? conversationId : selected?.contactId ?? null}
             onOpen={(id) => (conversationsBeside ? setConversationId(id) : openContact(id, "conversa"))}
             whatsappConfigured={whatsappConfigured}
@@ -654,6 +655,9 @@ function CrmAppInner({
                   onClose={() => setConversationId(null)}
                   onChanged={() => void refresh()}
                   onWon={celebrate}
+                  onOpenTask={openTask}
+                  onNewTask={newTask}
+                  tasksVersion={tasksVersion}
                 />
               ) : null
             }
@@ -856,6 +860,7 @@ function CrmAppInner({
           onChanged={() => void refresh()}
           onWon={celebrate}
           onOpenTask={openTask}
+          onNewTask={newTask}
           tasksVersion={tasksVersion}
         />
       )}
