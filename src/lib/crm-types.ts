@@ -400,7 +400,7 @@ export type CrmTaskEvent = { id: string; action: string; payload: Record<string,
 export type CrmReminders = { due: CrmTask[]; overdue: number };
 
 /** A notice in the bell (automações): a lead given to me, an alert, interest in a campaign. */
-export type CrmBellNotice = { id: string; kind: string; title: string; body: string | null; contactId: string | null; at: string };
+export type CrmBellNotice = { id: string; kind: string; title: string; body: string | null; contactId: string | null; clientId?: string | null; at: string };
 
 export type CrmContactDetail = CrmContactCard & {
   consentSource: string | null;
@@ -755,7 +755,7 @@ export type CrmClientRow = {
 
 export type CrmClientEvent = {
   id: string;
-  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note";
+  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report";
   payload: Record<string, unknown>;
   userName: string | null;
   createdAt: string;
@@ -764,6 +764,8 @@ export type CrmClientEvent = {
 export type CrmClientDetail = CrmClientRow & {
   contracts: CrmContract[];
   events: CrmClientEvent[];
+  /** Acompanhamento mensal, newest month first. */
+  reports: CrmClientReport[];
   dealId: string | null;
   createdByName: string | null;
 };
@@ -773,3 +775,48 @@ export type CrmClientSuggestions = {
   deals: { dealId: string; title: string; contactId: string; contactName: string; companyId: string | null; companyName: string | null; closedAt: string | null; clientId: string | null }[];
   companies: { companyId: string; companyName: string }[];
 };
+
+/** Acompanhamento mensal of a client (Fase 5, entrega 2): one per month. */
+export type CrmClientReport = {
+  id: string;
+  clientId: string;
+  /** "YYYY-MM". */
+  month: string;
+  /** Serviços realizados (ids). */
+  services: string[];
+  activities: string | null;
+  results: string | null;
+  attention: string | null;
+  nextActions: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  updatedByName: string | null;
+  updatedAt: string;
+  createdAt: string;
+};
+
+/** "Acompanhamento de clientes": every current client and whether this month was updated. */
+export type CrmFollowUpRow = {
+  clientId: string;
+  companyName: string;
+  status: CrmClientStatus;
+  ownerId: string | null;
+  ownerName: string | null;
+  services: string[];
+  report: { ownerName: string | null; updatedByName: string | null; updatedAt: string; attention: string | null } | null;
+};
+
+const MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+/** "2026-11" → "novembro de 2026". */
+export function monthLabel(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return MONTHS_PT[m - 1] ? `${MONTHS_PT[m - 1]} de ${y}` : month;
+}
+/** "Novembro de 2026" (for titles). */
+export function monthTitle(month: string): string {
+  const l = monthLabel(month);
+  return l.charAt(0).toUpperCase() + l.slice(1);
+}
+export function isMonth(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+}

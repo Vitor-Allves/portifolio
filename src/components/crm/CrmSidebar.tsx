@@ -16,6 +16,7 @@ export type CrmView =
   | "companies"
   | "campaigns"
   | "clients"
+  | "followup"
   | "settings"
   | "automations"
   | "team"
@@ -116,6 +117,15 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
     mascot: "legacyWin",
   },
   {
+    group: "operacao",
+    id: "followup",
+    label: "Acompanhamento de clientes",
+    hint: "Atualização do mês",
+    description: "O acompanhamento mensal de cada cliente: serviços realizados, atividades, resultados, pontos de atenção e próximas ações. Quem ainda não foi atualizado aparece primeiro.",
+    tip: "Troque o mês nas setas. Clique no cliente para registrar ou ver o acompanhamento daquele mês.",
+    mascot: "titanWin",
+  },
+  {
     group: "admin",
     id: "settings",
     label: "Personalização",
@@ -166,6 +176,9 @@ const ICONS: Record<CrmView, React.ReactNode> = {
     <path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2ZM5 9v10h14V9H5Zm2 2h3v3H7v-3Z" />
   ),
   contacts: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-8 1.66-8 5v1h16v-1c0-3.34-4.7-5-8-5Z" />,
+  followup: (
+    <path d="M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm2 13v2h2v-2H6Zm4 0v2h2v-5h-2v3Zm4-2v4h2v-8h-2v4Zm-8-8v2h12V6H6Z" />
+  ),
   clients: (
     <path d="M9 3h6a2 2 0 0 1 2 2v1h3a2 2 0 0 1 2 2v4.5h-8.5V11h-3v1.5H2V8a2 2 0 0 1 2-2h3V5a2 2 0 0 1 2-2Zm0 3h6V5H9v1ZM2 14h8.5v1.5h3V14H22v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5Z" />
   ),

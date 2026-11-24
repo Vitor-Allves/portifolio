@@ -13,13 +13,14 @@
 
 import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
-import { getDb, withTransaction } from "./db";
+import { getDb, onCommit, withTransaction } from "./db";
 import { CrmInputError, CrmNotFoundError, addEvent, cleanText, iso, type CrmActor, type CrmWriter } from "./crm-core";
 import { addTaskEvent, createTaskTx, remindAt } from "./crm-tasks";
 import { requireOptionId } from "./crm-options";
-import { effectiveCrmAccess } from "./crm-permissions";
+import { crmCapabilities, effectiveCrmAccess } from "./crm-permissions";
+import { auditClientCreated, createClientTx, currentMonthBr, todayBr, type ClientActor } from "./crm-clients";
 import { CAMPAIGN_REPLY_WINDOW } from "./crm-campaign-rules";
-import { TASK_REMINDERS_TIMED, isCrmTemperature, reminderLabel, stageLabel, temperatureLabel, type CrmPage } from "./crm-types";
+import { TASK_REMINDERS_TIMED, isCrmTemperature, monthLabel, reminderLabel, stageLabel, temperatureLabel, type CrmPage } from "./crm-types";
 import {
   AUTOMATION_DEFS,
   automationDef,
@@ -39,6 +40,8 @@ type Q = Pick<PoolClient, "query">;
 
 /** Who the history says did it. */
 const WRITER: CrmWriter = { userId: null, userName: "Automação" };
+/** The same, for Clientes ativos (it may create a client and its contract). */
+const CLIENT_WRITER: ClientActor = { userId: null, userName: "Automação", caps: crmCapabilities("administrador") };
 
 /** Most records one rule handles in one daily check (the next check continues). */
 export const SCHEDULED_BATCH = 100;
@@ -138,6 +141,9 @@ async function cleanConfig(q: Q, def: AutomationDef, input: unknown, current: Au
         break;
       case "days":
         out.days = int(v, 1, 90, "Dias");
+        break;
+      case "dayOfMonth":
+        out.dayOfMonth = int(v, 1, 28, "Dia do mês");
         break;
       case "reminderMinutes": {
         const m = int(v, 0, 1440, "Lembrete");
@@ -301,22 +307,22 @@ async function notify(
   q: Q,
   userId: string,
   automationId: AutomationId,
-  n: { kind: string; title: string; body?: string | null; contactId?: string | null }
+  n: { kind: string; title: string; body?: string | null; contactId?: string | null; clientId?: string | null }
 ): Promise<void> {
   await q.query(
-    `INSERT INTO crm_notifications (id, user_id, kind, title, body, contact_id, automation_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [randomUUID(), userId, n.kind, n.title.slice(0, 200), n.body?.slice(0, 500) ?? null, n.contactId ?? null, automationId]
+    `INSERT INTO crm_notifications (id, user_id, kind, title, body, contact_id, automation_id, client_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [randomUUID(), userId, n.kind, n.title.slice(0, 200), n.body?.slice(0, 500) ?? null, n.contactId ?? null, automationId, n.clientId ?? null]
   );
 }
 
 /** My unread notices, newest first (the bell). */
 export async function listNotifications(userId: string): Promise<CrmNotification[]> {
   const db = await getDb();
-  const { rows } = await db.query<{ id: string; kind: string; title: string; body: string | null; contact_id: string | null; created_at: Date }>(
-    `SELECT id, kind, title, body, contact_id, created_at FROM crm_notifications WHERE user_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 30`,
+  const { rows } = await db.query<{ id: string; kind: string; title: string; body: string | null; contact_id: string | null; client_id: string | null; created_at: Date }>(
+    `SELECT id, kind, title, body, contact_id, client_id, created_at FROM crm_notifications WHERE user_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 30`,
     [userId]
   );
-  return rows.map((r) => ({ id: r.id, kind: r.kind, title: r.title, body: r.body, contactId: r.contact_id, at: iso(r.created_at)! }));
+  return rows.map((r) => ({ id: r.id, kind: r.kind, title: r.title, body: r.body, contactId: r.contact_id, clientId: r.client_id, at: iso(r.created_at)! }));
 }
 
 /** Marks my notices read: the given ids, or all of them. Only ever one's own. */
@@ -405,6 +411,7 @@ export async function onOwnersAssigned(items: { contactId: string; ownerId: stri
 
 /** 5. Proposta enviada: follow-up. */
 export async function onDealStage(dealId: string, stage: string): Promise<void> {
+  if (stage === "ganho") return onDealWon(dealId);
   if (stage !== "proposta") return;
   const cfg = await activeConfig("proposta_enviada");
   if (!cfg) return;
@@ -429,6 +436,44 @@ export async function onDealStage(dealId: string, stage: string): Promise<void> 
       WRITER
     );
     return { detail: `"${d.title}": tarefa "${cfg.title}" para ${owner?.name ?? "ninguém (sem responsável)"}`, taskId };
+  });
+}
+
+/**
+ * 7. Lead convertido em cliente: onboarding. The won opportunity becomes a
+ * client in Onboarding (company, responsible, service and negotiated value
+ * as its first contract) and the client's responsible gets the onboarding
+ * task. A company that is already a client gets the opportunity as a new
+ * contract (no onboarding). Without a company nothing is created.
+ */
+async function onDealWon(dealId: string): Promise<void> {
+  const cfg = await activeConfig("cliente_onboarding");
+  if (!cfg) return;
+  const db = await getDb();
+  const { rows } = await db.query<{ contact_id: string }>(`SELECT contact_id FROM crm_deals WHERE id = $1`, [dealId]);
+  if (!rows[0]) return;
+  await runOnce("cliente_onboarding", `oportunidade:${dealId}`, { contactId: rows[0].contact_id, dealId }, async (client) => {
+    const d = await client.query<{ stage: string; title: string; contact_name: string; company_id: string | null; company_name: string | null; client_id: string | null }>(
+      `SELECT d.stage, d.title, c.name AS contact_name, c.company_id, co.name AS company_name, cl.id AS client_id
+       FROM crm_deals d JOIN crm_contacts c ON c.id = d.contact_id
+       LEFT JOIN crm_companies co ON co.id = c.company_id LEFT JOIN crm_clients cl ON cl.company_id = co.id
+       WHERE d.id = $1`,
+      [dealId]
+    );
+    const deal = d.rows[0];
+    if (!deal || deal.stage !== "ganho") return { status: "ignorada", detail: "A oportunidade não está mais ganha." };
+    if (!deal.company_id) return { status: "ignorada", detail: `"${deal.title}": ${deal.contact_name} não tem empresa. Vincule a empresa e use Tornar cliente.` };
+    const r = await createClientTx(client, CLIENT_WRITER, { dealId });
+    if (!r.created) return { detail: `"${deal.title}": contrato novo no cliente ${deal.company_name}` };
+    const own = await client.query<{ owner_id: string | null }>(`SELECT owner_id FROM crm_clients WHERE id = $1`, [r.id]);
+    const owner = (await activeUser(client, own.rows[0]?.owner_id)) ?? (await activeUser(client, cfg.fallbackOwnerId ?? null));
+    const taskId = await createTaskTx(
+      client,
+      { companyId: deal.company_id, kind: cfg.taskKind, title: cfg.title, priority: cfg.priority, dueDate: dayFromToday(cfg.dueDays ?? 2), ownerId: owner?.id ?? "" },
+      WRITER
+    );
+    await onCommit(client, () => auditClientCreated(CLIENT_WRITER, r.id, deal.company_name, "automação"));
+    return { detail: `${deal.company_name}: cliente em Onboarding · tarefa "${cfg.title}" para ${owner?.name ?? "ninguém (sem responsável)"}`, taskId };
   });
 }
 
@@ -569,9 +614,86 @@ async function checkUnanswered(cfg: AutomationConfig): Promise<AutomationRunSumm
   return summary;
 }
 
+/** 8. Contrato perto da renovação: aviso ao responsável pelo cliente, uma vez para cada data de fim. */
+async function checkContractEnds(cfg: AutomationConfig): Promise<AutomationRunSummary> {
+  const days = cfg.days ?? 30;
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; client_id: string; ends_on: string; days_left: number; owner_id: string | null; name: string; services: string[] }>(
+    `SELECT k.id, k.client_id, k.ends_on::text AS ends_on, k.ends_on - (now() AT TIME ZONE 'America/Sao_Paulo')::date AS days_left,
+            cl.owner_id, co.name, k.services
+     FROM crm_contracts k JOIN crm_clients cl ON cl.id = k.client_id JOIN crm_companies co ON co.id = cl.company_id
+     WHERE k.status = 'vigente' AND cl.status <> 'encerrado' AND k.ends_on IS NOT NULL
+       AND k.ends_on BETWEEN (now() AT TIME ZONE 'America/Sao_Paulo')::date AND (now() AT TIME ZONE 'America/Sao_Paulo')::date + $1::int
+       AND NOT EXISTS (SELECT 1 FROM crm_automation_runs r WHERE r.automation_id = 'renovacao_contrato'
+                         AND r.dedupe_key = 'contrato:' || k.id || ':fim:' || k.ends_on::text)
+     ORDER BY k.ends_on, k.id
+     LIMIT ${SCHEDULED_BATCH + 1}`,
+    [days]
+  );
+  const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: rows.length > SCHEDULED_BATCH };
+  for (const k of rows.slice(0, SCHEDULED_BATCH)) {
+    // A new end date (renewed, then near the end again) alerts again.
+    const r = await runOnce("renovacao_contrato", `contrato:${k.id}:fim:${k.ends_on}`, {}, async (client) => {
+      const owner = (await activeUser(client, k.owner_id)) ?? (await activeUser(client, cfg.fallbackOwnerId ?? null));
+      const end = k.ends_on.split("-").reverse().join("/");
+      if (!owner) return { status: "ignorada", detail: `${k.name}: contrato termina em ${end}, sem responsável para avisar.` };
+      const when = k.days_left === 0 ? "hoje" : `em ${k.days_left} ${k.days_left === 1 ? "dia" : "dias"}`;
+      await notify(client, owner.id, "renovacao_contrato", {
+        kind: "alerta",
+        title: `Contrato perto do fim: ${k.name}`,
+        body: `Termina ${when} (${end}). Combine a renovação com o cliente.`,
+        clientId: k.client_id,
+      });
+      return { detail: `${k.name}: contrato termina em ${end} · aviso para ${owner.name}` };
+    });
+    if (r === "ok") summary.ok++;
+    else if (r === "ignorada") summary.ignored++;
+    else if (r === "falha") summary.failed++;
+  }
+  return summary;
+}
+
+/** 9. Cliente sem atualização mensal: a partir do dia X, tarefa para quem não registrou o acompanhamento do mês. */
+async function checkMonthlyUpdates(cfg: AutomationConfig): Promise<AutomationRunSummary> {
+  const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: false };
+  const today = todayBr();
+  if (Number(today.slice(8, 10)) < (cfg.dayOfMonth ?? 25)) return summary;
+  const month = currentMonthBr();
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; owner_id: string | null; company_id: string; name: string }>(
+    `SELECT cl.id, cl.owner_id, cl.company_id, co.name
+     FROM crm_clients cl JOIN crm_companies co ON co.id = cl.company_id
+     WHERE cl.status IN ('onboarding', 'ativo')
+       AND NOT EXISTS (SELECT 1 FROM crm_client_reports r WHERE r.client_id = cl.id AND r.month = $1::date)
+       AND NOT EXISTS (SELECT 1 FROM crm_automation_runs ar WHERE ar.automation_id = 'cliente_sem_atualizacao' AND ar.dedupe_key = 'cliente:' || cl.id || ':mes:' || $2)
+     ORDER BY lower(co.name), cl.id
+     LIMIT ${SCHEDULED_BATCH + 1}`,
+    [`${month}-01`, month]
+  );
+  summary.more = rows.length > SCHEDULED_BATCH;
+  for (const c of rows.slice(0, SCHEDULED_BATCH)) {
+    const r = await runOnce("cliente_sem_atualizacao", `cliente:${c.id}:mes:${month}`, {}, async (client) => {
+      const owner = (await activeUser(client, c.owner_id)) ?? (await activeUser(client, cfg.fallbackOwnerId ?? null));
+      const title = `${cfg.title} (${monthLabel(month)})`;
+      const taskId = await createTaskTx(
+        client,
+        { companyId: c.company_id, kind: cfg.taskKind, title, priority: cfg.priority, dueDate: today, ownerId: owner?.id ?? "" },
+        WRITER
+      );
+      return { detail: `${c.name}: sem acompanhamento de ${monthLabel(month)} · tarefa para ${owner?.name ?? "ninguém (sem responsável)"}`, taskId };
+    });
+    if (r === "ok") summary.ok++;
+    else if (r === "ignorada") summary.ignored++;
+    else if (r === "falha") summary.failed++;
+  }
+  return summary;
+}
+
 const SCHEDULED: Partial<Record<AutomationId, (cfg: AutomationConfig) => Promise<AutomationRunSummary>>> = {
   lead_sem_movimentacao: checkStalledDeals,
   lead_sem_resposta: checkUnanswered,
+  renovacao_contrato: checkContractEnds,
+  cliente_sem_atualizacao: checkMonthlyUpdates,
 };
 
 /**

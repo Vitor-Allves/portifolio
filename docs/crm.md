@@ -61,7 +61,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (feita, ignorada ou falha, com o detalhe); `(automação, dedupe_key)` é
   único, então a mesma automação nunca age duas vezes no mesmo lead,
   oportunidade ou tarefa. `crm_notifications` — os avisos no sino (lead
-  atribuído, lead parado, interesse em campanha), lidos ou não, por pessoa.
+  atribuído, lead parado, interesse em campanha, contrato perto do fim),
+  lidos ou não, por pessoa; `client_id` (v18) faz o aviso abrir o cliente.
 - `crm_companies` — empresas; `name_key` é o nome normalizado (sem acento,
   caixa, pontuação e sufixos como LTDA/ME/S.A.) e é único, então "Clínica
   Ribeiro" e "clinica ribeiro ltda" são a mesma empresa. Desde a v10: razão
@@ -96,8 +97,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (vigente, encerrado, cancelado) e a oportunidade de origem (uma
   oportunidade vira no máximo um contrato: índice único em `deal_id`).
   `crm_client_events` — histórico de relacionamento do cliente (criação,
-  situação, edições, contratos, anotações). Contratos e clientes nunca são
-  apagados: encerre ou cancele.
+  situação, edições, contratos, anotações, acompanhamentos). Contratos e
+  clientes nunca são apagados: encerre ou cancele.
+  `crm_client_reports` (v18) — acompanhamento mensal: um por cliente por mês
+  (`month` = primeiro dia do mês, único com o cliente), serviços realizados,
+  atividades executadas, resultados, pontos de atenção, próximas ações,
+  responsável pelo acompanhamento, quem atualizou e quando.
 - `crm_options` — as listas editáveis (Personalização): origens, segmentos,
   serviços, motivos de perda e de ganho, tipos de tarefa, departamentos e
   prioridades. Tipos de tarefa e prioridades têm cor (`color`, v13), usada na
@@ -232,9 +237,15 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (queda da função) é marcado como "falhou — confira na conversa", nunca
   reenviado às cegas. Se a Meta limitar o número, a campanha pausa sozinha.
   Quem foi tirado à mão não entra na campanha (nem como "ficou de fora").
+- **Acompanhamento mensal:** um por cliente por mês, só de mês que já
+  começou; precisa de pelo menos um campo. Salvar por cima do que outra
+  pessoa salvou enquanto você editava é recusado (409) em vez de apagar o
+  trabalho dela. Mês novo começa com os serviços dos contratos vigentes.
+  "Acompanhamento de clientes" mostra quem era cliente no mês (já tinha
+  começado e não estava encerrado antes dele), os pendentes primeiro.
 - **Clientes ativos:** nada vira cliente sozinho — só pelo botão Tornar
   cliente (na oportunidade ganha, na empresa ou em "Prontos para virar
-  cliente"). Uma empresa tem no máximo um cliente, e uma oportunidade vira
+  cliente") ou pela automação 7, se o Administrador ligá-la. Uma empresa tem no máximo um cliente, e uma oportunidade vira
   no máximo um contrato, mesmo com dois cliques ao mesmo tempo. De uma
   oportunidade ganha vêm a empresa, o responsável, a data, o serviço e o
   valor negociado (primeiro contrato); se a empresa já é cliente, vira um
@@ -302,7 +313,15 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   planilha não criam tarefa de primeiro contato; troca de responsável em
   lote gera um aviso só por pessoa; uma resposta "SAIR" não conta como
   interesse; mensagem de campanha não conta como "nossa última mensagem"
-  na automação 6. As 7, 8 e 9 dependem dos clientes ativos (Fase 5).
+  na automação 6. Clientes ativos (Fase 5): a 7 (oportunidade ganha) cadastra
+  o cliente em Onboarding com a oportunidade como contrato e cria a tarefa de
+  onboarding na empresa para o responsável pelo cliente (empresa que já é
+  cliente ganha só o contrato novo; contato sem empresa: nada é criado e a
+  execução diz por quê); a 8 avisa no sino o responsável pelo cliente
+  quando um contrato vigente termina nos próximos X dias (uma vez por data
+  de fim); a 9, a partir do dia X do mês, cria a tarefa de atualização para
+  cliente em Onboarding ou Ativo sem o acompanhamento do mês (uma por mês).
+  As 8 e 9 rodam na verificação diária, como a 3 e a 6.
 - **Situação da tarefa:** cancelada só volta reativada (pendente); concluir
   pede o resultado (opcional). Tudo entra no histórico da tarefa e, quando
   há contato, no histórico do contato.
@@ -329,6 +348,23 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 5, entrega 2: acompanhamento mensal e automações 7, 8, 9 (schema v18)
+
+- **Acompanhamento de clientes** (nova seção em Operação): o mês (setas),
+  quantos clientes já têm o acompanhamento registrado, pendentes primeiro,
+  com quem atualizou e os pontos de atenção; filtro Pendentes/Atualizados.
+- **Painel do cliente em abas:** Cliente (dados e contratos),
+  Acompanhamento (mês de referência, serviços realizados, atividades,
+  resultados, pontos de atenção, próximas ações, responsável; histórico de
+  todos os meses) e Histórico.
+- **Automações 7, 8 e 9** liberadas (começam desligadas): onboarding na
+  oportunidade ganha, aviso de contrato perto do fim (o aviso no sino abre o
+  cliente) e tarefa para cliente sem acompanhamento do mês (novo ajuste
+  "a partir do dia do mês").
+- Banco v18: só acréscimos (`crm_client_reports`, `crm_notifications.client_id`).
+- Testes: `client-followup-api` e `client-followup-e2e`; `automations-*`,
+  `clients-e2e` e schema atualizados.
 
 ### Especificação-mestra v1.0 — Fase 5, entrega 1: clientes ativos (schema v17)
 

@@ -1,5 +1,5 @@
 // Fase 3 · entrega 2 in the browser, on base + campaign fixtures: the
-// Automações screen (ten rules, Fase 5 ones locked, turn on, adjust, run
+// Automações screen (ten rules, all available since Fase 5, turn on, adjust, run
 // the daily check now, history with a link to the contact), a notice in the
 // bell opening the lead, the Auditoria line, phone and dark theme.
 import { BASE, go, launchBrowser, login, ok, shot } from "../lib/helpers.mjs";
@@ -13,9 +13,9 @@ await a.getByRole("heading", { level: 1, name: "Automações" }).waitFor();
 const list = a.getByRole("list", { name: "Lista de automações" });
 await list.getByRole("region", { name: "Novo lead: tarefa de primeiro contato" }).waitFor();
 ok((await list.getByRole("listitem").count()) === 10, "the ten rules of the spec");
-ok((await list.getByText("Disponível na Fase 5 (clientes ativos)").count()) === 3, "7, 8 and 9 wait for Fase 5");
+ok((await list.getByText("Disponível na Fase 5 (clientes ativos)").count()) === 0, "7, 8 and 9 can be turned on (Fase 5 is here)");
 ok(await a.getByText(/ainda não agendada no servidor/).isVisible(), "says the daily check isn't scheduled yet (no CRON_SECRET here)");
-ok((await list.getByText("Desativada", { exact: true }).count()) === 7, "everything starts off");
+ok((await list.getByText("Desativada", { exact: true }).count()) === 10, "everything starts off");
 
 // ---- turn on "Novo lead", adjust "Proposta enviada" ----
 const novo = list.getByRole("region", { name: "Novo lead: tarefa de primeiro contato" });

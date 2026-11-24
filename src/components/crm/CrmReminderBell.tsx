@@ -17,12 +17,15 @@ export default function CrmReminderBell({
   version,
   onOpenTask,
   onOpenContact,
+  onOpenClient,
   onShowTasks,
 }: {
   /** Bumped after any change in the CRM: reload. */
   version: number;
   onOpenTask: (taskId: string) => void;
   onOpenContact: (contactId: string) => void;
+  /** A notice about a client (contract near its end) opens the client. */
+  onOpenClient?: (clientId: string) => void;
   onShowTasks: () => void;
 }) {
   const [data, setData] = useState<CrmReminders & { notifications: CrmBellNotice[] }>({ due: [], overdue: 0, notifications: [] });
@@ -124,11 +127,12 @@ export default function CrmReminderBell({
                   <li key={n.id} className="px-4 py-2.5 flex items-start gap-2">
                     <button
                       type="button"
-                      disabled={!n.contactId}
+                      disabled={!n.contactId && !(n.clientId && onOpenClient)}
                       onClick={() => {
                         setOpen(false);
                         void markRead([n.id]);
-                        if (n.contactId) onOpenContact(n.contactId);
+                        if (n.clientId && onOpenClient) onOpenClient(n.clientId);
+                        else if (n.contactId) onOpenContact(n.contactId);
                       }}
                       className="min-w-0 flex-1 text-left disabled:cursor-default"
                     >
