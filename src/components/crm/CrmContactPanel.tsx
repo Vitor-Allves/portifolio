@@ -28,6 +28,7 @@ import CrmTagsEditor from "./CrmTagsEditor";
 import { SegmentSelect, TagChip, TagChips, useCatalog } from "./crm-catalog-context";
 import type { TaskDraft } from "./CrmTaskDialog";
 import { describeEvent } from "./crm-event-text";
+import CrmAnalysisDialog from "./CrmAnalysisDialog";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -323,6 +324,7 @@ export default function CrmContactPanel({
   const [tab, setTab] = useState<"conversa" | "negocio" | "detalhes">(initialTab);
   const [dealPick, setDealPick] = useState<string | null>(initialDealId);
   const [lostPending, setLostPending] = useState<string | null>(null);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [stagePending, setStagePending] = useState<"proposta" | "ganho" | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -574,10 +576,20 @@ export default function CrmContactPanel({
                     )}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setAnalysisOpen(true)}
+                  aria-label="Resumo do lead"
+                  title="Resumo do lead: dados, cálculos e leitura da IA"
+                  className="shrink-0 text-[11.5px] font-semibold px-2.5 py-1 rounded-full border border-crm-violet/40 text-crm-violet hover:bg-crm-violet/[0.06]"
+                >
+                  Resumo
+                </button>
                 <button type="button" onClick={onClose} aria-label="Fechar painel" className="text-crm-dim hover:text-crm-text text-[20px] leading-none px-1">
                   ×
                 </button>
               </div>
+              {analysisOpen && <CrmAnalysisDialog request={{ kind: "lead", contactId }} onClose={() => setAnalysisOpen(false)} />}
               {deal ? (
                 <div className="rounded-xl border border-crm-line bg-crm-sunken p-2.5 space-y-2">
                   <div className="flex items-center gap-2 min-w-0">

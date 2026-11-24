@@ -24,6 +24,7 @@ import { dateTime, todaySp } from "./crm-format";
 import { shiftMonth } from "./CrmFollowUpView";
 import { ClientStatusChip, clientEventText, contractDue, contractValue } from "./crm-client-ui";
 import ClientMediaSection from "./CrmClientMedia";
+import CrmAnalysisDialog from "./CrmAnalysisDialog";
 
 type Form = { ownerId: string; status: string; endReason: string; startedOn: string; notes: string };
 export type ClientTab = "cliente" | "acompanhamento" | "historico";
@@ -548,6 +549,7 @@ function ReportsTab({
   const thisMonth = todaySp().slice(0, 7);
   const [month, setMonth] = useState(initialMonth && initialMonth <= thisMonth ? initialMonth : thisMonth);
   const report = client.reports.find((r) => r.month === month) ?? null;
+  const [analysis, setAnalysis] = useState(false);
   // Months to choose: from the client's start (at most 24 back), plus any month already registered.
   const start = client.startedOn ? client.startedOn.slice(0, 7) : shiftMonth(thisMonth, -11);
   const months: string[] = [];
@@ -574,7 +576,16 @@ function ReportsTab({
           <p className="text-[11.5px] text-crm-dim pb-2">
             {report ? `Atualizado por ${report.updatedByName ?? "—"} em ${dateTime(report.updatedAt)}` : "Ainda não registrado neste mês."}
           </p>
+          <button
+            type="button"
+            onClick={() => setAnalysis(true)}
+            className="ml-auto mb-1 text-[12px] font-semibold px-3 py-1.5 rounded-full border border-crm-violet/40 text-crm-violet hover:bg-crm-violet/[0.06]"
+            title="Relatório mensal: dados, cálculos e rascunho da IA"
+          >
+            Relatório do mês
+          </button>
         </div>
+        {analysis && <CrmAnalysisDialog request={{ kind: "client", clientId: client.id, month }} onClose={() => setAnalysis(false)} />}
         <ClientMediaSection clientId={client.id} month={month} onLinkChanged={onLinkChanged} />
         <ReportForm key={month} client={client} month={month} report={report} team={team} canEdit={canEdit} onSave={onSave} />
       </section>

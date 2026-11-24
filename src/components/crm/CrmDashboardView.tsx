@@ -14,6 +14,7 @@ import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_FILTER, CRM_INPUT, CRM_LABEL, CRM_LINK_
 import { PRESETS, dateTime, presetRange, relativeTime, shortDate, spDate, type Preset } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import { GoalsSummary } from "./CrmGoalsView";
+import CrmAnalysisDialog from "./CrmAnalysisDialog";
 import { useCatalog } from "./crm-catalog-context";
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
@@ -363,6 +364,7 @@ export default function CrmDashboardView({
   const [segment, setSegment] = useState("all");
   const [stage, setStage] = useState("all");
   const [records, setRecords] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState(false);
   const today = spDate(now);
   const [preset, setPreset] = useState<Preset>("mes");
   const [custom, setCustom] = useState<[string, string]>(() => presetRange("mes", today));
@@ -451,8 +453,16 @@ export default function CrmDashboardView({
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => setAnalysis(true)}
+          className="ml-auto text-[12px] font-semibold px-3 py-1.5 rounded-full border border-crm-violet/40 text-crm-violet hover:bg-crm-violet/[0.06]"
+          title="Resumo executivo do período: dados, cálculos e leitura da IA"
+        >
+          Resumo executivo
+        </button>
         {canExport && (
-          <a href={`/api/crm/dashboard/export/?${new URLSearchParams([...query.entries(), ["what", "summary"]])}`} download className={`${CRM_LINK_BTN} ml-auto`}>
+          <a href={`/api/crm/dashboard/export/?${new URLSearchParams([...query.entries(), ["what", "summary"]])}`} download className={CRM_LINK_BTN}>
             Exportar CSV
           </a>
         )}
@@ -644,6 +654,7 @@ export default function CrmDashboardView({
         </div>
       )}
 
+      {analysis && <CrmAnalysisDialog request={{ kind: "dashboard", from, to, owner, source, segment, stage }} onClose={() => setAnalysis(false)} />}
       {records && (
         <RecordsDialog
           key={`${records}|${key}`}

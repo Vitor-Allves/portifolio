@@ -767,6 +767,33 @@ export type CrmClientMedia = {
 /** An Intelligence client that can be linked (within the person's Intelligence access). */
 export type CrmIntelligenceClient = { id: string; label: string; accountCount: number; linkedClientId: string | null; linkedClientName: string | null };
 
+// ---------- Assistente de IA (Fase 7, entrega 2) ----------
+
+export type CrmAnalysisKind = "lead" | "dashboard" | "client";
+
+/**
+ * One analysis, in three separate parts (especificação: "separar dados
+ * comprovados, cálculos e recomendações geradas pela IA"): what the CRM has,
+ * what the system calculated from it (with the formula), and — only when
+ * asked and available — the AI's reading and recommendations.
+ */
+export type CrmAnalysis = {
+  kind: CrmAnalysisKind;
+  title: string;
+  subtitle: string;
+  /** Dados do CRM, as recorded (only what this person may see). */
+  facts: { title: string; items: { label: string; value: string }[] }[];
+  /** Cálculos do sistema. */
+  calculations: { label: string; value: string; how: string }[];
+  /** Leitura da IA — never stored, never mixed with the facts. */
+  ai: { text: string; model: string; generatedAt: string } | null;
+  /** ready = may ask; ok = asked and answered. */
+  aiStatus: "ready" | "ok" | "not_configured" | "not_allowed" | "limit" | "error" | "refused";
+  aiMessage: string | null;
+  /** AI requests this person has left today (null when the AI isn't available to them). */
+  remainingToday: number | null;
+};
+
 export type CrmQuickReply = { id: string; title: string; body: string };
 
 export type CrmTemplate = {
