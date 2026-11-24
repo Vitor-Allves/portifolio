@@ -28,17 +28,31 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (`archived_at`) e de qual importação veio (`import_id`). A coluna `stage`
   acompanha a oportunidade principal do contato (a aberta mais recente).
   `next_action`/`next_action_at` são da versão antiga: ficam guardadas, mas a
-  próxima ação agora é uma tarefa.
-- `crm_deals` — oportunidades (os cards do funil): título, valor em centavos
-  (`value_cents`), etapa, responsável, previsão de fechamento, motivo e
+  próxima ação agora é uma tarefa. Desde a v10: temperatura (`temperature`:
+  frio, morno, quente), serviço de interesse (`service_interest`, da lista
+  Serviços), data prevista de retorno (`return_at`) e decisor
+  (`is_decision_maker`). Última interação (mensagem, nota ou tarefa
+  concluída, a mais recente) e próxima atividade (a tarefa pendente mais
+  próxima) são calculadas na leitura, não gravadas.
+- `crm_deals` — oportunidades (os cards do funil): título, valor estimado em
+  centavos (`value_cents`), etapa, responsável, previsão de fechamento, motivo e
   detalhe da perda, data em que entrou na etapa e em que fechou. Um contato
-  pode ter várias.
+  pode ter várias. Desde a v10: serviço (`service`), valor negociado
+  (`negotiated_cents`, o que vale um negócio ganho), origem própria
+  (`source`, começa com a do contato), temperatura própria (vazia = a do
+  contato), motivo e detalhe do ganho (`won_reason`, `won_note`).
 - `crm_tasks` — tarefas e atividades: tipo (ligação, reunião, WhatsApp,
   e-mail, tarefa), título, data/hora (`all_day` = sem horário), responsável,
   oportunidade, conclusão com resultado, cancelamento.
 - `crm_companies` — empresas; `name_key` é o nome normalizado (sem acento,
   caixa, pontuação e sufixos como LTDA/ME/S.A.) e é único, então "Clínica
-  Ribeiro" e "clinica ribeiro ltda" são a mesma empresa.
+  Ribeiro" e "clinica ribeiro ltda" são a mesma empresa. Desde a v10: razão
+  social (`legal_name`; `name` é o nome fantasia), CNPJ (`cnpj`, 14
+  caracteres sem pontuação, único quando preenchido), UF (`state`),
+  endereço, responsável pela conta (`owner_id`) e situação comercial
+  (`status`: prospecção, em negociação, cliente ativo, ex-cliente, inativa;
+  vazia nas empresas que já existiam). `crm_company_tags` — etiquetas da
+  empresa, com quem aplicou.
 - `crm_messages` — conversa do WhatsApp; `crm_events` — histórico de cada
   contato (criação, etapa e responsável de cada oportunidade, oportunidades
   criadas/editadas, tarefas criadas/reagendadas/concluídas/canceladas,
@@ -83,6 +97,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Campanhas: montar rascunho e ver resultados | sim | sim | não | sim |
   | Campanhas: disparar, pausar, cancelar | sim | sim | não | não |
   | Etiquetas nos contatos | sim | sim | nos seus | sim |
+  | Empresas: dados, CNPJ, situação, etiquetas | sim | sim | sim | sim |
+  | Empresas: responsável pela conta | qualquer um | qualquer um | só assumir sem dono / soltar a sua | não |
   | Personalização (listas e etiquetas) | sim | não | não | não |
   | Equipe (definir perfis) | sim | não | não | não |
 
@@ -95,7 +111,11 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
 - **Sem duplicidade:** telefone (as duas grafias de celular BR, com e sem o 9)
   e e-mail (sem diferenciar maiúsculas) são únicos — no cadastro, na edição e
-  na importação. Empresa é única pelo nome normalizado.
+  na importação. Empresa é única pelo nome normalizado e pelo CNPJ. O CNPJ é
+  validado pelos dígitos verificadores, inclusive o CNPJ alfanumérico (a
+  partir de julho de 2026). Na importação, um CNPJ já cadastrado liga o
+  contato àquela empresa, seja qual for o nome na planilha; nome de empresa
+  já cadastrada com outro CNPJ vira erro na linha.
 - **Nada se apaga pela tela:** contato sai do funil por *arquivamento*
   (reversível em Contatos → Arquivados). Um lead arquivado que escreve no
   WhatsApp volta sozinho.
@@ -114,6 +134,16 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   vez, mesmo com dois envios ao mesmo tempo. Um envio interrompido no meio
   (queda da função) é marcado como "falhou — confira na conversa", nunca
   reenviado às cegas. Se a Meta limitar o número, a campanha pausa sozinha.
+- **Exigência que cresce com a etapa:** o cadastro inicial continua rápido
+  (nada é obrigatório até a proposta). Para ir a *Proposta enviada*, a
+  oportunidade precisa de serviço e valor estimado; para *Ganho*, de
+  serviço, valor negociado e motivo do ganho. O servidor recusa o movimento
+  sem esses dados (a tela pergunta antes de mover) e não deixa apagar um
+  campo que a etapa atual exige. Oportunidades que já estavam nessas etapas
+  antes da v10 continuam como estão. Movimentos automáticos (o lead
+  respondeu → *Em conversa*) não passam pela exigência. Sair de *Ganho*
+  limpa o motivo do ganho. No Painel, negócio ganho vale o valor negociado
+  (ou o estimado, quando não há negociado).
 - **Perda com motivo:** uma oportunidade só vai para *Perdido* com o motivo
   (sem orçamento, escolheu outra empresa, parou de responder, sem perfil,
   adiou, outro) e um detalhe opcional. Reabrir limpa o motivo; tudo fica no
@@ -143,6 +173,38 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 1, entrega 2: campos de contatos, empresas e oportunidades (schema v10)
+
+- **Contatos:** temperatura (frio, morno, quente), serviço de interesse (da
+  lista Serviços da Personalização), data prevista de retorno e "decisor na
+  empresa". Última interação e próxima atividade aparecem calculadas no
+  painel e na lista (coluna Acompanhamento). Filtros novos: temperatura,
+  serviço de interesse e retorno (atrasado / próximos 7 dias). O formulário
+  de novo contato ganhou temperatura e serviço de interesse, e o segmento
+  passou a usar a lista da Personalização. Exportação com as colunas novas.
+- **Empresas:** nome fantasia e razão social, CNPJ validado e único, UF,
+  endereço, responsável pela conta, situação comercial, etiquetas, decisores
+  (os contatos marcados) e todas as oportunidades dos contatos da empresa.
+  Lista com situação e responsável; filtros por situação, responsável
+  ("minhas contas"), UF e etiqueta; busca também por razão social e CNPJ.
+- **Oportunidades:** serviço, valor estimado e valor negociado, origem e
+  temperatura próprias, motivo do ganho. Card do funil com temperatura,
+  serviço, valor negociado e motivo do ganho; total da coluna Ganho pelo
+  valor negociado. Filtros novos no funil: temperatura e período (data de
+  entrada: 7, 30, 90 dias ou este mês).
+- **Exigência que cresce com a etapa:** ver "Regras que o sistema garante".
+  Diálogo ao arrastar para Proposta (quando falta algo) e sempre para Ganho.
+- **Importação:** coluna CNPJ (reconhecida sozinha) para ligar à empresa
+  certa e evitar empresa duplicada; CNPJ inválido é erro na linha.
+- **Banco v10:** só acrescenta colunas e a tabela `crm_company_tags`; o único
+  preenchimento automático copia a origem do contato para as oportunidades
+  dele. Nenhuma empresa recebe situação ou CNPJ inventados.
+- **Aviso de SSL do Postgres:** a conexão passa a pedir `sslmode=verify-full`
+  explicitamente quando a URL traz `require`/`prefer`/`verify-ca` (o mesmo
+  comportamento de hoje: certificado e servidor conferidos), o que tira o
+  aviso que aparecia nos registros a cada início de função.
+- Testes: `fields-api` e `fields-e2e` em `tests/`.
 
 ### Especificação-mestra v1.0 — Fase 1, entrega 1: Personalização, etiquetas e menu (schema v9)
 

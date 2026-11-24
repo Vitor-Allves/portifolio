@@ -17,12 +17,14 @@ import {
   type CrmTemplate,
 } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
-import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, timeOfDay, windowLabel } from "./crm-format";
+import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, timeOfDay, todaySp, windowLabel } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
+import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
+import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
 import CrmTagsEditor from "./CrmTagsEditor";
 import { SegmentSelect, TagChips, useCatalog } from "./crm-catalog-context";
 import type { OptionKind } from "@/lib/crm-catalog";
@@ -63,6 +65,10 @@ type ContactForm = {
   source: string;
   referredBy: string;
   consentSource: string;
+  temperature: string;
+  serviceInterest: string;
+  returnAt: string;
+  isDecisionMaker: boolean;
 };
 
 const STATUS_LABEL: Record<string, string> = { sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou" };
@@ -121,7 +127,9 @@ function describeEvent(e: CrmEvent, label: (kind: OptionKind, id: string) => str
     case "stage":
       return `Etapa${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${
         p.auto ? " (automático, o lead respondeu)" : ""
-      }${p.lostReason ? ` · motivo: ${label("lost_reason", String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}`;
+      }${p.lostReason ? ` · motivo: ${label("lost_reason", String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}${
+        p.wonReason ? ` · motivo: ${label("won_reason", String(p.wonReason))}${p.wonNote ? ` (${String(p.wonNote)})` : ""}` : ""
+      }${p.to === "ganho" && typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
     case "owner":
       return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}`;
     case "next_action":
@@ -145,7 +153,13 @@ function describeEvent(e: CrmEvent, label: (kind: OptionKind, id: string) => str
       if (p.action === "created") return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
       const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
       const show = (c: { field: string }, v: string | null) =>
-        v === null ? "vazio" : c.field === "Valor" ? formatBRL(Number(v)) : c.field === "Previsão de fechamento" ? shortDate(v) : v;
+        v === null
+          ? "vazio"
+          : c.field === "Valor" || c.field === "Valor negociado"
+            ? formatBRL(Number(v))
+            : c.field === "Previsão de fechamento"
+              ? shortDate(v)
+              : v;
       return `Oportunidade "${String(p.title)}": ${changes.map((c) => `${c.field} ${show(c, c.from)} → ${show(c, c.to)}`).join(" · ")}`;
     }
     case "task": {
@@ -368,6 +382,7 @@ export default function CrmContactPanel({
   const [tab, setTab] = useState<"conversa" | "negocio" | "detalhes">(initialTab);
   const [dealPick, setDealPick] = useState<string | null>(initialDealId);
   const [lostPending, setLostPending] = useState<string | null>(null);
+  const [stagePending, setStagePending] = useState<"proposta" | "ganho" | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -493,6 +508,10 @@ export default function CrmContactPanel({
           source: detail.source,
           referredBy: detail.referredBy ?? "",
           consentSource: detail.consentSource ?? "",
+          temperature: detail.temperature ?? "",
+          serviceInterest: detail.serviceInterest ?? "",
+          returnAt: detail.returnAt ?? "",
+          isDecisionMaker: detail.isDecisionMaker,
         }
       : null);
   const edit = (changes: Partial<ContactForm>) => fields && setForm({ ...fields, ...changes });
@@ -555,8 +574,21 @@ export default function CrmContactPanel({
                       {detail.phone ? formatPhone(detail.phone) : detail.email ?? "Sem contato"}
                       {detail.company ? ` · ${detail.company}` : ""}
                     </p>
-                    {detail.tagIds.length > 0 && (
-                      <p className="mt-1">
+                    {(detail.tagIds.length > 0 || detail.temperature || detail.returnAt || detail.isDecisionMaker) && (
+                      <p className="mt-1 flex flex-wrap items-center gap-1">
+                        <TemperatureChip value={detail.temperature} />
+                        {detail.isDecisionMaker && (
+                          <span className="text-[10.5px] font-semibold px-1.5 py-px rounded-full bg-crm-violet/10 text-crm-violet border border-crm-violet/25">Decisor</span>
+                        )}
+                        {detail.returnAt && (
+                          <span
+                            className={`text-[10.5px] font-medium px-1.5 py-px rounded-full border ${
+                              detail.returnAt < todaySp() ? "bg-crm-amber/10 text-crm-amber border-crm-amber/30" : "bg-crm-sunken text-crm-dim border-crm-line"
+                            }`}
+                          >
+                            Retorno {brDay(detail.returnAt)}
+                          </span>
+                        )}
                         <TagChips ids={detail.tagIds} max={4} />
                       </p>
                     )}
@@ -596,8 +628,18 @@ export default function CrmContactPanel({
                     ) : (
                       <span className="min-w-0 flex-1 text-[13px] font-semibold truncate">{deal.title}</span>
                     )}
-                    <span className="text-[13px] font-semibold tabular-nums">{formatBRL(deal.valueCents) || <span className="text-crm-faint font-normal">sem valor</span>}</span>
+                    <span className="text-[13px] font-semibold tabular-nums" title={deal.negotiatedCents !== null ? "Valor negociado" : "Valor estimado"}>
+                      {formatBRL(deal.negotiatedCents ?? deal.valueCents) || <span className="text-crm-faint font-normal">sem valor</span>}
+                    </span>
                   </div>
+                  {(deal.service || deal.temperature !== detail.temperature || (deal.negotiatedCents !== null && deal.valueCents !== null)) && (
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-crm-dim">
+                      {/* the deal's own temperature, when it differs from the contact's (shown above) */}
+                      {deal.temperature !== detail.temperature && <TemperatureChip value={deal.temperature} />}
+                      {deal.service && <span>{label("service", deal.service)}</span>}
+                      {deal.negotiatedCents !== null && deal.valueCents !== null && <span className="tabular-nums">estimado {formatBRL(deal.valueCents)}</span>}
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <label className="block">
                       <span className={CRM_LABEL}>Etapa</span>
@@ -606,7 +648,8 @@ export default function CrmContactPanel({
                         onChange={async (e) => {
                           const stage = e.target.value;
                           if (stage === "perdido") return setLostPending(deal.id);
-                          if ((await patchDeal({ stage })) && stage === "ganho") onWon?.(deal.title);
+                          if ((stage === "proposta" || stage === "ganho") && needsStageDialog(deal, stage)) return setStagePending(stage);
+                          await patchDeal({ stage });
                         }}
                         aria-label="Etapa da oportunidade"
                         disabled={!caps.editPipeline}
@@ -637,6 +680,12 @@ export default function CrmContactPanel({
                       </select>
                     </label>
                   </div>
+                  {deal.stage === "ganho" && deal.wonReason && (
+                    <p className="text-[11.5px] text-crm-green">
+                      Ganha: {label("won_reason", deal.wonReason)}
+                      {deal.wonNote ? ` · ${deal.wonNote}` : ""}
+                    </p>
+                  )}
                   {deal.stage === "perdido" && deal.lostReason && (
                     <p className="text-[11.5px] text-crm-red">
                       Perdida: {label("lost_reason", deal.lostReason)}
@@ -653,6 +702,19 @@ export default function CrmContactPanel({
                     </button>
                   )}
                 </div>
+              )}
+              {stagePending && deal && (
+                <CrmStageDialog
+                  deal={deal}
+                  stage={stagePending}
+                  canCustomize={caps.customize}
+                  onCancel={() => setStagePending(null)}
+                  onConfirm={async (fields) => {
+                    const stage = stagePending;
+                    setStagePending(null);
+                    if ((await patchDeal({ stage, ...fields })) && stage === "ganho") onWon?.(deal.title);
+                  }}
+                />
               )}
               {lostPending && deal && (
                 <CrmLostDialog
@@ -676,6 +738,9 @@ export default function CrmContactPanel({
                     <span className={TASK_STATE_TONE[taskState(nextTask.dueAt, nextTask.allDay, now)]}>· {taskDueLabel(nextTask.dueAt, nextTask.allDay, now)}</span>
                   </button>
                 ) : null}
+                <span className="text-crm-faint">
+                  Última interação: {detail.lastInteractionAt ? shortDate(detail.lastInteractionAt) : "nenhuma ainda"}
+                </span>
               </div>
               <div className={`${CRM_SEGMENT_TRACK} w-fit`} role="tablist">
                 {(["conversa", "negocio", "detalhes"] as const).map((t) => (
@@ -792,7 +857,8 @@ export default function CrmContactPanel({
             ) : (
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
                 <CrmTagsEditor
-                  detail={detail}
+                  links={detail.tagLinks}
+                  endpoint={`/api/crm/contacts/${detail.id}/tags/`}
                   canEdit={caps.editContacts}
                   onChanged={() => {
                     void load();
@@ -818,6 +884,27 @@ export default function CrmContactPanel({
                         ))}
                       </select>
                       <input value={fields.referredBy} onChange={(e) => edit({ referredBy: e.target.value })} aria-label="Indicado por" placeholder="Indicado por (ex.: Carlos, BNI)" className={CRM_INPUT} />
+                      <TemperatureSelect value={fields.temperature} onChange={(v) => edit({ temperature: v })} className={CRM_INPUT} />
+                      <ServiceSelect
+                        value={fields.serviceInterest}
+                        onChange={(v) => edit({ serviceInterest: v })}
+                        label="Serviço de interesse"
+                        emptyLabel="Serviço de interesse"
+                        className={CRM_INPUT}
+                      />
+                      <label className="block">
+                        <span className={CRM_LABEL}>Retorno previsto</span>
+                        <input type="date" value={fields.returnAt} onChange={(e) => edit({ returnAt: e.target.value })} aria-label="Retorno previsto" className={`${CRM_INPUT} mt-1`} />
+                      </label>
+                      <label className="flex items-center gap-2 self-end pb-2 text-[13px] text-crm-text">
+                        <input
+                          type="checkbox"
+                          checked={fields.isDecisionMaker}
+                          onChange={(e) => edit({ isDecisionMaker: e.target.checked })}
+                          className="h-4 w-4 accent-[var(--crm-accent)]"
+                        />
+                        Decisor na empresa
+                      </label>
                     </div>
                     {detail.companyId && <p className="text-[11.5px] text-crm-faint">Segmento e cidade ficam na empresa e valem para todos os contatos dela.</p>}
                     <button

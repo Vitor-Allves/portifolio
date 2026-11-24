@@ -64,8 +64,9 @@ async function metrics(from: string, to: string, ownerId: string | null): Promis
     ),
     db.query(
       `SELECT count(*) FILTER (WHERE d.stage = 'ganho') AS won,
-              COALESCE(sum(d.value_cents) FILTER (WHERE d.stage = 'ganho'), 0) AS won_value,
-              count(d.value_cents) FILTER (WHERE d.stage = 'ganho') AS won_valued,
+              -- a won opportunity is worth its negotiated value (else the estimate)
+              COALESCE(sum(COALESCE(d.negotiated_cents, d.value_cents)) FILTER (WHERE d.stage = 'ganho'), 0) AS won_value,
+              count(COALESCE(d.negotiated_cents, d.value_cents)) FILTER (WHERE d.stage = 'ganho') AS won_valued,
               count(*) FILTER (WHERE d.stage = 'perdido') AS lost,
               COALESCE(sum(d.value_cents) FILTER (WHERE d.stage = 'perdido'), 0) AS lost_value,
               avg(EXTRACT(EPOCH FROM (d.closed_at - d.created_at)) / 86400) FILTER (WHERE d.stage = 'ganho') AS cycle
@@ -153,7 +154,7 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
         [ownerId]
       ),
       db.query<{ stage: string; count: string; value: string }>(
-        `SELECT d.stage, count(*) AS count, COALESCE(sum(d.value_cents), 0) AS value
+        `SELECT d.stage, count(*) AS count, COALESCE(sum(CASE WHEN d.stage = 'ganho' THEN COALESCE(d.negotiated_cents, d.value_cents) ELSE d.value_cents END), 0) AS value
          FROM crm_deals d JOIN crm_contacts c ON c.id = d.contact_id
          WHERE c.archived_at IS NULL AND d.stage IN ('ganho', 'perdido') AND d.closed_at >= $1 AND d.closed_at < $2
            AND ($3::text IS NULL OR d.owner_id = $3)
@@ -188,10 +189,10 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
         range
       ),
       db.query<{ source: string; count: string; value: string }>(
-        `SELECT c.source, count(*) AS count, COALESCE(sum(d.value_cents), 0) AS value
+        `SELECT COALESCE(d.source, c.source) AS source, count(*) AS count, COALESCE(sum(COALESCE(d.negotiated_cents, d.value_cents)), 0) AS value
          FROM crm_deals d JOIN crm_contacts c ON c.id = d.contact_id
          WHERE c.archived_at IS NULL AND d.stage = 'ganho' AND d.closed_at >= $1 AND d.closed_at < $2 AND ($3::text IS NULL OR d.owner_id = $3)
-         GROUP BY c.source`,
+         GROUP BY 1`,
         range
       ),
       // Per person (deal/task owner; NULL = no owner).
@@ -216,7 +217,7 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
                 (SELECT count(*) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage NOT IN ('ganho', 'perdido')) AS open_count,
                 (SELECT COALESCE(sum(value_cents), 0) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage NOT IN ('ganho', 'perdido')) AS open_value,
                 (SELECT count(*) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'ganho' AND d.closed_at >= $1 AND d.closed_at < $2) AS won,
-                (SELECT COALESCE(sum(value_cents), 0) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'ganho' AND d.closed_at >= $1 AND d.closed_at < $2) AS won_value,
+                (SELECT COALESCE(sum(COALESCE(negotiated_cents, value_cents)), 0) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'ganho' AND d.closed_at >= $1 AND d.closed_at < $2) AS won_value,
                 (SELECT count(*) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'perdido' AND d.closed_at >= $1 AND d.closed_at < $2) AS lost,
                 (SELECT count(*) FROM t WHERE t.owner_id IS NOT DISTINCT FROM o.owner_id AND t.done_at >= $1 AND t.done_at < $2) AS tasks_done,
                 (SELECT count(*) FROM t WHERE t.owner_id IS NOT DISTINCT FROM o.owner_id AND t.done_at IS NULL AND t.due_at IS NOT NULL

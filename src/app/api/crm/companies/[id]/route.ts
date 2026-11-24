@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { requireCap, visibleTo } from "@/lib/crm-access";
-import { getCompanyDetail, updateCompany, type CompanyInput } from "@/lib/crm-companies";
+import { requireCap, requireOwnerChange, visibleTo } from "@/lib/crm-access";
+import { companyOwner, getCompanyDetail, updateCompany, type CompanyInput } from "@/lib/crm-companies";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!body) return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   try {
     requireCap(actor, "editContacts");
+    const current = await companyOwner(id);
+    if (!current) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
+    requireOwnerChange(actor, body.ownerId, current.ownerId);
     if (!(await updateCompany(id, body))) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (err) {

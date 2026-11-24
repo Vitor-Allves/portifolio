@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from "react";
 import {
   CRM_STAGES,
+  CRM_TEMPERATURES,
   formatBRL,
   isClosedStage,
+  parseMoneyToCents,
   type CrmContactCard,
   type CrmDealCard,
   type CrmLostReason,
@@ -32,6 +34,8 @@ import CrmCompaniesView from "./CrmCompaniesView";
 import CrmCompanyPanel from "./CrmCompanyPanel";
 import CrmImportDialog from "./CrmImportDialog";
 import CrmLostDialog from "./CrmLostDialog";
+import CrmStageDialog, { needsStageDialog, type CrmStageFields } from "./CrmStageDialog";
+import { TemperatureChip } from "./crm-fields";
 import CrmTasksView from "./CrmTasksView";
 import CrmSettingsView from "./CrmSettingsView";
 import { CrmCatalogProvider, TagChips, useCatalog } from "./crm-catalog-context";
@@ -74,6 +78,40 @@ function subscribeWide(onChange: () => void) {
   return () => mq.removeEventListener("change", onChange);
 }
 
+/** Typed money → centavos for an optimistic update (the server re-validates); unparseable keeps `fallback`. */
+function centsOr(value: string, fallback: number | null): number | null {
+  try {
+    return parseMoneyToCents(value);
+  } catch {
+    return fallback;
+  }
+}
+
+/** What an opportunity is worth on the board: a won one by its negotiated value, else the estimate. */
+function dealWorth(d: { stage: string; valueCents: number | null; negotiatedCents: number | null }): number | null {
+  return d.stage === "ganho" ? (d.negotiatedCents ?? d.valueCents) : d.valueCents;
+}
+
+/** Funnel period filter (by the opportunity's entry date). */
+const PERIODS = [
+  { id: "all", label: "Qualquer data de entrada" },
+  { id: "7", label: "Entraram nos últimos 7 dias" },
+  { id: "30", label: "Entraram nos últimos 30 dias" },
+  { id: "90", label: "Entraram nos últimos 90 dias" },
+  { id: "month", label: "Entraram neste mês" },
+] as const;
+type PeriodId = (typeof PERIODS)[number]["id"];
+
+function periodStart(id: PeriodId, now: number): number | null {
+  if (id === "all") return null;
+  if (id === "month") {
+    // First day of the month in Brasília.
+    const ym = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(now);
+    return Date.parse(`${ym}-01T00:00:00-03:00`);
+  }
+  return now - Number(id) * 24 * 60 * 60 * 1000;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error("fetch failed");
@@ -98,6 +136,7 @@ function DealCard({
   const closed = isClosedStage(deal.stage);
   const task = deal.nextTask;
   const state = task ? taskState(task.dueAt, task.allDay, now) : null;
+  const worth = dealWorth(deal);
   // The title usually is the company (or the contact) — don't repeat it below.
   const who = [deal.contactName, deal.company].filter((v): v is string => Boolean(v) && v !== deal.title).join(" · ");
 
@@ -144,20 +183,36 @@ function DealCard({
         </div>
       </div>
 
-      {(deal.valueCents !== null || deal.expectedCloseAt) && (
-        <p className="mt-1 flex items-baseline gap-2 text-[12px]">
-          {deal.valueCents !== null && <span className="font-semibold text-crm-text tabular-nums">{formatBRL(deal.valueCents)}</span>}
+      {(worth !== null || deal.expectedCloseAt || deal.service) && (
+        <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-[12px]">
+          {worth !== null && (
+            <span className="font-semibold text-crm-text tabular-nums" title={deal.stage === "ganho" && deal.negotiatedCents !== null ? "Valor negociado" : "Valor estimado"}>
+              {formatBRL(worth)}
+            </span>
+          )}
+          {deal.stage !== "ganho" && deal.negotiatedCents !== null && (
+            <span className="text-crm-dim tabular-nums">negociado {formatBRL(deal.negotiatedCents)}</span>
+          )}
+          {deal.service && <span className="text-crm-dim truncate max-w-full">{label("service", deal.service)}</span>}
           {deal.expectedCloseAt && !closed && <span className="text-crm-faint">previsão {shortDate(deal.expectedCloseAt)}</span>}
         </p>
       )}
 
       <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <TemperatureChip value={deal.temperature} />
         <span className="max-w-full truncate text-[10.5px] px-2 py-0.5 rounded-full bg-crm-sunken border border-crm-line text-crm-dim">
           {label("source", deal.source)}
           {deal.referredBy ? ` · ${deal.referredBy}` : ""}
         </span>
         <TagChips ids={deal.tagIds} max={2} />
       </div>
+
+      {deal.stage === "ganho" && deal.wonReason && (
+        <p className="mt-1.5 text-[11.5px] text-crm-green truncate">
+          {label("won_reason", deal.wonReason)}
+          {deal.wonNote ? ` · ${deal.wonNote}` : ""}
+        </p>
+      )}
 
       {deal.stage === "perdido" && deal.lostReason && (
         <p className="mt-1.5 text-[11.5px] text-crm-red truncate">
@@ -227,12 +282,15 @@ function CrmAppInner({
   const [dataVersion, setDataVersion] = useState(0);
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [periodFilter, setPeriodFilter] = useState<PeriodId>("all");
+  const [temperatureFilter, setTemperatureFilter] = useState("all");
   const [taskFilter, setTaskFilter] = useState<"all" | "due" | "none">("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [dropStage, setDropStage] = useState<CrmStage | null>(null);
   const [lostPending, setLostPending] = useState<{ dealId: string; title: string } | null>(null);
+  const [stagePending, setStagePending] = useState<{ deal: CrmDealCard; stage: "proposta" | "ganho" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [celebration, setCelebration] = useState<{ name: string; mascot: "titanWin" | "legacyWin" } | null>(null);
@@ -281,11 +339,14 @@ function CrmAppInner({
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
+    const since = periodStart(periodFilter, now);
     return deals.filter((d) => {
       if (ownerFilter === "mine" && d.ownerId !== currentUserId) return false;
       if (ownerFilter === "none" && d.ownerId) return false;
       if (!["all", "mine", "none"].includes(ownerFilter) && d.ownerId !== ownerFilter) return false;
       if (sourceFilter !== "all" && d.source !== sourceFilter) return false;
+      if (temperatureFilter !== "all" && d.temperature !== temperatureFilter) return false;
+      if (since !== null && Date.parse(d.createdAt) < since) return false;
       if (taskFilter === "due") {
         const s = d.nextTask ? taskState(d.nextTask.dueAt, d.nextTask.allDay, now) : "none";
         if (s !== "overdue" && s !== "today") return false;
@@ -298,7 +359,7 @@ function CrmAppInner({
       }
       return true;
     });
-  }, [deals, ownerFilter, sourceFilter, taskFilter, search, currentUserId, now]);
+  }, [deals, ownerFilter, sourceFilter, temperatureFilter, periodFilter, taskFilter, search, currentUserId, now]);
 
   const dueCount = useMemo(
     () =>
@@ -310,7 +371,7 @@ function CrmAppInner({
   );
   const unread = inbox.reduce((sum, c) => sum + c.unreadCount, 0);
 
-  async function patchStage(dealId: string, body: { stage: CrmStage; lostReason?: CrmLostReason; lostNote?: string }) {
+  async function patchStage(dealId: string, body: { stage: CrmStage; lostReason?: CrmLostReason; lostNote?: string } & CrmStageFields) {
     const before = deals;
     const deal = before.find((d) => d.id === dealId);
     const at = new Date().toISOString();
@@ -324,6 +385,11 @@ function CrmAppInner({
               closedAt: isClosedStage(body.stage) ? at : null,
               lostReason: body.lostReason ?? null,
               lostNote: body.lostNote?.trim() || null,
+              service: body.service ?? d.service,
+              valueCents: body.value !== undefined ? centsOr(body.value, d.valueCents) : d.valueCents,
+              negotiatedCents: body.negotiatedValue !== undefined ? centsOr(body.negotiatedValue, d.negotiatedCents) : d.negotiatedCents,
+              wonReason: body.wonReason ?? null,
+              wonNote: body.wonNote?.trim() || null,
             }
           : d
       )
@@ -346,8 +412,10 @@ function CrmAppInner({
   function moveTo(dealId: string, stage: CrmStage) {
     const deal = deals.find((d) => d.id === dealId);
     if (!deal || deal.stage === stage) return;
-    // Losing a deal always records why — the dialog asks before the move.
+    // Losing a deal always records why — the dialog asks before the move;
+    // "Proposta enviada" and "Ganho" ask for what the stage requires.
     if (stage === "perdido") setLostPending({ dealId, title: deal.title });
+    else if ((stage === "proposta" || stage === "ganho") && needsStageDialog(deal, stage)) setStagePending({ deal, stage });
     else void patchStage(dealId, { stage });
   }
 
@@ -472,6 +540,33 @@ function CrmAppInner({
               </select>
 
               <select
+                value={temperatureFilter}
+                onChange={(e) => setTemperatureFilter(e.target.value)}
+                aria-label="Filtrar por temperatura"
+                className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
+              >
+                <option value="all">Todas as temperaturas</option>
+                {CRM_TEMPERATURES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={periodFilter}
+                onChange={(e) => setPeriodFilter(e.target.value as PeriodId)}
+                aria-label="Filtrar por período"
+                className={`${CRM_INPUT} !w-auto !rounded-full !py-1.5`}
+              >
+                {PERIODS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
                 value={taskFilter}
                 onChange={(e) => setTaskFilter(e.target.value as "all" | "due" | "none")}
                 aria-label="Filtrar por próxima tarefa"
@@ -540,7 +635,7 @@ function CrmAppInner({
         ) : view === "team" && caps.manageTeam ? (
           <CrmTeamView currentUserId={currentUserId} onChanged={() => void refresh()} />
         ) : view === "companies" ? (
-          <CrmCompaniesView version={dataVersion} onOpenCompany={setCompanyId} />
+          <CrmCompaniesView team={team} version={dataVersion} onOpenCompany={setCompanyId} />
         ) : view === "tasks" ? (
           <CrmTasksView
             tasks={tasks}
@@ -583,7 +678,7 @@ function CrmAppInner({
             >
               {CRM_STAGES.map((stage) => {
                 const items = visible.filter((d) => d.stage === stage.id);
-                const total = items.reduce((sum, d) => sum + (d.valueCents ?? 0), 0);
+                const total = items.reduce((sum, d) => sum + (dealWorth(d) ?? 0), 0);
                 return (
                   <section
                     key={stage.id}
@@ -644,6 +739,9 @@ function CrmAppInner({
         <CrmCompanyPanel
           key={companyId}
           companyId={companyId}
+          team={team}
+          currentUserId={currentUserId}
+          caps={caps}
           onClose={() => setCompanyId(null)}
           onOpenContact={(id) => openContact(id)}
           onChanged={() => setDataVersion((v) => v + 1)}
@@ -685,6 +783,20 @@ function CrmAppInner({
             const { dealId } = lostPending;
             setLostPending(null);
             void patchStage(dealId, { stage: "perdido", lostReason, lostNote });
+          }}
+        />
+      )}
+
+      {stagePending && (
+        <CrmStageDialog
+          deal={stagePending.deal}
+          stage={stagePending.stage}
+          canCustomize={caps.customize}
+          onCancel={() => setStagePending(null)}
+          onConfirm={(fields) => {
+            const { deal, stage } = stagePending;
+            setStagePending(null);
+            void patchStage(deal.id, { stage, ...fields });
           }}
         />
       )}

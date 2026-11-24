@@ -5,7 +5,8 @@ import { CRM_CONSENT, type CrmSource, type CrmTeamMember } from "@/lib/crm-types
 import { CRM_ALERT, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL } from "./crm-styles";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
-import { useCatalog } from "./crm-catalog-context";
+import { SegmentSelect, useCatalog } from "./crm-catalog-context";
+import { ServiceSelect, TemperatureSelect } from "./crm-fields";
 
 type CrmNewContactDialogProps = {
   open: boolean;
@@ -39,6 +40,8 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
   const [referredBy, setReferredBy] = useState("");
   const [consentSource, setConsentSource] = useState("");
   const [ownerId, setOwnerId] = useState(team.some((m) => m.id === currentUserId) ? currentUserId : "");
+  const [temperature, setTemperature] = useState("");
+  const [serviceInterest, setServiceInterest] = useState("");
   const [createDeal, setCreateDeal] = useState(true);
   const [dealValue, setDealValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -72,6 +75,8 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
         consentStatus,
         consentSource: consentStatus === "sim" ? consentSource : "",
         ownerId: ownerId || null,
+        temperature: temperature || null,
+        serviceInterest: serviceInterest || null,
         createDeal,
         dealValue: createDeal ? dealValue : "",
       }),
@@ -128,7 +133,7 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
             <CrmCompanyField value={company} onChange={setCompany} />
           </Field>
           <Field label="Segmento">
-            <input value={segment} onChange={(e) => setSegment(e.target.value)} placeholder="Ex.: Saúde, Imobiliário" className={CRM_INPUT} />
+            <SegmentSelect value={segment} onChange={setSegment} className={CRM_INPUT} />
           </Field>
           <Field label="Cidade">
             <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ex.: Sorocaba" className={CRM_INPUT} />
@@ -154,6 +159,12 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label="Temperatura">
+            <TemperatureSelect value={temperature} onChange={setTemperature} className={CRM_INPUT} emptyLabel="Não definida" />
+          </Field>
+          <Field label="Serviço de interesse">
+            <ServiceSelect value={serviceInterest} onChange={setServiceInterest} label="Serviço de interesse" emptyLabel="Não definido" className={CRM_INPUT} />
           </Field>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

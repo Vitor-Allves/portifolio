@@ -142,6 +142,7 @@ export function lineNumbers(file: Sheet): number[] {
 const GUESS: [CrmImportField, RegExp][] = [
   // most specific first: "Nome da empresa" is the company, not the name
   ["consentSource", /como aceit|origem do consent/],
+  ["cnpj", /cnpj/],
   ["company", /empresa|companhia|razao social|nome fantasia|company|organiza/],
   ["referredBy", /indicad|indicacao de|quem indicou/],
   ["consent", /consent|aceite|autoriz|opt.?in|lgpd/],
