@@ -2,20 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from "react";
 import {
-  CRM_STAGES,
   CRM_TEMPERATURES,
   formatBRL,
   isClosedStage,
   parseMoneyToCents,
   type CrmContactCard,
   type CrmDealCard,
-  type CrmLostReason,
   type CrmQuickReply,
   type CrmStage,
   type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_BTN_PRIMARY, CRM_INPUT, STAGE_DOT, taskKindIcon } from "./crm-styles";
+import { CRM_BTN_PRIMARY, CRM_INPUT, taskKindIcon } from "./crm-styles";
 import { CRM_SIDEBAR_COOKIE, type CrmTheme } from "./crm-theme";
 import CrmWelcome from "./CrmWelcome";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
@@ -33,14 +31,14 @@ import CrmContactsView from "./CrmContactsView";
 import CrmCompaniesView from "./CrmCompaniesView";
 import CrmCompanyPanel from "./CrmCompanyPanel";
 import CrmImportDialog from "./CrmImportDialog";
-import CrmLostDialog from "./CrmLostDialog";
+import CrmLostDialog, { type CrmCloseFields } from "./CrmLostDialog";
 import CrmStageDialog, { needsStageDialog, type CrmStageFields } from "./CrmStageDialog";
 import { TemperatureChip } from "./crm-fields";
 import CrmTasksView from "./CrmTasksView";
 import CrmSettingsView from "./CrmSettingsView";
 import CrmAuditView from "./CrmAuditView";
 import { CrmCatalogProvider, TagChips, useCatalog } from "./crm-catalog-context";
-import type { CrmCatalog } from "@/lib/crm-catalog";
+import { closeGroupLabel, type CrmCatalog } from "@/lib/crm-catalog";
 import CrmAgendaView from "./CrmAgendaView";
 import CrmTaskDialog, { type TaskDialogTarget, type TaskDraft } from "./CrmTaskDialog";
 import CrmReminderBell from "./CrmReminderBell";
@@ -206,6 +204,11 @@ function DealCard({
           {deal.stage !== "ganho" && deal.negotiatedCents !== null && (
             <span className="text-crm-dim tabular-nums">negociado {formatBRL(deal.negotiatedCents)}</span>
           )}
+          {!closed && (
+            <span className="text-crm-dim tabular-nums" title={deal.probabilityOwn ? "Probabilidade de fechamento (definida na oportunidade)" : "Probabilidade de fechamento (da etapa)"}>
+              {deal.probability}%
+            </span>
+          )}
           {deal.service && <span className="text-crm-dim truncate max-w-full">{label("service", deal.service)}</span>}
           {deal.expectedCloseAt && !closed && <span className="text-crm-faint">previsão {shortDate(deal.expectedCloseAt)}</span>}
         </p>
@@ -228,8 +231,9 @@ function DealCard({
       )}
 
       {deal.stage === "perdido" && deal.lostReason && (
-        <p className="mt-1.5 text-[11.5px] text-crm-red truncate">
-          {label("lost_reason", deal.lostReason)}
+        <p className={`mt-1.5 text-[11.5px] truncate ${deal.closeGroup === "futuro" ? "text-crm-amber" : "text-crm-red"}`}>
+          {closeGroupLabel(deal.closeGroup)}: {label("lost_reason", deal.lostReason)}
+          {deal.closeGroup === "futuro" && deal.returnOn ? ` · retomar em ${deal.returnOn.split("-").reverse().join("/")}` : ""}
           {deal.lostNote ? ` · ${deal.lostNote}` : ""}
         </p>
       )}
@@ -312,8 +316,8 @@ function CrmAppInner({
   const [selected, setSelected] = useState<Selection | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [dropStage, setDropStage] = useState<CrmStage | null>(null);
-  const [lostPending, setLostPending] = useState<{ dealId: string; title: string } | null>(null);
-  const [stagePending, setStagePending] = useState<{ deal: CrmDealCard; stage: "proposta" | "ganho" } | null>(null);
+  const [lostPending, setLostPending] = useState<{ dealId: string; title: string; reopening: boolean } | null>(null);
+  const [stagePending, setStagePending] = useState<{ deal: CrmDealCard; stage: CrmStage } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [celebration, setCelebration] = useState<{ name: string; mascot: "titanWin" | "legacyWin" } | null>(null);
@@ -365,6 +369,8 @@ function CrmAppInner({
     setClientId({ id, ...opts });
   }, []);
 
+  // The board's columns: the funnel as set in Personalização, plus an archived stage while cards are still in it.
+  const columns = useMemo(() => catalog.stages(deals.map((d) => d.stage)), [catalog, deals]);
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
@@ -400,7 +406,7 @@ function CrmAppInner({
   );
   const unread = inbox.reduce((sum, c) => sum + c.unreadCount, 0);
 
-  async function patchStage(dealId: string, body: { stage: CrmStage; lostReason?: CrmLostReason; lostNote?: string } & CrmStageFields) {
+  async function patchStage(dealId: string, body: { stage: CrmStage } & Partial<CrmCloseFields> & CrmStageFields) {
     const before = deals;
     const deal = before.find((d) => d.id === dealId);
     const at = new Date().toISOString();
@@ -441,10 +447,11 @@ function CrmAppInner({
   function moveTo(dealId: string, stage: CrmStage) {
     const deal = deals.find((d) => d.id === dealId);
     if (!deal || deal.stage === stage) return;
-    // Losing a deal always records why — the dialog asks before the move;
-    // "Proposta enviada" and "Ganho" ask for what the stage requires.
-    if (stage === "perdido") setLostPending({ dealId, title: deal.title });
-    else if ((stage === "proposta" || stage === "ganho") && needsStageDialog(deal, stage)) setStagePending({ deal, stage });
+    // Closing always goes through the tabulação (the dialogs ask before the
+    // move); reopening asks for the justification; other stages ask for what
+    // they require.
+    if (stage === "perdido") setLostPending({ dealId, title: deal.title, reopening: isClosedStage(deal.stage) });
+    else if (needsStageDialog(deal, stage)) setStagePending({ deal, stage });
     else void patchStage(dealId, { stage });
   }
 
@@ -788,7 +795,7 @@ function CrmAppInner({
                 else if (e.clientX < r.left + BOARD_EDGE) el.scrollLeft -= BOARD_SCROLL_STEP;
               }}
             >
-              {CRM_STAGES.map((stage) => {
+              {columns.map((stage) => {
                 const items = visible.filter((d) => d.stage === stage.id);
                 const total = items.reduce((sum, d) => sum + (dealWorth(d) ?? 0), 0);
                 return (
@@ -811,14 +818,22 @@ function CrmAppInner({
                     <header className="px-3.5 pt-3 pb-2">
                       <div className="flex items-center justify-between">
                         <h2 className="flex items-center gap-2 text-[12.5px] font-semibold text-crm-text">
-                          <span className={`h-2 w-2 rounded-full ${STAGE_DOT[stage.id]}`} aria-hidden="true" />
+                          <span className={`h-2 w-2 rounded-full ${catalog.stageDot(stage.id)}`} aria-hidden="true" />
                           {stage.label}
+                          {stage.archived && <span className="text-[10.5px] font-normal text-crm-faint">(arquivada)</span>}
                         </h2>
                         <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
                       </div>
                       <p className="mt-0.5 pl-4 h-4 text-[11.5px] text-crm-dim tabular-nums" aria-label={`Total em ${stage.label}`}>
                         {total > 0 ? formatBRL(total) : ""}
-                        {isClosedStage(stage.id) && items.length > 0 ? <span className="text-crm-faint">{total > 0 ? " · " : ""}últimos 30 dias</span> : null}
+                        {isClosedStage(stage.id) ? (
+                          items.length > 0 ? <span className="text-crm-faint">{total > 0 ? " · " : ""}últimos 30 dias</span> : null
+                        ) : (
+                          <span className="text-crm-faint" title="Probabilidade de fechamento da etapa">
+                            {total > 0 ? " · " : ""}
+                            {stage.probability}%
+                          </span>
+                        )}
                       </p>
                     </header>
                     <div className="px-2.5 pb-3 space-y-2 min-h-[96px]">
@@ -938,11 +953,12 @@ function CrmAppInner({
       {lostPending && (
         <CrmLostDialog
           dealTitle={lostPending.title}
+          reopening={lostPending.reopening}
           onCancel={() => setLostPending(null)}
-          onConfirm={(lostReason, lostNote) => {
+          onConfirm={(fields) => {
             const { dealId } = lostPending;
             setLostPending(null);
-            void patchStage(dealId, { stage: "perdido", lostReason, lostNote });
+            void patchStage(dealId, { stage: "perdido", ...fields });
           }}
         />
       )}

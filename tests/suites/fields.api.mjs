@@ -93,6 +93,8 @@ ok(r.status === 400 && r.body.error.includes("valor negociado e motivo do ganho"
 await json(await admin.patch(`${opts}won_reason/preco/`, { data: { archived: true } }));
 ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "ganho", negotiatedValue: "3.200", wonReason: "preco" } }))).status === 400, "archived win reason refused");
 r = await json(await gestor.patch(dealUrl("d5"), { data: { stage: "ganho", negotiatedValue: "3.200,50", wonReason: "resultado", wonNote: "plano anual" } }));
+ok(r.status === 400 && /resultado/.test(r.body.error), `…and the tabulação asks for the result (${r.body?.error})`);
+r = await json(await gestor.patch(dealUrl("d5"), { data: { stage: "ganho", negotiatedValue: "3.200,50", wonReason: "resultado", wonNote: "plano anual", wonResult: "venda_realizada" } }));
 ok(r.status === 200 && r.body.stage === "ganho", "Ganho with negotiated value and reason accepted");
 let row = (await sql(`SELECT negotiated_cents || '|' || won_reason || '|' || won_note || '|' || value_cents FROM crm_deals WHERE id = 'd5'`));
 ok(row === "320050|resultado|plano anual|350000", `negotiated and estimated values kept apart (${row})`);
@@ -104,7 +106,8 @@ ok(valueEdit.some((x) => x.field === "Valor negociado" && x.to === "320050") && 
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 const dash = (await json(await gestor.get(`${BASE}/api/crm/dashboard/?from=${today}&to=${today}`))).body;
 ok(dash.dashboard?.current.wonValueCents === 320050, `Painel counts a won deal by its negotiated value (${JSON.stringify(dash.dashboard?.current ?? dash)})`);
-ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "proposta" } }))).status === 200, "reopened to Proposta (service and value already there)");
+ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "proposta" } }))).status === 400, "reopening a closed opportunity asks for the justification");
+ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "proposta", reopenReason: "Cliente pediu outra versão" } }))).status === 200, "reopened to Proposta (service and value already there)");
 ok((await sql(`SELECT COALESCE(won_reason, 'none') FROM crm_deals WHERE id = 'd5'`)) === "none", "leaving Ganho clears the win reason");
 ok((await json(await gestor.post(`${BASE}/api/crm/deals/`, { data: { contactId: lia, stage: "ganho" } }))).status === 400, "a new opportunity can't start in Ganho without what Ganho requires");
 r = await json(await gestor.post(`${BASE}/api/crm/deals/`, { data: { contactId: lia, stage: "proposta", value: "1.000" } }));

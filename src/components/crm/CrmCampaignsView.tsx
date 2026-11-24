@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CRM_STAGES, type CrmFacets, type CrmTeamMember, type CrmTemplate } from "@/lib/crm-types";
+import { type CrmFacets, type CrmTeamMember, type CrmTemplate } from "@/lib/crm-types";
 import {
   MAX_EXCLUDED,
   PARAM_SOURCES,
@@ -205,7 +205,7 @@ function CampaignEditor({
   onBack: () => void;
   onStarted: (id: string) => void;
 }) {
-  const { options, tagGroups } = useCatalog();
+  const { options, tagGroups, stages } = useCatalog();
   const [id, setId] = useState(initialId);
   const [loaded, setLoaded] = useState(initialId === null);
   const [name, setName] = useState("");
@@ -440,7 +440,7 @@ function CampaignEditor({
             </div>
             <p className="mt-3 text-[12px] text-crm-dim">Quem deve receber? Deixe em “Todos” o que não importa.</p>
             <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <FilterSelect label="Etapa do funil" value={audience.stage} onChange={(v) => setFilter("stage", v)} options={CRM_STAGES.map((s) => [s.id, s.label])} />
+              <FilterSelect label="Etapa do funil" value={audience.stage} onChange={(v) => setFilter("stage", v)} options={stages().map((s) => [s.id, s.label])} />
               <FilterSelect label="Origem" value={audience.source} onChange={(v) => setFilter("source", v)} options={options("source").map((s) => [s.id, s.label] as [string, string])} />
               <FilterSelect
                 label="Responsável"

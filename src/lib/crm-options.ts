@@ -13,6 +13,7 @@ import { randomUUID } from "crypto";
 import type { Pool, PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import { CrmInputError, CrmNotFoundError, addEvent, cleanText, type CrmActor } from "./crm-core";
+import { registerStageLabels } from "./crm-types";
 import {
   COLORED_KINDS,
   OPTION_KINDS,
@@ -28,6 +29,7 @@ import {
   type CrmTag,
   type OptionKind,
   type TagVia,
+  isLostCloseGroup,
 } from "./crm-catalog";
 
 type Q = Pick<PoolClient, "query"> | Pool;
@@ -41,8 +43,9 @@ type OptionRow = {
   locked: boolean;
   archived_at: Date | null;
   color: string | null;
+  meta: Record<string, unknown> | null;
 };
-const OPTION_COLS = "kind, id, label, description, sort, locked, archived_at, color";
+const OPTION_COLS = "kind, id, label, description, sort, locked, archived_at, color, meta";
 type TagRow = { id: string; category: CrmTag["category"]; label: string; description: string | null; color: CrmTag["color"]; sort: number; archived_at: Date | null };
 
 const mapOption = (r: OptionRow): CrmOption => ({
@@ -54,6 +57,7 @@ const mapOption = (r: OptionRow): CrmOption => ({
   locked: r.locked,
   archived: r.archived_at !== null,
   color: COLORED_KINDS.includes(r.kind) ? (isTagColor(r.color) ? r.color : "cinza") : null,
+  meta: r.meta ?? {},
 });
 const mapTag = (r: TagRow): CrmTag => ({
   id: r.id,
@@ -71,7 +75,10 @@ export async function getCatalog(q?: Q): Promise<CrmCatalog> {
     db.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options ORDER BY kind, sort, lower(label)`),
     db.query<TagRow>(`SELECT id, category, label, description, color, sort, archived_at FROM crm_tags ORDER BY category, sort, lower(label)`),
   ]);
-  return { options: options.rows.map(mapOption), tags: tags.rows.map(mapTag) };
+  const catalog = { options: options.rows.map(mapOption), tags: tags.rows.map(mapTag) };
+  // Server-side labels (exports, AI, notifications) follow the stage names as renamed.
+  registerStageLabels(catalog.options.filter((o) => o.kind === "stage"));
+  return catalog;
 }
 
 /** How many records use each option / tag (Personalização screen). */
@@ -79,6 +86,7 @@ export async function getCatalogUsage(): Promise<CrmCatalogUsage> {
   const db = await getDb();
   const { rows } = await db.query<{ k: string; n: string }>(
     `SELECT 'source:' || source AS k, count(*) AS n FROM crm_contacts GROUP BY source
+     UNION ALL SELECT 'stage:' || stage, count(*) FROM crm_deals GROUP BY stage
      UNION ALL SELECT 'lost_reason:' || lost_reason, count(*) FROM crm_deals WHERE lost_reason IS NOT NULL GROUP BY lost_reason
      UNION ALL SELECT 'task_kind:' || kind, count(*) FROM crm_tasks GROUP BY kind
      UNION ALL SELECT 'priority:' || priority, count(*) FROM crm_tasks GROUP BY priority
@@ -111,7 +119,7 @@ const KIND_NAME: Record<OptionKind, string> = Object.fromEntries(OPTION_KINDS.ma
  * record already has (an archived option stays on the records that use it).
  */
 export async function requireOptionId(q: Q, kind: OptionKind, value: unknown, current?: string | null): Promise<string> {
-  if (typeof value !== "string" || !value) throw new CrmInputError(`Escolha ${KIND_NAME[kind] === "origem" ? "a" : "o"} ${KIND_NAME[kind]}.`);
+  if (typeof value !== "string" || !value) throw new CrmInputError(`Escolha ${/^(origem|etapa|prioridade)$/.test(KIND_NAME[kind]) ? "a" : "o"} ${KIND_NAME[kind]}.`);
   if (current && value === current) return value;
   const { rows } = await q.query<{ archived: boolean }>(`SELECT archived_at IS NOT NULL AS archived FROM crm_options WHERE kind = $1 AND id = $2`, [kind, value]);
   if (!rows[0]) throw new CrmInputError(`Opção inválida para ${KIND_NAME[kind]}.`);
@@ -158,7 +166,37 @@ export function canonicalSegment(catalog: CrmCatalog, text: string | null): stri
 
 // ---------- options (Administrador) ----------
 
-export type OptionInput = { label?: unknown; description?: unknown; color?: unknown };
+export type OptionInput = { label?: unknown; description?: unknown; color?: unknown; meta?: unknown };
+
+/** The attributes an option of `kind` may carry (crm_options.meta), validated; `current` keeps what isn't sent. */
+function optionMeta(kind: OptionKind, id: string, value: unknown, current: Record<string, unknown>): Record<string, unknown> {
+  const sent = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  if (kind === "stage") {
+    const outcome = id === "ganho" ? "won" : id === "perdido" ? "lost" : "open";
+    let probability = typeof current.probability === "number" ? current.probability : outcome === "won" ? 100 : outcome === "lost" ? 0 : 10;
+    if (sent.probability !== undefined) {
+      const p = typeof sent.probability === "string" ? Number(sent.probability) : sent.probability;
+      if (typeof p !== "number" || !Number.isInteger(p) || p < 0 || p > 100) throw new CrmInputError("Probabilidade inválida: use um número de 0 a 100.");
+      if (outcome !== "open" && p !== (outcome === "won" ? 100 : 0)) throw new CrmInputError("Venda fechada é sempre 100% e Venda perdida, 0%.");
+      probability = p;
+    }
+    return { probability, outcome };
+  }
+  if (kind === "lost_reason") {
+    const group = sent.group === undefined ? current.group ?? "negativo" : sent.group;
+    if (!isLostCloseGroup(group)) throw new CrmInputError("Grupo de tabulação inválido.");
+    return { ...current, group };
+  }
+  return current;
+}
+
+/** Stages: Novo lead first, Venda fechada and Venda perdida last, whatever order was asked. */
+async function normalizeStageOrder(q: Q) {
+  const { rows } = await q.query<{ id: string }>(`SELECT id FROM crm_options WHERE kind = 'stage' ORDER BY sort, lower(label)`);
+  const open = rows.map((r) => r.id).filter((id) => id !== "novo" && id !== "ganho" && id !== "perdido");
+  const order = [...(rows.some((r) => r.id === "novo") ? ["novo"] : []), ...open, ...["ganho", "perdido"].filter((id) => rows.some((r) => r.id === id))];
+  for (const [i, id] of order.entries()) await q.query(`UPDATE crm_options SET sort = $2 WHERE kind = 'stage' AND id = $1 AND sort <> $2`, [id, i]);
+}
 
 /** The color an option of `kind` gets: only colored lists have one; an invalid value is refused. */
 function optionColor(kind: OptionKind, value: unknown, current: string | null): string | null {
@@ -191,11 +229,16 @@ export async function createOption(kind: OptionKind, input: OptionInput): Promis
     let id = base;
     for (let i = 2; taken.has(id); i++) id = `${base}_${i}`;
     const { rows } = await client.query<OptionRow>(
-      `INSERT INTO crm_options (kind, id, label, description, color, sort)
-       VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = $1))
+      `INSERT INTO crm_options (kind, id, label, description, color, meta, sort)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = $1))
        RETURNING ${OPTION_COLS}`,
-      [kind, id, label, description, optionColor(kind, input.color, null)]
+      [kind, id, label, description, optionColor(kind, input.color, null), JSON.stringify(optionMeta(kind, id, input.meta, {}))]
     );
+    if (kind === "stage") {
+      await normalizeStageOrder(client);
+      const again = await client.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options WHERE kind = $1 AND id = $2`, [kind, id]);
+      return mapOption(again.rows[0]);
+    }
     return mapOption(rows[0]);
   });
 }
@@ -215,10 +258,11 @@ export async function updateOption(kind: OptionKind, id: string, input: OptionIn
       const b = await client.query(`UPDATE crm_contacts SET segment = $2, updated_at = now() WHERE segment = $1`, [rows[0].label, label]);
       renamedRecords = (a.rowCount ?? 0) + (b.rowCount ?? 0);
     }
+    const meta = optionMeta(kind, id, input.meta, rows[0].meta ?? {});
     const updated = await client.query<OptionRow>(
-      `UPDATE crm_options SET label = $3, description = $4, color = $5, updated_at = now() WHERE kind = $1 AND id = $2
+      `UPDATE crm_options SET label = $3, description = $4, color = $5, meta = $6, updated_at = now() WHERE kind = $1 AND id = $2
        RETURNING ${OPTION_COLS}`,
-      [kind, id, label, description, color]
+      [kind, id, label, description, color, JSON.stringify(meta)]
     );
     return { before: rows[0].label, colorBefore: mapOption(rows[0]).color, after: mapOption(updated.rows[0]), renamedRecords };
   });
@@ -228,7 +272,16 @@ export async function setOptionArchived(kind: OptionKind, id: string, archived: 
   const db = await getDb();
   const { rows } = await db.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options WHERE kind = $1 AND id = $2`, [kind, id]);
   if (!rows[0]) throw new CrmNotFoundError("Opção não encontrada.");
-  if (archived && rows[0].locked) throw new CrmInputError(`"${rows[0].label}" é usada quando nenhuma outra se aplica e não pode ser arquivada.`);
+  if (archived && rows[0].locked) {
+    throw new CrmInputError(
+      kind === "stage" ? `"${rows[0].label}" é uma etapa fixa do funil e não pode ser arquivada.` : `"${rows[0].label}" é usada quando nenhuma outra se aplica e não pode ser arquivada.`
+    );
+  }
+  if (archived && kind === "stage") {
+    const inUse = await db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_deals WHERE stage = $1`, [id]);
+    const n = Number(inUse.rows[0].n);
+    if (n > 0) throw new CrmInputError(`Há ${n} ${n === 1 ? "oportunidade" : "oportunidades"} em "${rows[0].label}". Mova-as para outra etapa antes de arquivar.`);
+  }
   const updated = await db.query<OptionRow>(
     `UPDATE crm_options SET archived_at = ${archived ? "COALESCE(archived_at, now())" : "NULL"}, updated_at = now() WHERE kind = $1 AND id = $2
      RETURNING ${OPTION_COLS}`,
@@ -244,6 +297,22 @@ export async function reorderOptions(kind: OptionKind, ids: unknown): Promise<vo
     const { rows } = await client.query<{ id: string }>(`SELECT id FROM crm_options WHERE kind = $1 ORDER BY sort, lower(label) FOR UPDATE`, [kind]);
     const order = [...(ids as string[]).filter((id) => rows.some((r) => r.id === id)), ...rows.map((r) => r.id).filter((id) => !(ids as string[]).includes(id))];
     for (const [i, id] of order.entries()) await client.query(`UPDATE crm_options SET sort = $3 WHERE kind = $1 AND id = $2`, [kind, id, i]);
+    if (kind === "stage") await normalizeStageOrder(client);
+  });
+}
+
+/** The funnel's active stages, in order, with what each means. */
+/** Teaches the server's labels (exports, notifications, AI) the stage names as renamed in Personalização. */
+export async function loadStageLabels(q?: Q): Promise<void> {
+  registerStageLabels(await listStages(q));
+}
+
+export async function listStages(q?: Q): Promise<{ id: string; label: string; archived: boolean; probability: number; outcome: "open" | "won" | "lost" }[]> {
+  const db = q ?? (await getDb());
+  const { rows } = await db.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options WHERE kind = 'stage' ORDER BY sort, lower(label)`);
+  return rows.map((r) => {
+    const m = optionMeta("stage", r.id, undefined, r.meta ?? {}) as { probability: number; outcome: "open" | "won" | "lost" };
+    return { id: r.id, label: r.label, archived: r.archived_at !== null, probability: m.probability, outcome: m.outcome };
   });
 }
 

@@ -71,20 +71,20 @@ import { encryptSecret } from "../../src/lib/secret-crypto";
   await ev("c4", "stage", { from: "novo", to: "reuniao" }, "2026-09-20"); // legacy, no dealId
   await ev("c6", "stage", { from: "novo", to: "reuniao", dealId: "d7" }, "2026-10-14"); // archived contact
   const tasks = [
-    // id, contact, owner, due, all_day, done, canceled
-    ["t1", "c1", "u-vitor", t("2026-10-05"), true, t("2026-10-05"), null],
-    ["t2", "c2", "u-joao", t("2026-10-21"), true, t("2026-10-21"), null],
-    ["t3", "c4", "u-vitor", t("2026-09-10"), true, t("2026-09-10"), null],
-    ["t4", "c3", "u-joao", t("2026-10-01"), true, null, null],
-    ["t5", "c1", "u-vitor", "TODAY", true, null, null],
-    ["t6", "c3", "u-joao", t("2026-10-08"), true, t("2026-10-08"), t("2026-10-08")],
+    // id, contact, owner, due, all_day, done, canceled, kind — the Painel's "Reuniões" are the Reunião tasks of the period
+    ["t1", "c1", "u-vitor", t("2026-10-05"), true, t("2026-10-05"), null, "reuniao"],
+    ["t2", "c2", "u-joao", t("2026-10-21"), true, t("2026-10-21"), null, "reuniao"],
+    ["t3", "c4", "u-vitor", t("2026-09-10"), true, t("2026-09-10"), null, "reuniao"],
+    ["t4", "c3", "u-joao", t("2026-10-01"), true, null, null, "tarefa"],
+    ["t5", "c1", "u-vitor", "TODAY", true, null, null, "tarefa"],
+    ["t6", "c3", "u-joao", t("2026-10-08"), true, t("2026-10-08"), t("2026-10-08"), "reuniao"], // canceled: not a meeting
   ];
-  for (const [id, contact, owner, due, allDay, done, canceled] of tasks) {
+  for (const [id, contact, owner, due, allDay, done, canceled, kind] of tasks) {
     await db.query(
       `INSERT INTO crm_tasks (id, contact_id, kind, title, due_at, all_day, owner_id, done_at, canceled_at, status)
-       VALUES ($1,$2,'tarefa',$1, CASE WHEN $3 = 'TODAY' THEN ((now() AT TIME ZONE 'America/Sao_Paulo')::date + time '12:00') AT TIME ZONE 'America/Sao_Paulo' ELSE $3::timestamptz END, $4, $5, $6, $7,
+       VALUES ($1,$2,$8,$1, CASE WHEN $3 = 'TODAY' THEN ((now() AT TIME ZONE 'America/Sao_Paulo')::date + time '12:00') AT TIME ZONE 'America/Sao_Paulo' ELSE $3::timestamptz END, $4, $5, $6, $7,
                CASE WHEN $7::timestamptz IS NOT NULL THEN 'cancelada' WHEN $6::timestamptz IS NOT NULL THEN 'concluida' ELSE 'pendente' END)`,
-      [id, contact, due, allDay, owner, done, canceled]
+      [id, contact, due, allDay, owner, done, canceled, kind]
     );
   }
   console.log("base fixture seeded");

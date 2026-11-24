@@ -97,7 +97,7 @@ ok(text.includes("Leads cadastrados;4;1") && text.includes("Negócios ganhos;1;1
 ok(text.includes("Faturamento emitido e valor recebido não são controlados pelo CRM"), "…and says what the CRM doesn't track");
 res = await vitor.get(`${BASE}/api/crm/dashboard/export/?${OCT}&what=records&metric=won`);
 text = await res.text();
-ok(res.status() === 200 && text.split("\n").length === 2 && text.includes("Oportunidade;d1;Ana Ribeiro · Ribeiro Odonto;Vitor;Ganho;\"5000,00\""), `the won list as CSV (${text.split("\n")[1]})`);
+ok(res.status() === 200 && text.split("\n").length === 2 && text.includes("Oportunidade;d1;Ana Ribeiro · Ribeiro Odonto;Vitor;Venda fechada;\"5000,00\""), `the won list as CSV (${text.split("\n")[1]})`);
 ok((await joao.get(`${BASE}/api/crm/dashboard/export/?${OCT}&what=summary`)).status() === 403, "a Comercial can't export");
 ok((await maria.get(`${BASE}/api/crm/dashboard/export/?${OCT}&what=summary`)).status() === 200, "Marketing can");
 ok((await sql(`SELECT count(*) FROM audit_log WHERE action = 'crm.report_export'`)) === "3", "every export is in the audit trail");

@@ -54,13 +54,33 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 20;
+const LATEST = 21;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v19: undo exactly what v20 (ligação com o Intelligence) added.
+// The closing reasons v21 added, and the v9 names of the ones it renamed.
+const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
+const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
+
+// Back to v20: undo exactly what v21 (funil configurável e tabulação) added.
+async function downgradeToV20(name) {
+  await query(
+    name,
+    `DROP INDEX crm_deals_close_idx;
+     ALTER TABLE crm_deals DROP COLUMN probability, DROP COLUMN won_result, DROP COLUMN close_group, DROP COLUMN closed_by, DROP COLUMN closed_by_name, DROP COLUMN return_on;
+     DELETE FROM crm_options WHERE kind = 'stage' OR (kind = 'lost_reason' AND id = ANY('{${V21_REASONS.join(",")}}'));
+     ${Object.entries(V9_REASON_LABELS)
+       .map(([id, label]) => `UPDATE crm_options SET label = '${label}' WHERE kind = 'lost_reason' AND id = '${id}';`)
+       .join("\n     ")}
+     ALTER TABLE crm_options DROP COLUMN meta;
+     DELETE FROM schema_migrations WHERE version = 21;`
+  );
+}
+
+// Back to v19: undo exactly what v21 and v20 (ligação com o Intelligence) added.
 async function downgradeToV19(name) {
+  await downgradeToV20(name);
   await query(
     name,
     `DROP TABLE crm_media_syncs; DROP INDEX crm_clients_client_access_idx; ALTER TABLE crm_clients DROP COLUMN client_access_id;
@@ -219,7 +239,7 @@ ok(added.every((r) => r.sort > 4), "…after the existing ones");
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind = 'task_kind' AND color IS NULL`))[0].n === 0, "v13: every task type has a color");
 const priorities = (await query(B, `SELECT id, label, locked, color FROM crm_options WHERE kind = 'priority' ORDER BY sort`)).map((r) => `${r.label}${r.locked ? "*" : ""}:${r.color}`).join(",");
 ok(priorities === "Alta:vermelho,Média*:amarelo,Baixa:cinza", `v13: priorities seeded, Média is the fallback (${priorities})`);
-ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority', 'stage') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
 // v14 (Fase 3, entrega 2): the ten automations, every one off — nothing changes until an Administrador turns one on.
 const autos = await query(B, `SELECT id, status FROM crm_automations ORDER BY id`);
 ok(autos.length === 10 && autos.every((r) => r.status === "desativada"), `v14: ten automations, all desativadas (${autos.map((r) => r.status).join(",")})`);
@@ -241,6 +261,35 @@ ok(
   (await query(B, `SELECT (SELECT count(*) FROM crm_clients WHERE client_access_id IS NOT NULL) + (SELECT count(*) FROM crm_media_syncs) AS n`))[0].n === "0",
   "v20: nothing linked to the Intelligence, nothing synced"
 );
+
+// v21 (evolução v1.0): from a v20 database with closed opportunities, a reason the team renamed and one they created.
+await downgradeToV20(B);
+ok((await query(B, `SELECT max(version) AS v FROM schema_migrations`))[0].v === 20, "back at v20");
+await query(
+  B,
+  `UPDATE crm_options SET label = 'Cliente sem verba' WHERE kind = 'lost_reason' AND id = 'sem_orcamento';
+   INSERT INTO crm_options (kind, id, label, sort) VALUES ('lost_reason', 'faliu', 'Empresa fechou', 9);
+   INSERT INTO crm_deals (id, contact_id, title, stage, won_reason, closed_at) VALUES ('d-won', 'keep-me', 'Ganho antigo', 'ganho', NULL, now());
+   INSERT INTO crm_deals (id, contact_id, title, stage, lost_reason, closed_at) VALUES ('d-silent', 'keep-me', 'Sumiu', 'perdido', 'sem_resposta', now());
+   INSERT INTO crm_deals (id, contact_id, title, stage, lost_reason, closed_at) VALUES ('d-custom', 'keep-me', 'Fechou as portas', 'perdido', 'faliu', now());`
+);
+ok(migrate(B, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v20 → v${LATEST}`);
+ok((await structure(B)) === target, "…structure identical to a fresh one");
+const stagesV21 = await query(B, `SELECT id, label, locked, color, meta FROM crm_options WHERE kind = 'stage' ORDER BY sort`);
+ok(
+  stagesV21.map((r) => `${r.id}=${r.label}:${r.meta.probability}`).join(",") ===
+    "novo=Novo lead:5,conversa=Primeiro contato:10,reuniao=Em qualificação:20,diagnostico=Diagnóstico realizado:35,elaboracao=Proposta em elaboração:45,proposta=Proposta enviada:55,negociacao=Em negociação:70,aprovacao=Aguardando aprovação:85,ganho=Venda fechada:100,perdido=Venda perdida:0",
+  `v21: the ten stages, old codes kept and renamed, with probabilities (${stagesV21.map((r) => r.id).join(",")})`
+);
+ok(stagesV21.filter((r) => r.locked).map((r) => r.id).join(",") === "novo,ganho,perdido" && stagesV21.every((r) => r.color), "v21: Novo lead, Venda fechada and Venda perdida are fixed; every stage has a color");
+const reasonsV21 = Object.fromEntries((await query(B, `SELECT id, label, meta->>'group' AS g FROM crm_options WHERE kind = 'lost_reason'`)).map((r) => [r.id, r]));
+ok(Object.keys(reasonsV21).length === 17, `v21: sixteen closing reasons plus the team's own (${Object.keys(reasonsV21).length})`);
+ok(reasonsV21.sem_orcamento.label === "Cliente sem verba" && reasonsV21.concorrente.label === "Fechamento com concorrente", "v21: a reason the team renamed keeps its name; the others take the spec's");
+ok(reasonsV21.sem_resposta.g === "sem_conversao" && reasonsV21.retornar.g === "futuro" && reasonsV21.preco.g === "negativo" && reasonsV21.faliu.g === "negativo", "v21: every reason has its tabulação group (the team's own: perda comercial)");
+const closedV21 = Object.fromEntries((await query(B, `SELECT id, stage, close_group, probability, closed_by, won_result FROM crm_deals WHERE id IN ('d-won', 'd-silent', 'd-custom', 'keep-deal')`)).map((r) => [r.id, r]));
+ok(closedV21["d-won"].close_group === "positivo" && closedV21["d-silent"].close_group === "sem_conversao" && closedV21["d-custom"].close_group === "negativo", "v21: closed opportunities get the group of their reason");
+ok(Object.values(closedV21).every((r) => r.probability === null && r.closed_by === null && r.won_result === null), "v21: nothing invented (probability from the stage, no closer, no result)");
+ok(closedV21["keep-deal"].stage === "proposta" && closedV21["keep-deal"].close_group === null, "v21: an open opportunity keeps its stage and has no tabulação");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

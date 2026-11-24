@@ -6,7 +6,6 @@
 import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
 import {
-  CRM_STAGES,
   formatPhone,
   isCrmConsentStatus,
   isCrmStage,
@@ -470,7 +469,8 @@ export async function listConversations(
   const db = await getDb();
   const [list, unread] = await Promise.all([
     db.query<CardRow & { deal_stages: string[]; waiting_since: Date | null }>(
-      `SELECT x.*, ARRAY(SELECT DISTINCT d.stage FROM crm_deals d WHERE d.contact_id = x.id) AS deal_stages, ${WAITING_SINCE} AS waiting_since
+      `SELECT x.*, ARRAY(SELECT d.stage FROM crm_deals d LEFT JOIN crm_options o ON o.kind = 'stage' AND o.id = d.stage
+                          WHERE d.contact_id = x.id GROUP BY d.stage, o.sort ORDER BY o.sort NULLS LAST, d.stage) AS deal_stages, ${WAITING_SINCE} AS waiting_since
        FROM (${CARD_SELECT} ${sql} AND ${extra.join(" AND ")}
              ORDER BY c.last_message_at DESC, c.id DESC LIMIT $${values.length}) x
        ORDER BY x.last_message_at DESC, x.id DESC`,
@@ -478,10 +478,10 @@ export async function listConversations(
     ),
     db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts c ${unreadScope.sql} AND c.unread_count > 0`, unreadScope.values),
   ]);
-  const order = new Map<string, number>(CRM_STAGES.map((st, i) => [st.id, i]));
   const rows = list.rows.slice(0, limit).map((r) => ({
     ...mapCard(r),
-    dealStages: r.deal_stages.filter(isCrmStage).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+    // In the funnel's order (Personalização).
+    dealStages: r.deal_stages.filter(isCrmStage),
     waitingSince: iso(r.waiting_since),
   }));
   const last = rows[rows.length - 1];

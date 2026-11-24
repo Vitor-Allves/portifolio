@@ -14,10 +14,10 @@ import {
   type CrmTeamMember,
 } from "@/lib/crm-types";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
-import { CRM_ALERT, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, STAGE_DOT } from "./crm-styles";
+import { CRM_ALERT, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN } from "./crm-styles";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
-import { SegmentSelect, TagChips, useCatalog } from "./crm-catalog-context";
+import { SegmentSelect, StageDot, TagChips, useCatalog } from "./crm-catalog-context";
 import CrmTagsEditor from "./CrmTagsEditor";
 import { CompanyStatusChip, TemperatureChip } from "./crm-fields";
 import { TASK_STATE_TONE, shortDate, taskDueLabel, taskState } from "./crm-format";
@@ -382,7 +382,7 @@ export default function CrmCompanyPanel({
                             <span className="block text-[11.5px] text-crm-faint truncate">{c.phone ? formatPhone(c.phone) : c.email}</span>
                           </span>
                           <span className="inline-flex items-center gap-1.5 text-[11.5px] text-crm-dim whitespace-nowrap">
-                            <span className={`h-2 w-2 rounded-full ${STAGE_DOT[c.stage]}`} aria-hidden="true" />
+                            <StageDot stage={c.stage} className="h-2 w-2" />
                             {stageLabel(c.stage)}
                           </span>
                         </button>
@@ -443,7 +443,7 @@ export default function CrmCompanyPanel({
                           onClick={() => onOpenContact(d.contactId)}
                           className="w-full text-left flex items-center gap-3 rounded-xl border border-crm-line bg-crm-card px-3 py-2 hover:border-crm-line-strong"
                         >
-                          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${STAGE_DOT[d.stage]}`} aria-hidden="true" />
+                          <StageDot stage={d.stage} className="h-2.5 w-2.5 shrink-0" />
                           <span className="min-w-0 flex-1">
                             <span className="block text-[13px] font-semibold truncate">{d.title}</span>
                             <span className="block text-[11.5px] text-crm-dim truncate">

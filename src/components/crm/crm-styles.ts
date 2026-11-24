@@ -2,7 +2,6 @@
 // each fragment works in both the light and the dark theme (see the CRM
 // block at the end of src/app/globals.css).
 
-import type { CrmStage } from "@/lib/crm-types";
 
 export const CRM_INPUT =
   "w-full rounded-lg border border-crm-line bg-crm-card px-3 py-2 text-[13px] text-crm-text placeholder:text-crm-faint focus:border-crm-accent focus:outline-none transition-colors duration-200";
@@ -29,16 +28,6 @@ export function crmSegment(active: boolean): string {
     active ? "bg-crm-ink text-crm-on-ink" : "text-crm-dim hover:text-crm-text"
   }`;
 }
-
-/** One color per funnel stage, used for the column dot and the stage pill. */
-export const STAGE_DOT: Record<CrmStage, string> = {
-  novo: "bg-crm-faint",
-  conversa: "bg-crm-accent",
-  reuniao: "bg-crm-violet",
-  proposta: "bg-crm-amber",
-  ganho: "bg-crm-green",
-  perdido: "bg-crm-red",
-};
 
 /** Compact pill-shaped filter select/input for toolbars. */
 export const CRM_FILTER = `${CRM_INPUT} !w-auto !rounded-full !py-1.5`;

@@ -2,19 +2,41 @@
 // routes) and its client components — nothing here touches process.env or
 // the database, so it's safe to import from either side.
 
-export const CRM_STAGES = [
-  { id: "novo", label: "Novo" },
-  { id: "conversa", label: "Em conversa" },
-  { id: "reuniao", label: "Reunião agendada" },
-  { id: "proposta", label: "Proposta enviada" },
-  { id: "ganho", label: "Ganho" },
-  { id: "perdido", label: "Perdido" },
-] as const;
+import { DEFAULT_OPTIONS, stageMeta, type CrmCatalog } from "./crm-catalog";
 
-export type CrmStage = (typeof CRM_STAGES)[number]["id"];
+/**
+ * The funnel's stages as shipped (evolução v1.0, v21). The real list — names,
+ * order, probability, stages added or archived by the Administrador — lives
+ * in Personalização (crm_options kind "stage"); screens read it from the
+ * catalog and the server validates against it.
+ */
+export const CRM_STAGES: readonly { id: string; label: string }[] = DEFAULT_OPTIONS.stage.map((s) => ({ id: s.id, label: s.label }));
 
+/** A stage code (any stage on the list, including ones the Administrador created). */
+export type CrmStage = string;
+
+/** Shape of a stage code; whether it is on the list is checked against the catalog. */
 export function isCrmStage(value: unknown): value is CrmStage {
-  return CRM_STAGES.some((s) => s.id === value);
+  return typeof value === "string" && /^[a-z0-9_]{1,40}$/.test(value);
+}
+
+/** Labels the screens learned from the catalog (client only — the server passes the catalog). */
+const stageNames = new Map<string, string>(CRM_STAGES.map((s) => [s.id, s.label]));
+export function registerStageLabels(list: { id: string; label: string }[]): void {
+  for (const s of list) stageNames.set(s.id, s.label);
+}
+
+/** The funnel's stages in order (active ones; `keep` adds the records' archived stages), with probability and kind. */
+export function stagesOf(
+  catalog: CrmCatalog,
+  keep?: string | readonly string[] | null
+): { id: string; label: string; probability: number; outcome: "open" | "won" | "lost"; archived: boolean }[] {
+  const kept = new Set(typeof keep === "string" ? [keep] : (keep ?? []));
+  const list = catalog.options.filter((o) => o.kind === "stage").sort((a, b) => a.sort - b.sort);
+  const src = list.length ? list : CRM_STAGES.map((s, i) => ({ ...s, kind: "stage" as const, sort: i, archived: false, meta: DEFAULT_OPTIONS.stage[i].meta ?? {} }));
+  return src
+    .filter((o) => !o.archived || kept.has(o.id))
+    .map((o) => ({ id: o.id, label: o.label, archived: o.archived, ...stageMeta(o) }));
 }
 
 // Origens, tipos de tarefa e motivos de perda moved to the database in v9
@@ -25,8 +47,9 @@ export type CrmSource = string;
 export type CrmTaskKind = string;
 export type CrmLostReason = string;
 
-export function stageLabel(id: string): string {
-  return CRM_STAGES.find((s) => s.id === id)?.label ?? id;
+export function stageLabel(id: string, catalog?: CrmCatalog | null): string {
+  const fromCatalog = catalog?.options.find((o) => o.kind === "stage" && o.id === id)?.label;
+  return fromCatalog ?? stageNames.get(id) ?? id;
 }
 
 export function isClosedStage(stage: string): boolean {
@@ -36,11 +59,15 @@ export function isClosedStage(stage: string): boolean {
 /**
  * Exigência que cresce com a etapa: the first registration stays quick, and
  * the funnel asks for more as the negotiation advances. The server enforces
- * it on every move made by a person (automatic moves only go to "Em
- * conversa"); the screens use the same list to ask before moving.
+ * it on every move made by a person (automatic moves only go to "Primeiro
+ * contato"); the screens use the same list to ask before moving. Stages the
+ * Administrador creates ask for nothing extra.
  */
 export const STAGE_REQUIREMENTS: Partial<Record<CrmStage, readonly CrmStageRequirement[]>> = {
+  elaboracao: ["service"],
   proposta: ["service", "value"],
+  negociacao: ["service", "value"],
+  aprovacao: ["service", "value"],
   ganho: ["service", "negotiated", "wonReason"],
 };
 export type CrmStageRequirement = "service" | "value" | "negotiated" | "wonReason";
@@ -346,6 +373,15 @@ export type CrmDeal = {
   createdAt: string;
   /** The active client this won opportunity became a contract of (Fase 5). */
   clientId: string | null;
+  /** Probabilidade de fechamento (%): the opportunity's own, else its stage's (evolução). */
+  probability: number;
+  /** true when the probability was set on the opportunity itself. */
+  probabilityOwn: boolean;
+  /** Tabulação of a closed opportunity: group, result (won), who closed it, return date (futuro). */
+  closeGroup: "positivo" | "negativo" | "sem_conversao" | "futuro" | null;
+  wonResult: "venda_realizada" | "proposta_aprovada" | null;
+  closedByName: string | null;
+  returnOn: string | null;
 };
 
 export type CrmTaskSummary = { id: string; kind: CrmTaskKind; title: string; dueAt: string | null; allDay: boolean };

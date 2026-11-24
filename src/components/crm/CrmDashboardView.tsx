@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CRM_STAGES,
   formatBRL,
   stageLabel,
   type CrmDashboard,
@@ -359,7 +358,7 @@ export default function CrmDashboardView({
   onOpenClient?: (clientId: string) => void;
   onOpenTask?: (taskId: string) => void;
 }) {
-  const { label, options } = useCatalog();
+  const { label, options, stages } = useCatalog();
   const [source, setSource] = useState("all");
   const [segment, setSegment] = useState("all");
   const [stage, setStage] = useState("all");
@@ -447,7 +446,7 @@ export default function CrmDashboardView({
         </select>
         <select value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Etapa" className={CRM_FILTER} title="A etapa vale para o funil e as oportunidades abertas e paradas">
           <option value="all">Todas as etapas</option>
-          {CRM_STAGES.map((st) => (
+          {stages().map((st) => (
             <option key={st.id} value={st.id}>
               {st.label}
             </option>
@@ -498,7 +497,7 @@ export default function CrmDashboardView({
             <section aria-label="Indicadores do período" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
               <Tile label="Novos leads" value={String(c.newLeads)} now={c.newLeads} before={p.newLeads} note={vs} onOpen={() => setRecords("leads")} />
               <Tile label="Novas oportunidades" value={String(c.newDeals)} now={c.newDeals} before={p.newDeals} onOpen={() => setRecords("deals")} />
-              <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} onOpen={() => setRecords("meetings")} />
+              <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} note="tarefas do tipo Reunião" onOpen={() => setRecords("meetings")} />
               <Tile label="Propostas enviadas" value={String(c.proposals)} now={c.proposals} before={p.proposals} onOpen={() => setRecords("proposals")} />
               <Tile
                 label="Ganhos"

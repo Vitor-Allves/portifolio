@@ -14,7 +14,8 @@ import {
   type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, STAGE_DOT, taskKindIcon } from "./crm-styles";
+import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, taskKindIcon } from "./crm-styles";
+import { closeGroupLabel } from "@/lib/crm-catalog";
 import { TASK_STATE_TONE, shortDate, spDate, taskDueLabel, taskState, timeOfDay } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { useCatalog } from "./crm-catalog-context";
@@ -30,10 +31,13 @@ type DealForm = {
   service: string;
   source: string;
   temperature: string;
+  /** Empty = the stage's probability. */
+  probability: string;
 };
 
 function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
-  const { options } = useCatalog();
+  const { options, stages } = useCatalog();
+  const stageProbability = stages(deal.stage).find((s) => s.id === deal.stage)?.probability ?? deal.probability;
   const [form, setForm] = useState<DealForm | null>(null);
   const f: DealForm = form ?? {
     title: deal.title,
@@ -43,6 +47,7 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
     service: deal.service ?? "",
     source: deal.source,
     temperature: deal.temperature ?? "",
+    probability: deal.probabilityOwn ? String(deal.probability) : "",
   };
   const required = STAGE_REQUIREMENTS[deal.stage] ?? [];
   const star = (r: CrmStageRequirement) => (required.includes(r) ? " *" : "");
@@ -68,6 +73,19 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
           </span>
           <input type="date" value={f.close} onChange={(e) => setForm({ ...f, close: e.target.value })} aria-label="Previsão de fechamento" className={`${CRM_INPUT} mt-1`} />
         </label>
+        {!isClosedStage(deal.stage) && (
+          <label className="block col-span-2 sm:col-span-1">
+            <span className={CRM_LABEL}>Probabilidade (%)</span>
+            <input
+              value={f.probability}
+              onChange={(e) => setForm({ ...f, probability: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+              inputMode="numeric"
+              aria-label="Probabilidade de fechamento"
+              placeholder={`${stageProbability} (da etapa)`}
+              className={`${CRM_INPUT} mt-1`}
+            />
+          </label>
+        )}
         <label className="block">
           <span className={CRM_LABEL}>Origem</span>
           <select value={f.source} onChange={(e) => setForm({ ...f, source: e.target.value })} aria-label="Origem da oportunidade" className={`${CRM_INPUT} mt-1`}>
@@ -104,6 +122,7 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
               service: form.service || null,
               source: form.source,
               temperature: form.temperature || null,
+              ...(isClosedStage(deal.stage) ? {} : { probability: form.probability === "" ? null : form.probability }),
             }))
           )
             setForm(null);
@@ -364,7 +383,7 @@ export default function CrmDealsTasksTab({
   /** Clientes ativos: a won opportunity opens its client, or becomes one. */
   clients?: { canCreate: boolean; onOpen: (clientId: string) => void };
 }) {
-  const { label } = useCatalog();
+  const { label, stageDot } = useCatalog();
   const [error, setError] = useState<string | null>(null);
   const [newDeal, setNewDeal] = useState<{ title: string; value: string } | null>(startNewDeal && !readOnly ? { title: "", value: "" } : null);
   const selected = detail.deals.find((d) => d.id === selectedDealId) ?? null;
@@ -446,13 +465,14 @@ export default function CrmDealsTasksTab({
                     d.id === selectedDealId ? "border-crm-accent bg-crm-accent/[0.05]" : "border-crm-line bg-crm-card hover:border-crm-line-strong"
                   }`}
                 >
-                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${STAGE_DOT[d.stage]}`} aria-hidden="true" />
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${stageDot(d.stage)}`} aria-hidden="true" />
                   <span className="min-w-0 flex-1">
                     <span className="block text-[13px] font-semibold truncate">{d.title}</span>
                     <span className="block text-[11.5px] text-crm-dim truncate">
                       {stageLabel(d.stage)}
                       {d.service ? ` · ${label("service", d.service)}` : ""}
-                      {d.stage === "perdido" && d.lostReason ? ` · ${label("lost_reason", d.lostReason)}` : ""}
+                      {!isClosedStage(d.stage) ? ` · ${d.probability}%` : ""}
+                      {d.stage === "perdido" && d.lostReason ? ` · ${closeGroupLabel(d.closeGroup)}: ${label("lost_reason", d.lostReason)}` : ""}
                       {d.stage === "ganho" && d.wonReason ? ` · ${label("won_reason", d.wonReason)}` : ""}
                       {isClosedStage(d.stage) && d.closedAt ? ` · ${shortDate(d.closedAt)}` : ""}
                       {!isClosedStage(d.stage) && d.expectedCloseAt ? ` · previsão ${shortDate(d.expectedCloseAt)}` : ""}

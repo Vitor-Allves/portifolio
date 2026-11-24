@@ -14,7 +14,7 @@ await go(a, "Personalização");
 await a.getByRole("heading", { level: 1, name: "Personalização" }).waitFor();
 const origens = a.getByRole("list", { name: "Origens" });
 await origens.getByText("Tráfego pago", { exact: true }).waitFor();
-await a.getByLabel("Novo origem").fill("Google Meu Negócio");
+await a.getByLabel("Nova origem").fill("Google Meu Negócio");
 await a.getByRole("button", { name: "Adicionar" }).click();
 await origens.getByText("Google Meu Negócio", { exact: true }).waitFor();
 ok(true, "origem added");

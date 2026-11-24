@@ -80,7 +80,7 @@ ok((await json(await maria.get(`${BASE}/api/crm/clients/followup/?month=${month}
 
 // ---- 7. won opportunity → client in Onboarding + task ----
 ok((await set("cliente_onboarding", { status: "ativa" })).status === 200, "automation 7 turned on");
-const won = async (id) => json(await vitor.patch(`${BASE}/api/crm/deals/${id}/`, { data: { stage: "ganho", service: "social", negotiatedValue: "1.500", wonReason: "resultado" } }));
+const won = async (id) => json(await vitor.patch(`${BASE}/api/crm/deals/${id}/`, { data: { stage: "ganho", service: "social", negotiatedValue: "1.500", wonReason: "resultado", wonResult: "venda_realizada", wonNote: "Fechou o social" } }));
 ok((await won("d6")).status === 200, "Ana's second opportunity (Ribeiro Odonto, already a client) is won");
 ok(/contrato novo no cliente Ribeiro Odonto/.test(await lastRun("cliente_onboarding")), "…it becomes a new contract of the client, no onboarding");
 ok((await sql(`SELECT count(*) FROM crm_contracts WHERE client_id = $1 AND deal_id = 'd6'`, [rib])) === "1", "…the contract is there");
@@ -100,7 +100,7 @@ await json(await vitor.patch(`${BASE}/api/crm/deals/${d9}/`, { data: { stage: "p
 await won(d9);
 ok((await sql(`SELECT count(*) FROM crm_clients WHERE company_id = 'co-lima'`)) === "1" && (await sql(`SELECT count(*) FROM crm_tasks WHERE company_id = 'co-lima'`)) === "1", "won again: nothing twice");
 await sql(`UPDATE crm_deals SET service = 'trafego', value_cents = 100000 WHERE id = 'd5'`);
-ok((await json(await vitor.patch(`${BASE}/api/crm/deals/d5/`, { data: { stage: "ganho", negotiatedValue: "900", wonReason: "preco" } }))).status === 200, "Eva's opportunity (no company) is won");
+ok((await json(await vitor.patch(`${BASE}/api/crm/deals/d5/`, { data: { stage: "ganho", negotiatedValue: "900", wonReason: "preco", wonResult: "proposta_aprovada", wonNote: "Aprovou a proposta" } }))).status === 200, "Eva's opportunity (no company) is won");
 ok(/^ignorada: .*Eva Prado não tem empresa/.test(await lastRun("cliente_onboarding")), "…nothing is created without a company (run says why)");
 
 // ---- 8. contract near its end ----

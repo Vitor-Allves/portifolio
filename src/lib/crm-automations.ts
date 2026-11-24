@@ -16,7 +16,7 @@ import type { PoolClient } from "pg";
 import { getDb, onCommit, withTransaction } from "./db";
 import { CrmInputError, CrmNotFoundError, addEvent, cleanText, iso, type CrmActor, type CrmWriter } from "./crm-core";
 import { addTaskEvent, createTaskTx, remindAt } from "./crm-tasks";
-import { requireOptionId } from "./crm-options";
+import { loadStageLabels, requireOptionId } from "./crm-options";
 import { crmCapabilities, effectiveCrmAccess } from "./crm-permissions";
 import { auditClientCreated, createClientTx, currentMonthBr, todayBr, type ClientActor } from "./crm-clients";
 import { CAMPAIGN_REPLY_WINDOW } from "./crm-campaign-rules";
@@ -557,6 +557,7 @@ async function checkStalledDeals(cfg: AutomationConfig): Promise<AutomationRunSu
      LIMIT ${SCHEDULED_BATCH + 1}`,
     [days]
   );
+  await loadStageLabels(db);
   const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: rows.length > SCHEDULED_BATCH };
   for (const d of rows.slice(0, SCHEDULED_BATCH)) {
     // One alert per stall: the key carries when the opportunity entered its stage (whole seconds, same as the query above).

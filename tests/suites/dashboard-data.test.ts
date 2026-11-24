@@ -16,9 +16,10 @@ import { listTeam } from "../../src/lib/crm";
   assert.deepEqual(d.tasksNow, { overdue: 1, today: 1 });
   console.log("ok — right now: 3 open (R$ 4.000), 1 overdue task, 1 today");
   assert.deepEqual(d.funnel.map((f: { stage: string; count: number; valueCents: number }) => [f.stage, f.count, f.valueCents]), [
-    ["novo", 1, 0], ["conversa", 0, 0], ["reuniao", 1, 100000], ["proposta", 1, 300000], ["ganho", 1, 500000], ["perdido", 1, 200000],
+    ["novo", 1, 0], ["conversa", 0, 0], ["reuniao", 1, 100000], ["diagnostico", 0, 0], ["elaboracao", 0, 0], ["proposta", 1, 300000],
+    ["negociacao", 0, 0], ["aprovacao", 0, 0], ["ganho", 1, 500000], ["perdido", 1, 200000],
   ]);
-  console.log("ok — funnel");
+  console.log("ok — funnel (the ten stages of Personalização, in order)");
   assert.equal(d.bucket, "week");
   assert.deepEqual(d.series.map((s: { start: string; newLeads: number; won: number }) => [s.start, s.newLeads, s.won]), [
     ["2026-09-28", 1, 0], ["2026-10-05", 1, 0], ["2026-10-12", 0, 1], ["2026-10-19", 2, 0], ["2026-10-26", 0, 0],

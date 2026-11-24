@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import { companyKey as crmCompanyKey } from "./crm-types";
-import { DEFAULT_OPTIONS, DEFAULT_TAGS } from "./crm-catalog";
+import { DEFAULT_OPTIONS, DEFAULT_TAGS, LOST_REASON_OLD_LABELS } from "./crm-catalog";
 import { AUTOMATION_DEFS } from "./crm-automation-defs";
 
 let pool: Pool | null = null;
@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 21;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1113,6 +1113,52 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_media_syncs_client_idx ON crm_media_syncs (client_id, month, synced_at DESC)`);
 
     await done(20);
+  }
+
+  if (current < 21) {
+    // v21 — Evolução v1.0 (funil e tabulação): the funnel's stages become a
+    // list in Personalização (10 stages; the six old codes are kept and only
+    // renamed, so no opportunity or history row is rewritten), each option
+    // may carry attributes (meta: a stage's probability, a reason's group),
+    // and closing an opportunity records its tabulação. New column values
+    // only describe what was already there.
+    await db.query(`ALTER TABLE crm_options ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    for (const [i, o] of DEFAULT_OPTIONS.stage.entries()) {
+      await db.query(
+        `INSERT INTO crm_options (kind, id, label, sort, locked, color, meta) VALUES ('stage', $1, $2, $3, $4, $5, $6)
+         ON CONFLICT (kind, id) DO UPDATE SET sort = EXCLUDED.sort, locked = EXCLUDED.locked, meta = EXCLUDED.meta, color = COALESCE(crm_options.color, EXCLUDED.color)`,
+        [o.id, o.label, i, o.locked ?? false, o.color ?? null, JSON.stringify(o.meta ?? {})]
+      );
+    }
+    for (const o of DEFAULT_OPTIONS.lost_reason) {
+      await db.query(
+        `INSERT INTO crm_options (kind, id, label, locked, meta, sort)
+         VALUES ('lost_reason', $1, $2, $3, $4, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = 'lost_reason'))
+         ON CONFLICT (kind, id) DO UPDATE SET meta = EXCLUDED.meta,
+           label = CASE WHEN crm_options.label = $5 THEN EXCLUDED.label ELSE crm_options.label END`,
+        [o.id, o.label, o.locked ?? false, JSON.stringify(o.meta ?? {}), LOST_REASON_OLD_LABELS[o.id] ?? o.label]
+      );
+    }
+    // Reasons the team created themselves count as a commercial loss.
+    await db.query(`UPDATE crm_options SET meta = meta || '{"group": "negativo"}'::jsonb WHERE kind = 'lost_reason' AND NOT (meta ? 'group')`);
+    await db.query(`
+      ALTER TABLE crm_deals
+        ADD COLUMN IF NOT EXISTS probability SMALLINT CHECK (probability BETWEEN 0 AND 100),
+        ADD COLUMN IF NOT EXISTS won_result TEXT,
+        ADD COLUMN IF NOT EXISTS close_group TEXT,
+        ADD COLUMN IF NOT EXISTS closed_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS closed_by_name TEXT,
+        ADD COLUMN IF NOT EXISTS return_on DATE
+    `);
+    // Closed opportunities get the group their reason now belongs to.
+    await db.query(`UPDATE crm_deals SET close_group = 'positivo' WHERE stage = 'ganho' AND close_group IS NULL`);
+    await db.query(
+      `UPDATE crm_deals d SET close_group = COALESCE((SELECT o.meta->>'group' FROM crm_options o WHERE o.kind = 'lost_reason' AND o.id = d.lost_reason), 'negativo')
+       WHERE d.stage = 'perdido' AND d.close_group IS NULL`
+    );
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_deals_close_idx ON crm_deals (close_group, closed_at)`);
+
+    await done(21);
   }
 }
 

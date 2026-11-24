@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CRM_CONSENT,
-  CRM_STAGES,
   formatBRL,
   formatPhone,
   isClosedStage,
@@ -15,13 +14,14 @@ import {
   type CrmTeamMember,
   type CrmTemplate,
 } from "@/lib/crm-types";
-import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
+import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, crmSegment } from "./crm-styles";
 import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, todaySp, windowLabel } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
+import { WON_RESULTS, closeGroupLabel } from "@/lib/crm-catalog";
 import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
 import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
 import CrmTagsEditor from "./CrmTagsEditor";
@@ -315,7 +315,7 @@ export default function CrmContactPanel({
   tasksVersion = 0,
   onOpenClient,
 }: CrmContactPanelProps) {
-  const { label, options, tag: tagById, tagGroups } = useCatalog();
+  const { label, options, tag: tagById, tagGroups, stages, stageDot } = useCatalog();
   const [newDealFromChat, setNewDealFromChat] = useState(false);
   const [busyAttendance, setBusyAttendance] = useState(false);
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
@@ -325,7 +325,7 @@ export default function CrmContactPanel({
   const [dealPick, setDealPick] = useState<string | null>(initialDealId);
   const [lostPending, setLostPending] = useState<string | null>(null);
   const [analysisOpen, setAnalysisOpen] = useState(false);
-  const [stagePending, setStagePending] = useState<"proposta" | "ganho" | null>(null);
+  const [stagePending, setStagePending] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -593,7 +593,7 @@ export default function CrmContactPanel({
               {deal ? (
                 <div className="rounded-xl border border-crm-line bg-crm-sunken p-2.5 space-y-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${STAGE_DOT[deal.stage]}`} aria-hidden="true" />
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${stageDot(deal.stage)}`} aria-hidden="true" />
                     {detail.deals.length > 1 ? (
                       <select
                         value={deal.id}
@@ -630,14 +630,14 @@ export default function CrmContactPanel({
                         onChange={async (e) => {
                           const stage = e.target.value;
                           if (stage === "perdido") return setLostPending(deal.id);
-                          if ((stage === "proposta" || stage === "ganho") && needsStageDialog(deal, stage)) return setStagePending(stage);
+                          if (needsStageDialog(deal, stage)) return setStagePending(stage);
                           await patchDeal({ stage });
                         }}
                         aria-label="Etapa da oportunidade"
                         disabled={!caps.editPipeline}
                         className={`${CRM_INPUT} mt-1 !py-1.5 disabled:opacity-70`}
                       >
-                        {CRM_STAGES.map((s) => (
+                        {stages(deal.stage).map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.label}
                           </option>
@@ -662,16 +662,20 @@ export default function CrmContactPanel({
                       </select>
                     </label>
                   </div>
-                  {deal.stage === "ganho" && deal.wonReason && (
+                  {deal.stage === "ganho" && (
                     <p className="text-[11.5px] text-crm-green">
-                      Ganha: {label("won_reason", deal.wonReason)}
+                      {WON_RESULTS.find((r) => r.id === deal.wonResult)?.label ?? "Venda realizada"}
+                      {deal.wonReason ? `: ${label("won_reason", deal.wonReason)}` : ""}
                       {deal.wonNote ? ` · ${deal.wonNote}` : ""}
+                      {deal.closedByName ? <span className="text-crm-faint"> · encerrada por {deal.closedByName}</span> : null}
                     </p>
                   )}
                   {deal.stage === "perdido" && deal.lostReason && (
-                    <p className="text-[11.5px] text-crm-red">
-                      Perdida: {label("lost_reason", deal.lostReason)}
+                    <p className={`text-[11.5px] ${deal.closeGroup === "futuro" ? "text-crm-amber" : "text-crm-red"}`}>
+                      {closeGroupLabel(deal.closeGroup)}: {label("lost_reason", deal.lostReason)}
+                      {deal.closeGroup === "futuro" && deal.returnOn ? ` · retomar em ${brDay(deal.returnOn)}` : ""}
                       {deal.lostNote ? ` · ${deal.lostNote}` : ""}
+                      {deal.closedByName ? <span className="text-crm-faint"> · encerrada por {deal.closedByName}</span> : null}
                     </p>
                   )}
                 </div>
@@ -701,10 +705,11 @@ export default function CrmContactPanel({
               {lostPending && deal && (
                 <CrmLostDialog
                   dealTitle={deal.title}
+                  reopening={deal.stage === "ganho"}
                   onCancel={() => setLostPending(null)}
-                  onConfirm={async (lostReason, lostNote) => {
+                  onConfirm={async (fields) => {
                     setLostPending(null);
-                    await patchDeal({ stage: "perdido", lostReason, lostNote });
+                    await patchDeal({ stage: "perdido", ...fields });
                   }}
                 />
               )}

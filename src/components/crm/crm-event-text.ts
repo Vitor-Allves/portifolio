@@ -2,7 +2,7 @@
 // by the contact panel, the Auditoria screen and each person's activity.
 
 import { formatBRL, stageLabel, type CrmEvent } from "@/lib/crm-types";
-import { TAG_VIA, type OptionKind } from "@/lib/crm-catalog";
+import { TAG_VIA, WON_RESULTS, closeGroupLabel, isLostCloseGroup, isWonResult, type OptionKind } from "@/lib/crm-catalog";
 import { shortDate, timeOfDay } from "./crm-format";
 
 export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kind: OptionKind, id: string) => string): string {
@@ -14,7 +14,11 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
     case "stage":
       return `Etapa${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${
         p.auto ? " (automático, o lead respondeu)" : ""
+      }${p.reopenReason ? ` · reaberta: ${String(p.reopenReason)}` : ""}${
+        p.to === "perdido" && isLostCloseGroup(p.group) ? ` · ${closeGroupLabel(p.group)}` : ""
       }${p.lostReason ? ` · motivo: ${label("lost_reason", String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}${
+        p.returnOn ? ` · retomar em ${String(p.returnOn).split("-").reverse().join("/")}` : ""
+      }${p.to === "ganho" && isWonResult(p.wonResult) ? ` · ${WON_RESULTS.find((r) => r.id === p.wonResult)!.label}` : ""}${
         p.wonReason ? ` · motivo: ${label("won_reason", String(p.wonReason))}${p.wonNote ? ` (${String(p.wonNote)})` : ""}` : ""
       }${p.to === "ganho" && typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
     case "owner":

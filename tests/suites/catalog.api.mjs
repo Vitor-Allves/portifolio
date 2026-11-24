@@ -64,10 +64,17 @@ ok(usage.options[`segment:${segId}`] === 1 && usage.options["source:google_meu_n
 // ---- lost reasons and task kinds ----
 await json(await admin.post(opts, { data: { kind: "lost_reason", label: "Fechou com agência interna" } }));
 const dealId = await sql(`SELECT id FROM crm_deals WHERE stage = 'novo' AND owner_id IS NULL LIMIT 1`);
-ok((await json(await gestor.patch(`${BASE}/api/crm/deals/${dealId}/`, { data: { stage: "perdido", lostReason: "fechou_com_agencia_interna" } }))).status === 200, "new loss reason usable");
-ok((await json(await gestor.patch(`${BASE}/api/crm/deals/${dealId}/`, { data: { stage: "novo" } }))).status === 200, "reopened");
+ok(
+  (await json(await gestor.patch(`${BASE}/api/crm/deals/${dealId}/`, { data: { stage: "perdido", lostReason: "fechou_com_agencia_interna", lostNote: "Montaram equipe própria" } }))).status === 200,
+  "new loss reason usable"
+);
+ok((await sql(`SELECT close_group FROM crm_deals WHERE id = '${dealId}'`)) === "negativo", "…a new reason counts as perda comercial by default");
+ok((await json(await gestor.patch(`${BASE}/api/crm/deals/${dealId}/`, { data: { stage: "novo", reopenReason: "Voltou a conversar" } }))).status === 200, "reopened");
 await json(await admin.patch(`${opts}lost_reason/fechou_com_agencia_interna/`, { data: { archived: true } }));
-ok((await json(await gestor.patch(`${BASE}/api/crm/deals/${dealId}/`, { data: { stage: "perdido", lostReason: "fechou_com_agencia_interna" } }))).status === 400, "archived loss reason refused");
+ok(
+  (await json(await gestor.patch(`${BASE}/api/crm/deals/${dealId}/`, { data: { stage: "perdido", lostReason: "fechou_com_agencia_interna", lostNote: "De novo" } }))).status === 400,
+  "archived loss reason refused"
+);
 await json(await admin.post(opts, { data: { kind: "task_kind", label: "Visita" } }));
 const task = await json(await gestor.post(`${BASE}/api/crm/tasks/`, { data: { contactId: ncId, kind: "visita" } }));
 ok(task.status < 300 && (await sql(`SELECT title FROM crm_tasks WHERE kind = 'visita'`)) === "Visita", "new task kind usable, default title = its name");
