@@ -100,7 +100,8 @@ const SETS = {
 function stageReached(b: B, f: DashboardFilters, from: Date, to: Date) {
   return `
     SELECT DISTINCT COALESCE(e.payload->>'dealId', 'c:' || e.contact_id) AS k, e.contact_id, e.payload->>'dealId' AS deal_id,
-           CASE WHEN e.kind = 'stage' THEN e.payload->>'to' ELSE e.payload->>'stage' END AS stage
+           CASE WHEN e.kind = 'stage' THEN e.payload->>'to' ELSE e.payload->>'stage' END AS stage,
+           COALESCE(d.owner_id, c.owner_id) AS owner
     FROM crm_events e
     JOIN crm_contacts c ON c.id = e.contact_id
     LEFT JOIN crm_companies co ON co.id = c.company_id
@@ -370,6 +371,74 @@ export async function getDashboard(
     sources,
     team: teamRows,
   };
+}
+
+/** One person's numbers in a period, as the Painel counts them. */
+export type OwnerMetrics = {
+  leads: number;
+  meetings: number;
+  proposals: number;
+  wonCount: number;
+  wonValueCents: number;
+  lostCount: number;
+  tasksDone: number;
+  /** Right now. */
+  tasksOverdue: number;
+};
+const NO_METRICS: OwnerMetrics = { leads: 0, meetings: 0, proposals: 0, wonCount: 0, wonValueCents: 0, lostCount: 0, tasksDone: 0, tasksOverdue: 0 };
+
+/**
+ * The Painel's numbers of a period split by responsável (lead / opportunity /
+ * task owner; the null key = no owner), from the same definitions — so the
+ * lines always add up to the Painel's totals. `only` = just that person.
+ */
+export async function ownerMetrics(from: string, to: string, only: string | null): Promise<Map<string | null, OwnerMetrics>> {
+  const db = await getDb();
+  const s = startOf(from);
+  const e = startOf(shiftDay(to, 1));
+  const f: DashboardFilters = { ownerId: only };
+  const run = (make: (b: B) => string) => {
+    const b = builder();
+    const sql = make(b);
+    return db.query<{ owner: string | null; n?: string; value?: string; meetings?: string; proposals?: string }>(sql, b.values);
+  };
+  const [leads, stages, won, lost, done, overdue] = await Promise.all([
+    run((b) => `SELECT c.owner_id AS owner, count(*) AS n ${SETS.leads(b, f, s, e)} GROUP BY 1`),
+    run(
+      (b) => `SELECT x.owner, count(DISTINCT x.k) FILTER (WHERE x.stage = 'reuniao') AS meetings, count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals
+              FROM (${stageReached(b, f, s, e)}) x GROUP BY 1`
+    ),
+    run((b) => `SELECT d.owner_id AS owner, count(*) AS n, COALESCE(sum(COALESCE(d.negotiated_cents, d.value_cents)), 0) AS value ${SETS.closed("ganho")(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT d.owner_id AS owner, count(*) AS n ${SETS.closed("perdido")(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.tasksDone(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.pendingTasks("overdue")(b, f)} GROUP BY 1`),
+  ]);
+  const out = new Map<string | null, OwnerMetrics>();
+  const of = (owner: string | null) => {
+    let m = out.get(owner);
+    if (!m) out.set(owner, (m = { ...NO_METRICS }));
+    return m;
+  };
+  for (const r of leads.rows) of(r.owner).leads = n(r.n);
+  for (const r of stages.rows) {
+    of(r.owner).meetings = n(r.meetings);
+    of(r.owner).proposals = n(r.proposals);
+  }
+  for (const r of won.rows) {
+    of(r.owner).wonCount = n(r.n);
+    of(r.owner).wonValueCents = n(r.value);
+  }
+  for (const r of lost.rows) of(r.owner).lostCount = n(r.n);
+  for (const r of done.rows) of(r.owner).tasksDone = n(r.n);
+  for (const r of overdue.rows) of(r.owner).tasksOverdue = n(r.n);
+  return out;
+}
+
+/** The sum of several people's numbers. */
+export function sumMetrics(list: OwnerMetrics[]): OwnerMetrics {
+  const total = { ...NO_METRICS };
+  for (const m of list) for (const k of Object.keys(total) as (keyof OwnerMetrics)[]) total[k] += m[k];
+  return total;
 }
 
 /** Clients with vigente monthly contracts (receita recorrente contratada), with their monthly sum. Origem doesn't apply. */

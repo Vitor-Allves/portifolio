@@ -628,6 +628,78 @@ export type CrmDashboardRecord = {
   at: string | null;
 };
 
+// ---------- Metas e produtividade (Fase 6, entrega 2) ----------
+
+/** The indicators a monthly goal can be set on — each one counted exactly like the Painel counts it. */
+export const CRM_GOAL_METRICS = [
+  { id: "leads", label: "Leads cadastrados", short: "Leads", money: false },
+  { id: "meetings", label: "Reuniões agendadas", short: "Reuniões", money: false },
+  { id: "proposals", label: "Propostas enviadas", short: "Propostas", money: false },
+  { id: "won", label: "Negócios ganhos", short: "Ganhos", money: false },
+  { id: "wonValue", label: "Valor vendido", short: "Valor vendido", money: true },
+] as const;
+export type CrmGoalMetric = (typeof CRM_GOAL_METRICS)[number]["id"];
+export function isGoalMetric(v: unknown): v is CrmGoalMetric {
+  return CRM_GOAL_METRICS.some((m) => m.id === v);
+}
+
+/** One line of the month's goals: the team (userId null) or a person. */
+export type CrmGoalRow = {
+  userId: string | null;
+  name: string;
+  /** The goal per indicator (a count, or centavos for wonValue); missing = no goal. */
+  targets: Partial<Record<CrmGoalMetric, number>>;
+  /** What was achieved in the month so far. */
+  actual: Record<CrmGoalMetric, number>;
+};
+
+export type CrmGoalsMonth = {
+  /** "YYYY-MM" */
+  month: string;
+  /** Share of the month already gone (0 for a future month, 1 for a past one) — the expected pace. */
+  elapsed: number;
+  /** The team first (for who sees everyone), then each person. A Comercial gets only their own line. */
+  rows: CrmGoalRow[];
+  updatedAt: string | null;
+  updatedByName: string | null;
+};
+
+/** What one person did in a period (deal / lead / task owner; conversations by who answered). */
+export type CrmProductivityNumbers = {
+  leads: number;
+  meetings: number;
+  proposals: number;
+  wonCount: number;
+  wonValueCents: number;
+  lostCount: number;
+  /** Won ÷ (won + lost) in the period; null without any. */
+  conversion: number | null;
+  tasksDone: number;
+  /** Right now, not in the period. */
+  tasksOverdue: number;
+  /** Contacts they wrote to on WhatsApp (campaigns don't count). */
+  conversations: number;
+  messagesSent: number;
+  /** Waiting contacts they answered, and how long it took on average (clock minutes). */
+  answered: number;
+  avgResponseMinutes: number | null;
+};
+
+export type CrmProductivityRow = CrmProductivityNumbers & {
+  /** null = work without a responsible person. */
+  userId: string | null;
+  name: string;
+  lastActivityAt: string | null;
+};
+
+export type CrmProductivity = {
+  from: string;
+  to: string;
+  rows: CrmProductivityRow[];
+  /** The whole team (same totals as the Painel); null for a Comercial. */
+  team: CrmProductivityNumbers | null;
+};
+
 export type CrmQuickReply = { id: string; title: string; body: string };
 
 export type CrmTemplate = {

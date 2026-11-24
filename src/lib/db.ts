@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1050,6 +1050,33 @@ async function ensureSchema(): Promise<void> {
     await db.query(`ALTER TABLE crm_notifications ADD COLUMN IF NOT EXISTS client_id TEXT REFERENCES crm_clients (id) ON DELETE CASCADE`);
 
     await done(18);
+  }
+
+  if (current < 19) {
+    // v19 — Fase 6, entrega 2 (especificação v1.0): metas mensais da equipe e
+    // de cada pessoa. One number per month, person (NULL = a equipe) and
+    // indicator; what was achieved is never stored, it is counted with the
+    // Painel's own definitions. New table only.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_goals (
+        id TEXT PRIMARY KEY,
+        -- first day of the month
+        month DATE NOT NULL,
+        -- NULL = the whole team
+        user_id TEXT REFERENCES internal_users (id) ON DELETE CASCADE,
+        -- leads | meetings | proposals | won | wonValue
+        metric TEXT NOT NULL,
+        -- a count, or centavos for wonValue
+        target BIGINT NOT NULL CHECK (target >= 0),
+        updated_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        updated_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_goals_one_idx ON crm_goals (month, (COALESCE(user_id, '')), metric)`);
+
+    await done(19);
   }
 }
 

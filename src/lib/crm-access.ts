@@ -70,6 +70,7 @@ const DENIED: Record<keyof CrmCapabilities, string> = {
   editClients: "Seu perfil não pode editar clientes ativos.",
   seeContractValues: "Seu perfil não vê os valores dos contratos.",
   exportReports: "Seu perfil não exporta relatórios.",
+  manageGoals: "Só Administrador e Gestor definem as metas.",
 };
 
 export function requireCap(s: CrmSession, cap: keyof CrmCapabilities): void {
