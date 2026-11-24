@@ -847,12 +847,14 @@ export default function CrmTeamView({ currentUserId, onChanged }: { currentUserI
           self={open.id === currentUserId}
           onClose={() => setOpenId(null)}
           onChanged={(message) => {
-            // A message means the panel is done (deactivation): close it, show it on the list.
-            if (message) {
-              setSaved(message);
-              setOpenId(null);
-            }
-            void load();
+            // A message means the panel is done (deactivation): once the list is
+            // reloaded (so it no longer shows the person), close it and show it there.
+            void load().then(() => {
+              if (message) {
+                setSaved(message);
+                setOpenId(null);
+              }
+            });
             onChanged();
           }}
         />

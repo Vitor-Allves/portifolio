@@ -47,7 +47,7 @@ await a.locator("tbody").getByText("Transferiu carteira").first().waitFor();
 await a.locator("tbody").getByText("Trocou responsável em lote").first().waitFor();
 ok(true, "administrative actions listed");
 await a.getByLabel("Ação", { exact: true }).selectOption("crm.portfolio_transfer");
-await a.waitForTimeout(600);
+await a.getByText("1 registro", { exact: true }).waitFor();
 ok((await a.locator("tbody tr").count()) === 1, "filtered by action");
 await shot(a, "f2e2-auditoria");
 await a.getByRole("tab", { name: "Mudanças comerciais" }).click();
