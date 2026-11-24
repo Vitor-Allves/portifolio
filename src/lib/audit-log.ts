@@ -43,7 +43,8 @@ export type AuditAction =
   | "crm.client_create"
   | "crm.client_update"
   | "crm.contract_change"
-  | "crm.report_export";
+  | "crm.report_export"
+  | "crm.goals_change";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

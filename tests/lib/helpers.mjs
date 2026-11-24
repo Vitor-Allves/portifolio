@@ -62,6 +62,10 @@ export async function login(browser, username, { width = 1440, height = 900, dar
   page.on("console", (m) => m.type() === "error" && !/400|403|404|409|502|503/.test(m.text()) && errors.push(`${username}: ${m.text()}`));
   await page.goto(`${BASE}/crm/`);
   await page.getByRole("heading", { level: 1, name: "Painel" }).waitFor();
+  // The heading comes in the server's HTML; the Painel's numbers only after
+  // React takes over the page. A choice made before that (a select, a typed
+  // date) is reset by hydration, so wait for them.
+  await page.getByRole("region", { name: "Indicadores do período" }).waitFor();
   return { ctx, page, api: ctx.request };
 }
 

@@ -103,6 +103,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (`month` = primeiro dia do mês, único com o cliente), serviços realizados,
   atividades executadas, resultados, pontos de atenção, próximas ações,
   responsável pelo acompanhamento, quem atualizou e quando.
+- `crm_goals` (v19) — metas do mês: uma por mês (`month` = primeiro dia),
+  pessoa (`user_id`; vazio = a equipe) e indicador (`metric`: leads,
+  reuniões, propostas, ganhos ou valor vendido), com o alvo (`target`, uma
+  contagem ou centavos) e quem mudou por último. Único em (mês, pessoa,
+  indicador). O realizado nunca é gravado: é contado na hora, com as mesmas
+  definições do Painel.
 - `crm_options` — as listas editáveis (Personalização): origens, segmentos,
   serviços, motivos de perda e de ganho, tipos de tarefa, departamentos e
   prioridades. Tipos de tarefa e prioridades têm cor (`color`, v13), usada na
@@ -168,7 +174,11 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   ver valores de contrato exigem ver os clientes ativos.
 
   **Exportar relatórios (Fase 6):** Administrador, Gestor e Marketing (o
-  Comercial vê o próprio Painel, sem exportar).
+  Comercial vê o próprio Painel, sem exportar). Vale para o Painel, as listas
+  dos indicadores, as metas e a produtividade.
+
+  **Definir metas (Fase 6):** Administrador e Gestor. Quem vê todos os leads
+  vê as metas e a produtividade de todos; o Comercial vê só a própria linha.
 
   **Clientes ativos (Fase 5):** ver — Administrador, Gestor, Marketing e
   Comercial (este só os clientes de que é responsável e os sem
@@ -254,6 +264,21 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   origem ou segmento (só para quem vê campanhas). Exportar (CSV) exige a
   permissão "Exportar relatórios" e vai para a auditoria
   (`crm.report_export`).
+- **Metas e produtividade (Gestão):** metas mensais da equipe e de cada
+  pessoa em leads cadastrados, reuniões, propostas, negócios ganhos e valor
+  vendido. O realizado de uma pessoa é o do Painel filtrado por ela; o da
+  equipe é o do Painel sem filtro (inclui o que não tem responsável), então
+  as linhas sempre somam o Painel. Em branco ou 0 = sem meta. A tela mostra
+  o ritmo esperado (parte do mês já decorrida) e diz se cada meta está no
+  ritmo, abaixo, batida ou não batida; dá para copiar as metas do mês
+  anterior antes de salvar. Cada alteração vai para a auditoria
+  (`crm.goals_change`, com quantas metas mudaram). Produtividade por pessoa
+  num período: os números do Painel por responsável, tarefas concluídas e
+  atrasadas agora, conversas atendidas no WhatsApp e tempo médio de
+  resposta (de quem respondeu; campanhas não contam; horas corridas) e
+  última atividade, com a linha da equipe. Contatos arquivados ficam de
+  fora, como no Painel. O Painel mostra as metas do mês corrente de quem ele
+  está mostrando (equipe, a pessoa escolhida ou o próprio Comercial).
 - **Acompanhamento mensal:** um por cliente por mês, só de mês que já
   começou; precisa de pelo menos um campo. Salvar por cima do que outra
   pessoa salvou enquanto você editava é recusado (409) em vez de apagar o
@@ -365,6 +390,30 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 6, entrega 2: metas e produtividade (schema v19)
+
+- **Nova seção "Metas e produtividade"** no grupo Gestão do menu, para todos
+  os perfis (o Comercial vê só a própria linha).
+- **Metas mensais** da equipe e de cada pessoa: leads, reuniões, propostas,
+  negócios ganhos e valor vendido, com progresso, ritmo esperado do mês e
+  situação (no ritmo, abaixo do ritmo, batida, não batida). Só
+  Administrador e Gestor definem (nova permissão "Definir metas"); copiar
+  do mês anterior; cada mudança na auditoria (`crm.goals_change`).
+- **Produtividade por pessoa** no período: leads, reuniões, propostas,
+  ganhos, valor vendido, conversão, tarefas feitas e atrasadas, conversas
+  atendidas, tempo médio de resposta e última atividade, com o total da
+  equipe igual ao do Painel.
+- **Painel:** cartão com as metas do mês de quem ele mostra.
+- **Exportar CSV** das metas e da produtividade ("Exportar relatórios",
+  com auditoria).
+- Banco v19: tabela nova `crm_goals` (nada muda nos dados existentes; começa
+  sem metas).
+- Testes: `goals-api` (realizado = Painel, definir/remover/validar metas,
+  quem define e quem vê, produtividade com conversas e tempo de resposta,
+  exportação) e `goals-e2e` (definir metas, progresso, copiar do mês
+  anterior, cartão no Painel, Comercial, celular e tema escuro); `schema`
+  na v19.
 
 ### Especificação-mestra v1.0 — Fase 6, entrega 1: Painel aprimorado e relatórios
 

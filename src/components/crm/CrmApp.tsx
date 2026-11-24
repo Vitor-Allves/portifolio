@@ -48,6 +48,7 @@ import CrmAutomationsView from "./CrmAutomationsView";
 import CrmClientsView from "./CrmClientsView";
 import CrmClientPanel, { type ClientTab } from "./CrmClientPanel";
 import CrmFollowUpView from "./CrmFollowUpView";
+import CrmGoalsView from "./CrmGoalsView";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -489,6 +490,7 @@ function CrmAppInner({
           "companies",
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
           ...(caps.viewClients ? (["clients", "followup"] as const) : []),
+          "goals",
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
           ...(caps.manageTeam ? (["team", "audit"] as const) : []),
@@ -654,6 +656,7 @@ function CrmAppInner({
             version={dataVersion}
             now={now}
             canExport={caps.exportReports}
+            onOpenGoals={() => setView("goals")}
             onOpenContact={(id) => openContact(id, "negocio")}
             onOpenClient={caps.viewClients ? (id) => openClient(id) : undefined}
             onOpenTask={openTask}
@@ -714,6 +717,15 @@ function CrmAppInner({
           />
         ) : view === "followup" && caps.viewClients ? (
           <CrmFollowUpView version={dataVersion} onOpenClient={(id, month) => openClient(id, { tab: "acompanhamento", month })} />
+        ) : view === "goals" ? (
+          <CrmGoalsView
+            currentUserId={currentUserId}
+            seeAll={caps.seeAllLeads}
+            canEdit={caps.manageGoals}
+            canExport={caps.exportReports}
+            version={dataVersion}
+            now={now}
+          />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
         ) : view === "automations" && caps.manageAutomations ? (
