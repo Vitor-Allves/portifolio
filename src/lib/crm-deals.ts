@@ -22,7 +22,7 @@ import {
   type CrmDealCard,
   type CrmStage,
 } from "./crm-types";
-import { CrmInputError, addEvent, cleanText, iso, parseTemperature, type CrmActor } from "./crm-core";
+import { CrmDuplicateError, CrmInputError, addEvent, cleanText, duplicateText, iso, parseTemperature, type CrmActor, type CrmDuplicateInfo } from "./crm-core";
 import { loadStageLabels, optionLabel, requireOptionId } from "./crm-options";
 import { createTaskTx } from "./crm-tasks";
 import { isLostCloseGroup, isWonResult, type LostCloseGroup } from "./crm-catalog";
@@ -257,7 +257,36 @@ export type NewDealInput = {
   wonNote?: unknown;
   wonResult?: unknown;
   probability?: unknown;
+  /** A person opening it (not the system): refuse a second independent negotiation with the same contact or company. */
+  checkParallel?: boolean;
+  /** …unless a Gestor authorizes it (the route sets this only for who may reassign leads). */
+  allowParallel?: boolean;
 };
+
+/**
+ * Evolução v1.0 (item 2.2): an open opportunity someone else (another owner)
+ * already has with this contact or with another contact of its company.
+ */
+export async function parallelNegotiation(
+  client: Pick<PoolClient, "query">,
+  contactId: string,
+  ownerId: string | null
+): Promise<CrmDuplicateInfo | null> {
+  const { rows } = await client.query<{ id: string; title: string; owner_name: string | null; stage: string; same: boolean }>(
+    `SELECT d.id, d.title, u.name AS owner_name, d.stage, c2.id = c.id AS same
+     FROM crm_contacts c
+     JOIN crm_contacts c2 ON c2.id = c.id OR (c.company_id IS NOT NULL AND c2.company_id = c.company_id)
+     JOIN crm_deals d ON d.contact_id = c2.id AND d.stage NOT IN ('ganho', 'perdido')
+     LEFT JOIN internal_users u ON u.id = d.owner_id
+     WHERE c.id = $1 AND c2.archived_at IS NULL AND d.owner_id IS NOT NULL AND d.owner_id IS DISTINCT FROM $2
+     ORDER BY (c2.id = c.id) DESC, d.updated_at DESC LIMIT 1`,
+    [contactId, ownerId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  await loadStageLabels(client);
+  return { kind: "deal", id: r.id, name: r.title, by: r.same ? "contact" : "company", ownerName: r.owner_name, situation: stageLabel(r.stage) };
+}
 
 /** Probabilidade de fechamento typed on a form: blank = follow the stage's. */
 function parseProbability(v: unknown): number | null {
@@ -294,6 +323,11 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
   }
   const ownerId = typeof input.ownerId === "string" ? input.ownerId || null : contact.owner_id;
   await ownerName(client, ownerId);
+  let parallel: CrmDuplicateInfo | null = null;
+  if (input.checkParallel) {
+    parallel = await parallelNegotiation(client, contactId, ownerId);
+    if (parallel && !input.allowParallel) throw new CrmDuplicateError(duplicateText(parallel), parallel);
+  }
   const valueCents = parseValue(input.value);
   const negotiatedCents = parseValue(input.negotiatedValue, "Valor negociado");
   // Serviço starts as the contact's interest; origem as the contact's origin.
@@ -333,7 +367,13 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
       stage === "ganho" ? actor?.userName ?? null : null,
     ]
   );
-  await addEvent(client, contactId, "deal", { action: "created", dealId: id, title, valueCents, stage }, actor);
+  await addEvent(
+    client,
+    contactId,
+    "deal",
+    { action: "created", dealId: id, title, valueCents, stage, ...(parallel ? { parallelTo: parallel.id, parallelTitle: parallel.name, authorizedBy: actor?.userName ?? null } : {}) },
+    actor
+  );
   if (stage !== "novo") await afterDealStage(client, id, stage);
   await syncContactStage(client, contactId);
   return id;

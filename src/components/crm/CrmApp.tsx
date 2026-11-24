@@ -1033,6 +1033,12 @@ function CrmAppInner({
           void refresh();
           openContact(id);
         }}
+        canAuthorizeParallel={caps.assignAnyOwner}
+        onOpenExisting={(d) => {
+          setNewOpen(false);
+          if (d.kind === "company") setCompanyId(d.id);
+          else if (d.kind === "contact") openContact(d.id);
+        }}
       />
     </div>
   );

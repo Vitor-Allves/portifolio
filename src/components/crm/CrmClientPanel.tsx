@@ -24,6 +24,7 @@ import { dateTime, todaySp } from "./crm-format";
 import { shiftMonth } from "./CrmFollowUpView";
 import { ClientStatusChip, clientEventText, contractDue, contractValue } from "./crm-client-ui";
 import ClientMediaSection from "./CrmClientMedia";
+import CrmFiles from "./CrmFiles";
 import CrmAnalysisDialog from "./CrmAnalysisDialog";
 
 type Form = { ownerId: string; status: string; endReason: string; startedOn: string; notes: string };
@@ -375,6 +376,7 @@ export default function CrmClientPanel({
                 </>
               )}
 
+              {tab === "historico" && <CrmFiles target={{ clientId: client.id }} canEdit={canEdit} title="Documentos do cliente" />}
               {tab === "historico" && (
                 <section className="space-y-2" aria-label="Histórico do cliente">
                   <h3 className={CRM_LABEL}>Histórico de relacionamento</h3>

@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   try {
     requireCap(actor, "editContacts");
     requireOwnerChange(actor, body.ownerId ?? undefined, null);
-    const id = await createContact(body, actor);
+    const id = await createContact({ ...body, allowParallel: actor.caps.assignAnyOwner && body.allowParallel === true }, actor);
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/contacts POST");

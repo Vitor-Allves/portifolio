@@ -8,21 +8,25 @@ import { auditCatalog } from "../../../audit";
 
 export const runtime = "nodejs";
 
-/** { label?, description?, color? } and/or { archived: boolean }. Administrador only. */
+/** { label?, description?, color?, meta? } and/or { archived: boolean }. Administrador only. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ kind: string; id: string }> }) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
   const { kind, id } = await params;
-  const body = (await req.json().catch(() => null)) as { label?: unknown; description?: unknown; color?: unknown; archived?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { label?: unknown; description?: unknown; color?: unknown; meta?: unknown; archived?: unknown } | null;
   try {
     requireCap(actor, "customize");
     if (!isOptionKind(kind) || !body) throw new CrmInputError("Requisição inválida.");
     let option;
-    if (body.label !== undefined || body.description !== undefined || body.color !== undefined) {
+    if (body.label !== undefined || body.description !== undefined || body.color !== undefined || body.meta !== undefined) {
       const r = await updateOption(kind, id, body);
       option = r.after;
       if (r.before !== r.after.label) {
         await auditCatalog(actor, `${kind}:${id}`, r.after.label, { action: "renamed", kind, from: r.before, to: r.after.label, records: r.renamedRecords });
+      }
+      if (JSON.stringify(r.metaBefore) !== JSON.stringify(r.after.meta)) {
+        // Probabilidade de uma etapa, grupo de tabulação de um motivo, detalhes de um serviço.
+        await auditCatalog(actor, `${kind}:${id}`, r.after.label, { action: "details", kind, from: r.metaBefore, to: r.after.meta });
       }
       if (r.colorBefore !== r.after.color) {
         await auditCatalog(actor, `${kind}:${id}`, r.after.label, { action: "recolored", kind, from: r.colorBefore, to: r.after.color });

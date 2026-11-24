@@ -23,6 +23,10 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
       }${p.to === "ganho" && typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
     case "owner":
       return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}${p.via === "carteira" ? " (carteira)" : p.via === "transferencia" ? " (transferência aprovada)" : ""}`;
+    case "diagnosis":
+      return `Diagnóstico comercial (versão ${String(p.version ?? "")}): ${String(p.need ?? "")}`;
+    case "file":
+      return p.action === "archived" ? `Documento arquivado: ${String(p.name ?? "")}` : `Documento anexado: ${String(p.name ?? "")}`;
     case "transfer": {
       const who = `${p.from ? String(p.from) : "sem responsável"} → ${String(p.to ?? "")}`;
       if (p.action === "requested") return `Transferência pedida por ${String(p.requestedBy ?? "")} (${who}): ${String(p.reason ?? "")}`;
@@ -48,7 +52,10 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
     case "restored":
       return p.auto ? "Voltou ao funil (mandou mensagem)" : "Contato restaurado";
     case "deal": {
-      if (p.action === "created") return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
+      if (p.action === "created")
+        return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}${
+          p.parallelTo ? ` · segunda negociação (além de "${String(p.parallelTitle ?? "")}") autorizada por ${String(p.authorizedBy ?? "")}` : ""
+        }`;
       const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
       const show = (c: { field: string }, v: string | null) =>
         v === null

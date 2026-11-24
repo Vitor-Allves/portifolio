@@ -15,9 +15,11 @@ export default function CrmCompanyField({
   id,
   placeholder = "Ex.: Clínica Ribeiro",
   ariaLabel,
+  onBlur,
 }: {
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   id?: string;
   placeholder?: string;
   ariaLabel?: string;
@@ -47,6 +49,7 @@ export default function CrmCompanyField({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         list={listId}
         autoComplete="off"
         placeholder={placeholder}

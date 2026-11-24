@@ -6,6 +6,7 @@ import {
   COLORED_KINDS,
   OPTION_KINDS,
   reasonGroup,
+  serviceMeta,
   stageMeta,
   type LostCloseGroup,
   TAG_CATEGORIES,
@@ -20,6 +21,7 @@ import {
   type TagColor,
 } from "@/lib/crm-catalog";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, crmSegment } from "./crm-styles";
+import { CRM_CONTRACT_BILLINGS, formatBRL } from "@/lib/crm-types";
 import { TAG_DOT, TagChip, useCatalog } from "./crm-catalog-context";
 
 type Tab = OptionKind | "tags";
@@ -137,12 +139,14 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
   const isReason = kind === "lost_reason";
   const newWord = /^(origem|etapa|prioridade)$/.test(meta.singular) ? "Nova" : "Novo";
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ label: string; description: string; color: TagColor; probability: string; group: LostCloseGroup }>({
+  const isService = kind === "service";
+  const [draft, setDraft] = useState<{ label: string; description: string; color: TagColor; probability: string; group: LostCloseGroup; service: ServiceDraft }>({
     label: "",
     description: "",
     color: "cinza",
     probability: "",
     group: "negativo",
+    service: EMPTY_SERVICE,
   });
   const [newLabel, setNewLabel] = useState("");
   const [newDescription, setNewDescription] = useState("");
@@ -182,6 +186,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               <ProbabilityInput value={draft.probability} onChange={(probability) => setDraft({ ...draft, probability })} label={`Probabilidade de ${o.label}`} />
             )}
             {isReason && <GroupSelect value={draft.group} onChange={(group) => setDraft({ ...draft, group })} label={`Grupo de ${o.label}`} />}
+            {isService && <ServiceFields value={draft.service} onChange={(service) => setDraft({ ...draft, service })} name={o.label} />}
             {kind === "segment" && used > 0 && draft.label.trim() !== o.label && (
               <p className="text-[11.5px] text-crm-amber">O novo nome também vai para as {used} empresas/contatos que usam este segmento.</p>
             )}
@@ -195,6 +200,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
                     description: draft.description,
                     ...(colored ? { color: draft.color } : {}),
                     ...(isStage && stageMeta(o).outcome !== "open" ? {} : metaOf(draft.probability, draft.group)),
+                    ...(isService ? { meta: draft.service } : {}),
                   };
                   if (await run(() => call(`${base}${kind}/${o.id}/`, "PATCH", body), "Alteração salva.")) setEditing(null);
                 }}
@@ -218,6 +224,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               <p className="text-[11.5px] text-crm-faint">
                 {isStage ? `${stageMeta(o).probability}% de probabilidade · ` : ""}
                 {isReason ? `${CLOSE_GROUPS.find((g) => g.id === reasonGroup(o))?.label} · ` : ""}
+                {isService ? serviceSummary(o) : ""}
                 {o.description ? `${o.description} · ` : ""}
                 {usedLabel(used)}
               </p>
@@ -227,7 +234,14 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               className={CRM_LINK_BTN}
               onClick={() => {
                 setEditing(o.id);
-                setDraft({ label: o.label, description: o.description ?? "", color: o.color ?? "cinza", probability: String(stageMeta(o).probability), group: reasonGroup(o) });
+                setDraft({
+                  label: o.label,
+                  description: o.description ?? "",
+                  color: o.color ?? "cinza",
+                  probability: String(stageMeta(o).probability),
+                  group: reasonGroup(o),
+                  service: serviceDraft(o),
+                });
               }}
               aria-label={`Editar ${o.label}`}
             >
@@ -300,6 +314,61 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Catálogo de serviços (evolução v1.0, item 3.2): what a proposal starts from. */
+type ServiceDraft = { scope: string; referenceValue: string; billing: string; deadline: string; conditions: string };
+const EMPTY_SERVICE: ServiceDraft = { scope: "", referenceValue: "", billing: "", deadline: "", conditions: "" };
+function serviceDraft(o: CrmOption): ServiceDraft {
+  const m = serviceMeta(o);
+  return {
+    scope: m.scope ?? "",
+    referenceValue: m.referenceCents === null ? "" : (m.referenceCents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+    billing: m.billing ?? "",
+    deadline: m.deadline ?? "",
+    conditions: m.conditions ?? "",
+  };
+}
+function serviceSummary(o: CrmOption): string {
+  const m = serviceMeta(o);
+  const parts = [
+    m.referenceCents !== null ? `${formatBRL(m.referenceCents)}${m.billing === "mensal" ? "/mês" : ""}` : null,
+    m.billing ? CRM_CONTRACT_BILLINGS.find((b) => b.id === m.billing)?.label : null,
+    m.deadline ? `prazo ${m.deadline}` : null,
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(" · ")} · ` : "sem detalhes no catálogo · ";
+}
+function ServiceFields({ value, onChange, name }: { value: ServiceDraft; onChange: (v: ServiceDraft) => void; name: string }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <textarea
+        value={value.scope}
+        onChange={(e) => onChange({ ...value, scope: e.target.value })}
+        rows={2}
+        aria-label={`Escopo de entrega de ${name}`}
+        placeholder="Escopo de entrega (o que está incluso)"
+        className={`${CRM_INPUT} sm:col-span-3 resize-y`}
+      />
+      <input value={value.referenceValue} onChange={(e) => onChange({ ...value, referenceValue: e.target.value })} inputMode="decimal" aria-label={`Valor de referência de ${name}`} placeholder="Valor de referência (R$)" className={CRM_INPUT} />
+      <select value={value.billing} onChange={(e) => onChange({ ...value, billing: e.target.value })} aria-label={`Modelo de cobrança de ${name}`} className={CRM_INPUT}>
+        <option value="">Modelo de cobrança</option>
+        {CRM_CONTRACT_BILLINGS.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.label}
+          </option>
+        ))}
+      </select>
+      <input value={value.deadline} onChange={(e) => onChange({ ...value, deadline: e.target.value })} aria-label={`Prazo estimado de ${name}`} placeholder="Prazo estimado (ex.: 30 dias)" className={CRM_INPUT} />
+      <textarea
+        value={value.conditions}
+        onChange={(e) => onChange({ ...value, conditions: e.target.value })}
+        rows={2}
+        aria-label={`Condições específicas de ${name}`}
+        placeholder="Condições específicas (fidelidade, investimento mínimo em mídia…)"
+        className={`${CRM_INPUT} sm:col-span-3 resize-y`}
+      />
     </div>
   );
 }

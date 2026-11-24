@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 22;
+const LATEST = 23;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,20 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v21: undo exactly what v22 (solicitações de transferência) added.
+// Back to v22: undo exactly what v23 (cadastros, diagnóstico, documentos) added.
+async function downgradeToV22(name) {
+  await query(
+    name,
+    `DROP TABLE crm_files; DROP TABLE crm_diagnostics;
+     ALTER TABLE crm_companies DROP COLUMN phone, DROP COLUMN email;
+     ALTER TABLE crm_contacts DROP COLUMN alt_phone, DROP COLUMN potential, DROP COLUMN need;
+     DELETE FROM schema_migrations WHERE version = 23;`
+  );
+}
+
+// Back to v21: undo exactly what v23 and v22 (solicitações de transferência) added.
 async function downgradeToV21(name) {
+  await downgradeToV22(name);
   await query(name, `DROP TABLE crm_transfer_requests; DELETE FROM schema_migrations WHERE version = 22;`);
 }
 
@@ -299,6 +311,33 @@ ok(closedV21["keep-deal"].stage === "proposta" && closedV21["keep-deal"].close_g
 // v22: no transfer requests until someone asks; owners unchanged.
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_transfer_requests`))[0].n === 0, "v22: no transfer requests yet");
 ok((await query(B, `SELECT owner_id FROM crm_contacts WHERE id = 'keep-me'`))[0].owner_id === null, "v22: nobody's lead changes hands by itself");
+// v23: the new cadastro fields start empty (nothing invented); no diagnoses or files yet; the limits hold.
+const keepV23 = (await query(B, `SELECT alt_phone, potential, need FROM crm_contacts WHERE id = 'keep-me'`))[0];
+ok(keepV23.alt_phone === null && keepV23.potential === null && keepV23.need === null, "v23: existing contacts get empty new fields");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_companies WHERE phone IS NOT NULL OR email IS NOT NULL`))[0].n === 0, "v23: existing companies get no phone or e-mail invented");
+ok((await query(B, `SELECT (SELECT count(*) FROM crm_diagnostics) + (SELECT count(*) FROM crm_files) AS n`))[0].n === "0", "v23: no diagnoses or files yet");
+let refusedPotential = false;
+try {
+  await query(B, `UPDATE crm_contacts SET potential = 'enorme' WHERE id = 'keep-me'`);
+} catch {
+  refusedPotential = true;
+}
+ok(refusedPotential, "v23: potencial comercial only alto, medio or baixo");
+let refusedTwoTargets = false;
+try {
+  await query(B, `INSERT INTO crm_companies (id, name, name_key) VALUES ('co-v23', 'Empresa v23', 'empresa v23')`);
+  await query(B, `INSERT INTO crm_files (id, contact_id, company_id, name, mime, size_bytes, sha256, content) VALUES ('f2', 'keep-me', 'co-v23', 'a.txt', 'text/plain', 1, 'x', 'a'::bytea)`);
+} catch {
+  refusedTwoTargets = true;
+}
+ok(refusedTwoTargets, "v23: a file belongs to exactly one record");
+let refusedBig = false;
+try {
+  await query(B, `INSERT INTO crm_files (id, contact_id, name, mime, size_bytes, sha256, content) VALUES ('f3', 'keep-me', 'a.txt', 'text/plain', 5000000, 'x', 'a'::bytea)`);
+} catch {
+  refusedBig = true;
+}
+ok(refusedBig, "v23: files over 4 MB are refused by the database too");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

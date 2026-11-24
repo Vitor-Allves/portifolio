@@ -16,6 +16,7 @@ import {
 } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, taskKindIcon } from "./crm-styles";
 import { closeGroupLabel } from "@/lib/crm-catalog";
+import CrmDiagnosisSection from "./CrmDiagnosis";
 import { TASK_STATE_TONE, shortDate, spDate, taskDueLabel, taskState, timeOfDay } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { useCatalog } from "./crm-catalog-context";
@@ -366,6 +367,7 @@ export default function CrmDealsTasksTab({
   onOpenTask,
   startNewDeal = false,
   clients,
+  canAuthorizeParallel = false,
 }: {
   detail: CrmContactDetail;
   /** Profiles that can't touch the funnel (Marketing) see opportunities and tasks without editing them. */
@@ -382,9 +384,12 @@ export default function CrmDealsTasksTab({
   startNewDeal?: boolean;
   /** Clientes ativos: a won opportunity opens its client, or becomes one. */
   clients?: { canCreate: boolean; onOpen: (clientId: string) => void };
+  /** Gestor / Administrador: may authorize a second negotiation with the same lead or company. */
+  canAuthorizeParallel?: boolean;
 }) {
   const { label, stageDot } = useCatalog();
   const [error, setError] = useState<string | null>(null);
+  const [parallel, setParallel] = useState(false);
   const [newDeal, setNewDeal] = useState<{ title: string; value: string } | null>(startNewDeal && !readOnly ? { title: "", value: "" } : null);
   const selected = detail.deals.find((d) => d.id === selectedDealId) ?? null;
   const pending = detail.tasks.filter((t) => !t.doneAt);
@@ -401,12 +406,40 @@ export default function CrmDealsTasksTab({
     return true;
   };
 
+  // Another salesperson already negotiating with this lead or its company: refused
+  // (409, duplicate kind "deal"); a manager may authorize it explicitly.
+  async function createDeal(allowParallel: boolean) {
+    if (!newDeal) return;
+    const res = await fetch("/api/crm/deals/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId: detail.id, title: newDeal.title, value: newDeal.value, ...(allowParallel ? { allowParallel: true } : {}) }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string; duplicate?: { kind: string } } | null;
+      setError(body?.error ?? "Não foi possível criar.");
+      setParallel(body?.duplicate?.kind === "deal");
+      return;
+    }
+    const { id } = (await res.json()) as { id: string };
+    setNewDeal(null);
+    setError(null);
+    setParallel(false);
+    await onReload();
+    onSelectDeal(id);
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
       {error && (
-        <p className={CRM_ALERT} role="alert">
-          {error}
-        </p>
+        <div className={CRM_ALERT} role="alert">
+          <p>{error}</p>
+          {parallel && newDeal && canAuthorizeParallel && (
+            <button type="button" onClick={() => void createDeal(true)} className="mt-1.5 font-semibold underline">
+              Autorizar a segunda negociação e criar
+            </button>
+          )}
+        </div>
       )}
 
       <section className="space-y-2">
@@ -420,22 +453,9 @@ export default function CrmDealsTasksTab({
         </div>
         {newDeal && (
           <form
-            onSubmit={async (e) => {
+            onSubmit={(e) => {
               e.preventDefault();
-              const res = await fetch("/api/crm/deals/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contactId: detail.id, title: newDeal.title, value: newDeal.value }),
-              });
-              if (!res.ok) {
-                setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Não foi possível criar.");
-                return;
-              }
-              const { id } = (await res.json()) as { id: string };
-              setNewDeal(null);
-              setError(null);
-              await onReload();
-              onSelectDeal(id);
+              void createDeal(false);
             }}
             className="grid grid-cols-1 sm:grid-cols-[1fr_140px_auto] gap-2 rounded-xl border border-crm-line bg-crm-sunken p-3"
           >
@@ -519,6 +539,8 @@ export default function CrmDealsTasksTab({
         )}
         {selected && !readOnly && <DealEditor key={selected.id} deal={selected} send={send} />}
       </section>
+
+      <CrmDiagnosisSection contactId={detail.id} deals={detail.deals} canEdit={!readOnly} onSaved={() => void onReload()} />
 
       <section className="space-y-2">
         <h3 className={CRM_LABEL}>Tarefas</h3>

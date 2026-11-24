@@ -14,7 +14,7 @@ export const OPTION_KINDS = [
   },
   { id: "source", label: "Origens", singular: "origem", hint: "De onde o lead veio no cadastro. A origem original nunca é trocada depois." },
   { id: "segment", label: "Segmentos", singular: "segmento", hint: "Ramo de atuação de empresas e contatos." },
-  { id: "service", label: "Serviços", singular: "serviço", hint: "O que a Legado oferece: usado em interesse do contato e nas oportunidades." },
+  { id: "service", label: "Serviços", singular: "serviço", hint: "O catálogo do que a Legado oferece (escopo, valor de referência, cobrança, prazo e condições): usado em interesse do contato, nas oportunidades e nas propostas." },
   {
     id: "lost_reason",
     label: "Motivos de encerramento",
@@ -245,6 +245,20 @@ export function stageMeta(o: Pick<CrmOption, "id" | "meta"> | undefined): StageM
   const p = typeof m.probability === "number" && m.probability >= 0 && m.probability <= 100 ? Math.round(m.probability) : outcome === "won" ? 100 : outcome === "lost" ? 0 : 10;
   return { probability: p, outcome };
 }
+/** A service's catalog details (evolução v1.0, item 3.2), from its option. */
+export type ServiceMeta = { scope: string | null; referenceCents: number | null; billing: "mensal" | "unico" | null; deadline: string | null; conditions: string | null };
+export function serviceMeta(o: Pick<CrmOption, "meta"> | undefined): ServiceMeta {
+  const m = (o?.meta ?? {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  return {
+    scope: str(m.scope),
+    referenceCents: typeof m.referenceCents === "number" ? m.referenceCents : null,
+    billing: m.billing === "mensal" || m.billing === "unico" ? m.billing : null,
+    deadline: str(m.deadline),
+    conditions: str(m.conditions),
+  };
+}
+
 /** The tabulação group of a closing reason. */
 export function reasonGroup(o: Pick<CrmOption, "meta"> | undefined): LostCloseGroup {
   const g = (o?.meta as { group?: unknown } | undefined)?.group;

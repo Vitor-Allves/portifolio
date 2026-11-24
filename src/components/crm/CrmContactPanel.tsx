@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CRM_CONSENT,
+  CRM_POTENTIALS,
   formatBRL,
   formatPhone,
   isClosedStage,
@@ -22,6 +23,7 @@ import CrmDealsTasksTab from "./CrmDealsTasksTab";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
 import { CrmTransferBox } from "./CrmTransfers";
+import CrmFiles from "./CrmFiles";
 import { WON_RESULTS, closeGroupLabel } from "@/lib/crm-catalog";
 import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
 import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
@@ -78,6 +80,9 @@ type ContactForm = {
   serviceInterest: string;
   returnAt: string;
   isDecisionMaker: boolean;
+  altPhone: string;
+  potential: string;
+  need: string;
 };
 
 const STATUS_LABEL: Record<string, string> = { sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou" };
@@ -490,6 +495,9 @@ export default function CrmContactPanel({
           serviceInterest: detail.serviceInterest ?? "",
           returnAt: detail.returnAt ?? "",
           isDecisionMaker: detail.isDecisionMaker,
+          altPhone: detail.altPhone ?? "",
+          potential: detail.potential ?? "",
+          need: detail.need ?? "",
         }
       : null);
   const edit = (changes: Partial<ContactForm>) => fields && setForm({ ...fields, ...changes });
@@ -784,6 +792,7 @@ export default function CrmContactPanel({
                 now={now}
                 onOpenTask={onOpenTask}
                 startNewDeal={newDealFromChat}
+                canAuthorizeParallel={caps.assignAnyOwner}
                 clients={onOpenClient && caps.viewClients ? { canCreate: caps.editClients, onOpen: onOpenClient } : undefined}
                 onReload={async () => {
                   await load();
@@ -966,6 +975,7 @@ export default function CrmContactPanel({
               </>
             ) : (
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+                <CrmFiles target={{ contactId: detail.id }} canEdit={caps.editContacts} />
                 <CrmTagsEditor
                   links={detail.tagLinks}
                   endpoint={`/api/crm/contacts/${detail.id}/tags/`}
@@ -1016,7 +1026,24 @@ export default function CrmContactPanel({
                         />
                         Decisor na empresa
                       </label>
+                      <input value={fields.altPhone} onChange={(e) => edit({ altPhone: e.target.value })} inputMode="tel" aria-label="Outro telefone" placeholder="Outro telefone (fixo, recado)" className={CRM_INPUT} />
+                      <select value={fields.potential} onChange={(e) => edit({ potential: e.target.value })} aria-label="Potencial comercial" className={CRM_INPUT}>
+                        <option value="">Potencial comercial</option>
+                        {CRM_POTENTIALS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            Potencial {p.label.toLowerCase()}
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                    <textarea
+                      value={fields.need}
+                      onChange={(e) => edit({ need: e.target.value })}
+                      rows={2}
+                      aria-label="Necessidade identificada"
+                      placeholder="Necessidade identificada (o que o lead precisa resolver)"
+                      className={`${CRM_INPUT} resize-y`}
+                    />
                     {detail.companyId && <p className="text-[11.5px] text-crm-faint">Segmento e cidade ficam na empresa e valem para todos os contatos dela.</p>}
                     <button
                       type="button"

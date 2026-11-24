@@ -97,6 +97,7 @@ ok((await picker.inputValue()) === "u-joao" && (await picker.locator("option").a
 const forced = await (await japi.get(`${BASE}/api/crm/dashboard/?from=2026-10-01&to=2026-10-31&owner=u-vitor`)).json();
 ok(forced.dashboard.current.newLeads === 2 && forced.dashboard.team.length === 1 && forced.dashboard.team[0].name === "João", "asking for Vitor's numbers still returns João's");
 await october(j);
+await j.getByRole("region", { name: "Seus resultados" }).locator("tbody tr").first().waitFor();
 ok((await j.getByRole("region", { name: "Seus resultados" }).locator("tbody tr").count()) === 1, "Seus resultados: one line");
 
 // ---- phone ----

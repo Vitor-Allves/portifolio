@@ -129,12 +129,12 @@ ok(r.status === 201, "company created with CNPJ");
 const sorriso = r.body.id;
 ok((await sql(`SELECT cnpj || '|' || state || '|' || status FROM crm_companies WHERE id = '${sorriso}'`)) === "11222333000181|SP|prospeccao", "CNPJ stored without punctuation, UF upper-cased, starts in Prospecção");
 r = await json(await gestor.post(companies, { data: { name: "Outra Clínica", cnpj: "11222333000181" } }));
-ok(r.status === 400 && r.body.error.includes("Clínica Sorriso"), "same CNPJ refused, naming the company that has it");
+ok(r.status === 409 && r.body.error.includes("Clínica Sorriso") && r.body.duplicate?.by === "cnpj", "same CNPJ refused, naming the company that has it");
 ok((await json(await gestor.post(companies, { data: { name: "Inválida", cnpj: "11.222.333/0001-80" } }))).status === 400, "invalid CNPJ refused");
 r = await json(await gestor.post(companies, { data: { name: "Nova Era Tech", cnpj: "12.ABC.345/01DE-35" } }));
 ok(r.status === 201, "alphanumeric CNPJ accepted");
 const novaEra = r.body.id;
-ok((await json(await gestor.patch(`${companies}${novaEra}/`, { data: { cnpj: "11.222.333/0001-81" } }))).status === 400, "editing onto another company's CNPJ refused");
+ok((await json(await gestor.patch(`${companies}${novaEra}/`, { data: { cnpj: "11.222.333/0001-81" } }))).status === 409, "editing onto another company's CNPJ refused");
 ok((await json(await gestor.patch(`${companies}${sorriso}/`, { data: { state: "XX" } }))).status === 400, "unknown UF refused");
 ok((await json(await gestor.patch(`${companies}${sorriso}/`, { data: { status: "fechada" } }))).status === 400, "unknown situação refused");
 r = await json(

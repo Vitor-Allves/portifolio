@@ -101,7 +101,13 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   que é seu (servidor recusa o resto; conversas de outros fechadas), três
   permissões novas, pedido de transferência com aprovação do Gestor,
   Painel/metas/relatórios por pessoa só para quem gerencia.
-- [ ] 4. Cadastros, duplicidade, diagnóstico, anexos, catálogo
+- [x] 4. Cadastros — outro telefone, potencial comercial e necessidade no
+  lead; telefone e e-mail na empresa; duplicidade (WhatsApp, e-mail, nome e
+  CNPJ da empresa) avisada no formulário e recusada ao salvar com quem é o
+  responsável e a situação; segunda negociação com o mesmo lead ou empresa
+  só com autorização do Gestor (fica no histórico); diagnóstico comercial
+  em versões; documentos e anexos (lead, empresa, cliente ativo); catálogo
+  de serviços com escopo, valor de referência, cobrança, prazo e condições.
 - [ ] 5. Propostas
 - [ ] 6. Contratos e operação
 - [ ] 7. Financeiro e comissões

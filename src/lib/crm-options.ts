@@ -13,7 +13,7 @@ import { randomUUID } from "crypto";
 import type { Pool, PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import { CrmInputError, CrmNotFoundError, addEvent, cleanText, type CrmActor } from "./crm-core";
-import { registerStageLabels } from "./crm-types";
+import { isCrmContractBilling, parseMoneyToCents, registerStageLabels } from "./crm-types";
 import {
   COLORED_KINDS,
   OPTION_KINDS,
@@ -182,6 +182,25 @@ function optionMeta(kind: OptionKind, id: string, value: unknown, current: Recor
     }
     return { probability, outcome };
   }
+  if (kind === "service") {
+    // Catálogo de serviços (evolução v1.0, item 3.2): what a proposal starts from.
+    const next: Record<string, unknown> = { ...current };
+    if (sent.scope !== undefined) next.scope = cleanText(sent.scope, 2000);
+    if (sent.referenceValue !== undefined) {
+      try {
+        next.referenceCents = parseMoneyToCents(sent.referenceValue);
+      } catch {
+        throw new CrmInputError("Valor de referência inválido — use, por exemplo, 2.500 ou 2.500,00.");
+      }
+    }
+    if (sent.billing !== undefined) {
+      if (sent.billing !== null && sent.billing !== "" && !isCrmContractBilling(sent.billing)) throw new CrmInputError("Modelo de cobrança inválido.");
+      next.billing = sent.billing || null;
+    }
+    if (sent.deadline !== undefined) next.deadline = cleanText(sent.deadline, 120);
+    if (sent.conditions !== undefined) next.conditions = cleanText(sent.conditions, 2000);
+    return Object.fromEntries(Object.entries(next).filter(([, v]) => v !== null && v !== undefined));
+  }
   if (kind === "lost_reason") {
     const group = sent.group === undefined ? current.group ?? "negativo" : sent.group;
     if (!isLostCloseGroup(group)) throw new CrmInputError("Grupo de tabulação inválido.");
@@ -244,7 +263,7 @@ export async function createOption(kind: OptionKind, input: OptionInput): Promis
 }
 
 /** Rename / describe / recolor. A segment's new name is applied to the companies and contacts that use it. */
-export async function updateOption(kind: OptionKind, id: string, input: OptionInput): Promise<{ before: string; colorBefore: string | null; after: CrmOption; renamedRecords: number }> {
+export async function updateOption(kind: OptionKind, id: string, input: OptionInput): Promise<{ before: string; colorBefore: string | null; metaBefore: Record<string, unknown>; after: CrmOption; renamedRecords: number }> {
   return withTransaction(async (client) => {
     const { rows } = await client.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options WHERE kind = $1 AND id = $2 FOR UPDATE`, [kind, id]);
     if (!rows[0]) throw new CrmNotFoundError("Opção não encontrada.");
@@ -264,7 +283,7 @@ export async function updateOption(kind: OptionKind, id: string, input: OptionIn
        RETURNING ${OPTION_COLS}`,
       [kind, id, label, description, color, JSON.stringify(meta)]
     );
-    return { before: rows[0].label, colorBefore: mapOption(rows[0]).color, after: mapOption(updated.rows[0]), renamedRecords };
+    return { before: rows[0].label, colorBefore: mapOption(rows[0]).color, metaBefore: rows[0].meta ?? {}, after: mapOption(updated.rows[0]), renamedRecords };
   });
 }
 

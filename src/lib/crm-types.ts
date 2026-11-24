@@ -94,6 +94,20 @@ export function joinPt(items: string[]): string {
   return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} e ${items[items.length - 1]}`;
 }
 
+/** Potencial comercial de um lead (evolução v1.0, item 2.1). */
+export const CRM_POTENTIALS = [
+  { id: "alto", label: "Alto" },
+  { id: "medio", label: "Médio" },
+  { id: "baixo", label: "Baixo" },
+] as const;
+export type CrmPotential = (typeof CRM_POTENTIALS)[number]["id"];
+export function isCrmPotential(v: unknown): v is CrmPotential {
+  return CRM_POTENTIALS.some((p) => p.id === v);
+}
+export function potentialLabel(v: string | null | undefined): string {
+  return CRM_POTENTIALS.find((p) => p.id === v)?.label ?? "";
+}
+
 /** Situação de uma tarefa (fixed list; done_at / canceled_at keep when and who). */
 export const CRM_TASK_STATUSES = [
   { id: "pendente", label: "Pendente" },
@@ -275,6 +289,12 @@ export type CrmContactCard = {
   returnAt: string | null;
   /** Decisor na empresa. */
   isDecisionMaker: boolean;
+  /** Evolução v1.0: telefone além do WhatsApp (fixo, outro número). */
+  altPhone: string | null;
+  /** Potencial comercial do lead. */
+  potential: CrmPotential | null;
+  /** Necessidade identificada (texto livre). */
+  need: string | null;
   /** Latest message, note or finished task — whichever came last. */
   lastInteractionAt: string | null;
   /** Earliest pending task. */
@@ -337,7 +357,11 @@ export type CrmEventKind =
   /** Atendimento of the conversation (Fase 4): payload { action: assumed|takeover|transferred|ended, from, to }. */
   | "attendance"
   /** Solicitação de transferência (evolução v1.0): payload { action: requested|aprovada|recusada|cancelada, from, to, reason, note, requestedBy }. */
-  | "transfer";
+  | "transfer"
+  /** Diagnóstico comercial saved (evolução v1.0): payload { version, diagnosisId, dealId, need }. */
+  | "diagnosis"
+  /** A document attached or archived (evolução v1.0): payload { action: attached|archived, fileId, name }. */
+  | "file";
 
 export type CrmEvent = {
   id: string;
@@ -521,6 +545,9 @@ export type CrmCompanyRow = {
   state: string | null;
   address: string | null;
   website: string | null;
+  /** Evolução v1.0: the company's own phone and e-mail. */
+  phone: string | null;
+  email: string | null;
   notes: string | null;
   /** Responsável pela conta. */
   ownerId: string | null;

@@ -143,6 +143,16 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   departamento (`crm_department`, da lista Departamentos). Desde a v11.
 - `crm_imports` — cada importação de planilha (quem, quando, contagens, se foi
   desfeita). `crm_quick_replies` — respostas rápidas.
+- `crm_contacts.alt_phone`, `potential` (alto/médio/baixo) e `need`
+  (necessidade identificada); `crm_companies.phone` e `email` (v23).
+- `crm_diagnostics` (v23) — o diagnóstico comercial do lead: uma linha por
+  versão (`version` 1, 2, 3...; nada é sobrescrito), os campos em `data`
+  (JSON), a oportunidade a que se refere (opcional), quem fez e quando.
+- `crm_files` (v23) — documentos e anexos: o arquivo (`content`, até 4 MB,
+  conferido no banco), nome, tipo, tamanho, `sha256`, quem enviou e quando;
+  pertence a exatamente um lead, empresa ou cliente ativo (e, no lead,
+  opcionalmente a uma oportunidade). Arquivar marca `archived_at` e quem
+  arquivou; nada é apagado.
 
 ### Regras que o sistema garante
 
@@ -262,6 +272,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   partir de julho de 2026). Na importação, um CNPJ já cadastrado liga o
   contato àquela empresa, seja qual for o nome na planilha; nome de empresa
   já cadastrada com outro CNPJ vira erro na linha.
+  Ao recusar, o servidor diz qual é o registro, quem é o responsável e a
+  situação (409); a tela avisa antes de salvar e abre o cadastro existente.
+- **Uma negociação por lead e por empresa:** uma oportunidade nova num lead
+  (ou empresa) que já tem oportunidade aberta de outra pessoa só é criada
+  com autorização explícita do Gestor ou do Administrador, registrada no
+  histórico.
 - **Nada se apaga pela tela:** contato sai do funil por *arquivamento*
   (reversível em Contatos → Arquivados). Um lead arquivado que escreve no
   WhatsApp volta sozinho.
@@ -475,6 +491,45 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — cadastros, duplicidade, diagnóstico e documentos (schema v23)
+
+- **Campos novos** (especificação, item 2.1): no lead, outro telefone,
+  potencial comercial e necessidade identificada (no formulário de novo
+  contato, no painel e na exportação); na empresa, telefone e e-mail.
+- **Duplicidade** (item 2.2): o formulário de novo contato avisa, enquanto é
+  preenchido, que o WhatsApp, o e-mail ou a empresa já existem, com o
+  responsável e a situação, e abre o cadastro existente. Ao salvar, o
+  servidor confere de novo: WhatsApp, e-mail, nome da empresa (sem acento,
+  maiúsculas ou "Ltda") e CNPJ repetidos respondem 409 com o registro
+  encontrado (antes era 400 só com o texto). Lead arquivado também conta.
+- **Segunda negociação** (item 2.2): criar uma oportunidade para um lead, ou
+  para alguém da mesma empresa, que já está em negociação aberta com outra
+  pessoa é recusado. O Gestor (ou Administrador) pode autorizar
+  explicitamente ("Autorizar a segunda negociação e criar"); a autorização
+  fica no histórico ("segunda negociação ... autorizada por ..."). O
+  Comercial pode criar só o contato, sem oportunidade, ou pedir a
+  transferência.
+- **Diagnóstico comercial** (item 2.3): em "Negócio e tarefas", o formulário
+  com necessidade, problema, objetivo, serviços atuais, investimento atual,
+  orçamento, urgência, decisor, objeções, concorrentes e próximos passos.
+  Cada vez que é salvo vira uma versão nova; as anteriores ficam para
+  consulta. Só quem trabalha no lead (e pode editar o funil) salva; quem vê
+  o lead lê.
+- **Documentos e anexos** (item 2.1 e base do item 8): no lead (Detalhes e
+  histórico), na empresa e no cliente ativo. PDF, Word, Excel, PowerPoint,
+  imagens (JPEG, PNG, WebP), texto e CSV, até 4 MB; o tipo é conferido pelo
+  conteúdo, não só pelo nome. Baixar só para quem vê o registro, sempre como
+  download e sem cache; anexar e arquivar só para quem trabalha no registro.
+  Anexar e arquivar ficam no histórico do lead.
+- **Catálogo de serviços** (item 3.2): cada serviço da Personalização tem
+  escopo, valor de referência, cobrança (mensal ou único), prazo e
+  condições — o ponto de partida das propostas. Mudanças nesses detalhes
+  (e na probabilidade das etapas ou no grupo de tabulação dos motivos)
+  ficam na auditoria.
+- Banco v23: colunas novas em `crm_contacts` e `crm_companies`,
+  `crm_diagnostics` e `crm_files`.
+- Testes: `cadastro-api` e `cadastro-e2e`; o teste de banco confere a v23.
 
 ### Evolução v1.0 — visibilidade compartilhada e transferências (schema v22)
 

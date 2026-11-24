@@ -25,7 +25,9 @@ export async function POST(req: NextRequest) {
     const { ownerId } = await requireContact(actor, String(body.contactId ?? ""));
     requireCap(actor, "editPipeline");
     requireOwnerChange(actor, body.ownerId, ownerId);
-    return NextResponse.json({ id: await createDeal(body, actor) }, { status: 201 });
+    // A second independent negotiation with the same contact or company: only a Gestor authorizes it (allowParallel).
+    const input = { ...body, checkParallel: true, allowParallel: actor.caps.assignAnyOwner && (body as { allowParallel?: unknown }).allowParallel === true };
+    return NextResponse.json({ id: await createDeal(input, actor) }, { status: 201 });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/deals POST");
   }

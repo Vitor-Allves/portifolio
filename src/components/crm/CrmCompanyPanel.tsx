@@ -18,6 +18,7 @@ import { CRM_ALERT, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN } from "./crm-styles";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
 import { SegmentSelect, StageDot, TagChips, useCatalog } from "./crm-catalog-context";
+import CrmFiles from "./CrmFiles";
 import CrmTagsEditor from "./CrmTagsEditor";
 import { CompanyStatusChip, TemperatureChip } from "./crm-fields";
 import { TASK_STATE_TONE, shortDate, taskDueLabel, taskState } from "./crm-format";
@@ -32,6 +33,8 @@ type Form = {
   state: string;
   address: string;
   website: string;
+  phone: string;
+  email: string;
   notes: string;
   ownerId: string;
   status: string;
@@ -127,6 +130,8 @@ export default function CrmCompanyPanel({
           state: company.state ?? "",
           address: company.address ?? "",
           website: company.website ?? "",
+          phone: company.phone ?? "",
+          email: company.email ?? "",
           notes: company.notes ?? "",
           ownerId: company.ownerId ?? "",
           status: company.status ?? "",
@@ -305,6 +310,10 @@ export default function CrmCompanyPanel({
                   </label>
                 </div>
                 <input value={fields.address} onChange={(e) => edit({ address: e.target.value })} aria-label="Endereço" placeholder="Endereço (rua, número, bairro)" className={CRM_INPUT} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input value={fields.phone} onChange={(e) => edit({ phone: e.target.value })} inputMode="tel" aria-label="Telefone da empresa" placeholder="Telefone da empresa" className={CRM_INPUT} />
+                  <input value={fields.email} onChange={(e) => edit({ email: e.target.value })} type="email" aria-label="E-mail da empresa" placeholder="E-mail da empresa" className={CRM_INPUT} />
+                </div>
                 <input value={fields.website} onChange={(e) => edit({ website: e.target.value })} aria-label="Site" placeholder="Site" className={CRM_INPUT} />
                 <textarea value={fields.notes} onChange={(e) => edit({ notes: e.target.value })} rows={3} aria-label="Observações da empresa" placeholder="Observações" className={CRM_INPUT} />
                 {error && (
@@ -327,6 +336,8 @@ export default function CrmCompanyPanel({
                 )}
                 <p className="text-[11.5px] text-crm-faint">Segmento e cidade valem para todos os contatos desta empresa. O CNPJ não se repete: uma empresa por CNPJ.</p>
               </section>
+
+              <CrmFiles target={{ companyId: company.id }} canEdit={canEdit && (caps.actOnAllLeads || !company.ownerId || company.ownerId === currentUserId)} />
 
               <CrmTagsEditor
                 links={company.tagLinks}

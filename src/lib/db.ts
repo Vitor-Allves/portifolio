@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1189,6 +1189,58 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_transfer_requests_pending_idx ON crm_transfer_requests (contact_id) WHERE status = 'pendente'`);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_transfer_requests_status_idx ON crm_transfer_requests (status, requested_at DESC)`);
     await done(22);
+  }
+
+  if (current < 23) {
+    // v23 — Evolução v1.0 (cadastros, item 2): more of what the spec asks a
+    // lead and a company to carry, the diagnóstico comercial (every save is a
+    // new version, the old ones stay) and documents attached to the records
+    // (kept in the database, up to 4 MB each). New columns are empty and new
+    // tables start empty: nothing existing is rewritten.
+    await db.query(`
+      ALTER TABLE crm_contacts
+        ADD COLUMN IF NOT EXISTS alt_phone TEXT,
+        ADD COLUMN IF NOT EXISTS potential TEXT CHECK (potential IN ('alto', 'medio', 'baixo')),
+        ADD COLUMN IF NOT EXISTS need TEXT
+    `);
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS phone TEXT, ADD COLUMN IF NOT EXISTS email TEXT`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_diagnostics (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        version INTEGER NOT NULL,
+        data JSONB NOT NULL,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (contact_id, version)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_files (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        company_id TEXT REFERENCES crm_companies (id) ON DELETE CASCADE,
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        client_id TEXT REFERENCES crm_clients (id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 4194304),
+        sha256 TEXT NOT NULL,
+        content BYTEA NOT NULL,
+        uploaded_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        uploaded_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        archived_at TIMESTAMPTZ,
+        archived_by_name TEXT,
+        CHECK (num_nonnulls(contact_id, company_id, client_id) = 1)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_files_contact_idx ON crm_files (contact_id, created_at DESC)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_files_company_idx ON crm_files (company_id, created_at DESC)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_files_client_idx ON crm_files (client_id, created_at DESC)`);
+    await done(23);
   }
 }
 

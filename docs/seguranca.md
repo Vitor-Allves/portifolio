@@ -78,6 +78,15 @@ regras que valem para todas as fases. Atualizar a cada fase.
   Enviar dados de leads e clientes para a Anthropic é tratamento de dados
   pessoais por um fornecedor: avalie e registre isso na política de
   privacidade antes de ligar a IA.
+- Documentos e anexos (evolução v1.0): até 4 MB, guardados no banco (com
+  `sha256`); só PDF, Office, imagens JPEG/PNG/WebP, texto e CSV, com o tipo
+  conferido pelos primeiros bytes do arquivo (um executável renomeado para
+  .pdf é recusado; HTML e SVG nunca são aceitos). O download só sai para
+  quem vê o registro, sempre como anexo (`Content-Disposition: attachment`,
+  `nosniff`, sem cache) — o navegador não abre o arquivo dentro do CRM.
+  Arquivar não apaga; os arquivos entram no backup do banco (o que aumenta
+  o tamanho dele: acompanhe o plano do Neon). Não há antivírus: quem baixa
+  deve tratar documentos de terceiros com o cuidado habitual.
 - Dependências: `npm audit` sem falhas em 23/11/2026 (Next.js 16.4.6). A
   verificação automática (CI) roda em todo PR.
 
