@@ -344,6 +344,8 @@ export type CrmDeal = {
   stageChangedAt: string;
   closedAt: string | null;
   createdAt: string;
+  /** The active client this won opportunity became a contract of (Fase 5). */
+  clientId: string | null;
 };
 
 export type CrmTaskSummary = { id: string; kind: CrmTaskKind; title: string; dueAt: string | null; allDay: boolean };
@@ -471,6 +473,8 @@ export type CrmCompanyRow = {
   wonCount: number;
   lastActivityAt: string | null;
   createdAt: string;
+  /** Its record in Clientes ativos, if it has one (Fase 5). */
+  clientId: string | null;
 };
 
 export type CrmCompanyDetail = CrmCompanyRow & {
@@ -657,3 +661,115 @@ export function formatPhone(phone: string): string {
   }
   return `+${phone}`;
 }
+
+// ---------------- Clientes ativos (Fase 5) ----------------
+
+export const CRM_CLIENT_STATUSES = [
+  { id: "onboarding", label: "Onboarding" },
+  { id: "ativo", label: "Ativo" },
+  { id: "pausado", label: "Pausado" },
+  { id: "encerrado", label: "Encerrado" },
+] as const;
+export type CrmClientStatus = (typeof CRM_CLIENT_STATUSES)[number]["id"];
+export function isCrmClientStatus(value: unknown): value is CrmClientStatus {
+  return CRM_CLIENT_STATUSES.some((t) => t.id === value);
+}
+export function clientStatusLabel(id: string | null | undefined): string {
+  return CRM_CLIENT_STATUSES.find((t) => t.id === id)?.label ?? "";
+}
+
+export const CRM_CONTRACT_STATUSES = [
+  { id: "vigente", label: "Vigente" },
+  { id: "encerrado", label: "Encerrado" },
+  { id: "cancelado", label: "Cancelado" },
+] as const;
+export type CrmContractStatus = (typeof CRM_CONTRACT_STATUSES)[number]["id"];
+export function isCrmContractStatus(value: unknown): value is CrmContractStatus {
+  return CRM_CONTRACT_STATUSES.some((t) => t.id === value);
+}
+export function contractStatusLabel(id: string | null | undefined): string {
+  return CRM_CONTRACT_STATUSES.find((t) => t.id === id)?.label ?? "";
+}
+
+export const CRM_CONTRACT_BILLINGS = [
+  { id: "mensal", label: "Mensal" },
+  { id: "unico", label: "Valor único" },
+] as const;
+export type CrmContractBilling = (typeof CRM_CONTRACT_BILLINGS)[number]["id"];
+export function isCrmContractBilling(value: unknown): value is CrmContractBilling {
+  return CRM_CONTRACT_BILLINGS.some((t) => t.id === value);
+}
+
+/** "Vence em 30 / 60 dias" and "Vencido" in the Clientes filter. */
+export const CRM_RENEWAL_FILTERS = [
+  { id: "30", label: "Vence em até 30 dias" },
+  { id: "60", label: "Vence em até 60 dias" },
+  { id: "vencido", label: "Contrato vencido" },
+] as const;
+
+export type CrmContract = {
+  id: string;
+  clientId: string;
+  /** Serviço ids (Personalização → Serviços). */
+  services: string[];
+  startsOn: string;
+  /** null = sem prazo. */
+  endsOn: string | null;
+  /** Centavos; null when not informed — or hidden from this person (see `valuesHidden`). */
+  valueCents: number | null;
+  billing: CrmContractBilling;
+  status: CrmContractStatus;
+  notes: string | null;
+  dealId: string | null;
+  dealTitle: string | null;
+  /** Days until it ends (Brasília), for a vigente contract with an end date; negative = already ended. */
+  daysLeft: number | null;
+  createdAt: string;
+};
+
+export type CrmClientRow = {
+  id: string;
+  companyId: string;
+  companyName: string;
+  segment: string | null;
+  city: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  status: CrmClientStatus;
+  startedOn: string | null;
+  endedOn: string | null;
+  endReason: string | null;
+  notes: string | null;
+  /** Services of the vigente contracts. */
+  services: string[];
+  /** Monthly value of the vigente contracts (centavos); null when hidden or none informed. */
+  monthlyCents: number | null;
+  /** The vigente contract that ends first: its end date and the days left (negative = expired). */
+  nextEndsOn: string | null;
+  daysLeft: number | null;
+  activeContracts: number;
+  decisionMakers: { id: string; name: string }[];
+  tagIds: string[];
+  createdAt: string;
+};
+
+export type CrmClientEvent = {
+  id: string;
+  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note";
+  payload: Record<string, unknown>;
+  userName: string | null;
+  createdAt: string;
+};
+
+export type CrmClientDetail = CrmClientRow & {
+  contracts: CrmContract[];
+  events: CrmClientEvent[];
+  dealId: string | null;
+  createdByName: string | null;
+};
+
+/** Ready to become clients: won opportunities without a contract, companies marked "Cliente ativo" without a record. */
+export type CrmClientSuggestions = {
+  deals: { dealId: string; title: string; contactId: string; contactName: string; companyId: string | null; companyName: string | null; closedAt: string | null; clientId: string | null }[];
+  companies: { companyId: string; companyName: string }[];
+};

@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -952,6 +952,72 @@ async function ensureSchema(): Promise<void> {
     `);
 
     await done(16);
+  }
+
+  if (current < 17) {
+    // v17 — Fase 5, entrega 1 (especificação v1.0): clientes ativos. New
+    // tables only, all empty: nobody becomes a client until someone says so
+    // (no backfill from won opportunities or from companies marked "Cliente
+    // ativo").
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_clients (
+        id TEXT PRIMARY KEY,
+        -- one client per company
+        company_id TEXT NOT NULL UNIQUE REFERENCES crm_companies (id),
+        owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        -- onboarding | ativo | pausado | encerrado
+        status TEXT NOT NULL DEFAULT 'onboarding',
+        started_on DATE,
+        ended_on DATE,
+        end_reason TEXT,
+        notes TEXT,
+        -- the won opportunity it came from, if any
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_clients_owner_idx ON crm_clients (owner_id)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_contracts (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        -- ids from Personalização → Serviços (crm_options kind 'service')
+        services TEXT[] NOT NULL DEFAULT '{}',
+        starts_on DATE NOT NULL,
+        -- NULL = sem prazo
+        ends_on DATE,
+        value_cents BIGINT,
+        -- mensal | unico
+        billing TEXT NOT NULL DEFAULT 'mensal',
+        -- vigente | encerrado | cancelado
+        status TEXT NOT NULL DEFAULT 'vigente',
+        notes TEXT,
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_contracts_client_idx ON crm_contracts (client_id)`);
+    // A won opportunity becomes at most one contract, even with two clicks at once.
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_contracts_deal_key ON crm_contracts (deal_id) WHERE deal_id IS NOT NULL`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_events (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        -- created | edited | status | contract_added | contract_edited | note
+        kind TEXT NOT NULL,
+        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+        user_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        user_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_events_client_idx ON crm_client_events (client_id, created_at DESC)`);
+
+    await done(17);
   }
 }
 

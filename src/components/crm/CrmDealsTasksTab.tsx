@@ -346,6 +346,7 @@ export default function CrmDealsTasksTab({
   onReload,
   onOpenTask,
   startNewDeal = false,
+  clients,
 }: {
   detail: CrmContactDetail;
   /** Profiles that can't touch the funnel (Marketing) see opportunities and tasks without editing them. */
@@ -360,6 +361,8 @@ export default function CrmDealsTasksTab({
   onOpenTask?: (taskId: string) => void;
   /** Open with the "nova oportunidade" form already showing (from the conversation's shortcut). */
   startNewDeal?: boolean;
+  /** Clientes ativos: a won opportunity opens its client, or becomes one. */
+  clients?: { canCreate: boolean; onOpen: (clientId: string) => void };
 }) {
   const { label } = useCatalog();
   const [error, setError] = useState<string | null>(null);
@@ -460,6 +463,39 @@ export default function CrmDealsTasksTab({
               </li>
             ))}
           </ul>
+        )}
+        {selected && selected.stage === "ganho" && clients && (selected.clientId || clients.canCreate) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-crm-green/30 bg-crm-green/[0.06] px-3 py-2 text-[12.5px]" role="region" aria-label="Cliente ativo">
+            {selected.clientId ? (
+              <>
+                <span className="text-crm-dim">Este negócio é contrato de um cliente ativo.</span>
+                <button type="button" onClick={() => clients.onOpen(selected.clientId!)} className={CRM_LINK_BTN}>
+                  Ver cliente
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-crm-dim min-w-0 flex-1 basis-56">Negócio ganho. Cadastre a empresa em Clientes ativos, com o serviço e o valor negociado como contrato.</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await fetch("/api/crm/clients/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: selected.id }) });
+                    const body = (await res.json().catch(() => null)) as { id?: string; error?: string } | null;
+                    if (!res.ok || !body?.id) {
+                      setError(body?.error ?? "Não foi possível cadastrar o cliente.");
+                      return;
+                    }
+                    setError(null);
+                    await onReload();
+                    clients.onOpen(body.id);
+                  }}
+                  className={CRM_BTN_PRIMARY}
+                >
+                  Tornar cliente
+                </button>
+              </>
+            )}
+          </div>
         )}
         {selected && !readOnly && <DealEditor key={selected.id} deal={selected} send={send} />}
       </section>

@@ -54,13 +54,19 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 16;
+const LATEST = 17;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v15: undo exactly what v16 (públicos salvos) added.
+// Back to v16: undo exactly what v17 (clientes ativos) added.
+async function downgradeToV16(name) {
+  await query(name, `DROP TABLE crm_client_events; DROP TABLE crm_contracts; DROP TABLE crm_clients; DELETE FROM schema_migrations WHERE version = 17;`);
+}
+
+// Back to v15: undo exactly what v17 and v16 (públicos salvos) added.
 async function downgradeToV15(name) {
+  await downgradeToV16(name);
   await query(name, `DROP TABLE crm_campaign_audiences; DELETE FROM schema_migrations WHERE version = 16;`);
 }
 
@@ -202,6 +208,8 @@ ok(attendanceTags === "Aguardando cliente,Dúvida,Suporte,Reclamação,Urgente",
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_contacts WHERE attendant_id IS NOT NULL`))[0].n === 0, "v15: nobody is attending any conversation yet");
 // v16 (Fase 4, entrega 2): saved audiences start empty.
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_campaign_audiences`))[0].n === 0, "v16: no saved audiences yet");
+// v17 (Fase 5, entrega 1): clientes ativos start empty — nothing becomes a client by itself.
+ok((await query(B, `SELECT (SELECT count(*) FROM crm_clients) + (SELECT count(*) FROM crm_contracts) + (SELECT count(*) FROM crm_client_events) AS n`))[0].n === "0", "v17: no clients, contracts or history yet");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

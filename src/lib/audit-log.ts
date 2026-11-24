@@ -39,7 +39,10 @@ export type AuditAction =
   | "crm.portfolio_assign"
   | "crm.portfolio_transfer"
   | "crm.automation_change"
-  | "crm.automation_run";
+  | "crm.automation_run"
+  | "crm.client_create"
+  | "crm.client_update"
+  | "crm.contract_change";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

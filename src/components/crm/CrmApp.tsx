@@ -45,6 +45,8 @@ import CrmAgendaView from "./CrmAgendaView";
 import CrmTaskDialog, { type TaskDialogTarget, type TaskDraft } from "./CrmTaskDialog";
 import CrmReminderBell from "./CrmReminderBell";
 import CrmAutomationsView from "./CrmAutomationsView";
+import CrmClientsView from "./CrmClientsView";
+import CrmClientPanel from "./CrmClientPanel";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -288,6 +290,8 @@ function CrmAppInner({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const isWide = useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  // Clientes ativos: the client panel (shown when no contact or company panel is on top of it).
+  const [clientId, setClientId] = useState<string | null>(null);
   // The task form, over whatever is open (new task, or one being edited).
   const [taskTarget, setTaskTarget] = useState<TaskDialogTarget | null>(null);
   const openTask = useCallback((id: string) => setTaskTarget({ id }), []);
@@ -351,6 +355,12 @@ function CrmAppInner({
 
   const openContact = useCallback((contactId: string, tab?: PanelTab, dealId?: string | null) => {
     setSelected({ contactId, tab, dealId });
+  }, []);
+
+  const openClient = useCallback((id: string) => {
+    setSelected(null);
+    setCompanyId(null);
+    setClientId(id);
   }, []);
 
   const visible = useMemo(() => {
@@ -477,6 +487,7 @@ function CrmAppInner({
           "contacts",
           "companies",
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
+          ...(caps.viewClients ? (["clients"] as const) : []),
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
           ...(caps.manageTeam ? (["team", "audit"] as const) : []),
@@ -658,6 +669,7 @@ function CrmAppInner({
                   onOpenTask={openTask}
                   onNewTask={newTask}
                   tasksVersion={tasksVersion}
+                  onOpenClient={openClient}
                 />
               ) : null
             }
@@ -674,6 +686,15 @@ function CrmAppInner({
           />
         ) : view === "campaigns" && caps.editCampaigns ? (
           <CrmCampaignsView team={team} canSend={caps.sendCampaigns} templatesConfigured={templatesConfigured} onOpenContact={(id) => openContact(id, "conversa")} />
+        ) : view === "clients" && caps.viewClients ? (
+          <CrmClientsView
+            team={team}
+            caps={caps}
+            currentUserId={currentUserId}
+            version={dataVersion}
+            onOpenClient={openClient}
+            onOpenContact={(id) => openContact(id, "detalhes")}
+          />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
         ) : view === "automations" && caps.manageAutomations ? (
@@ -808,6 +829,21 @@ function CrmAppInner({
           onOpenTask={openTask}
           onNewTask={newTask}
           onChanged={() => setDataVersion((v) => v + 1)}
+          onOpenClient={openClient}
+        />
+      )}
+
+      {clientId && !selected && !companyId && (
+        <CrmClientPanel
+          key={clientId}
+          clientId={clientId}
+          team={team}
+          currentUserId={currentUserId}
+          caps={caps}
+          onClose={() => setClientId(null)}
+          onOpenContact={(id) => openContact(id)}
+          onOpenCompany={(id) => setCompanyId(id)}
+          onChanged={() => setDataVersion((v) => v + 1)}
         />
       )}
 
@@ -862,6 +898,7 @@ function CrmAppInner({
           onOpenTask={openTask}
           onNewTask={newTask}
           tasksVersion={tasksVersion}
+          onOpenClient={openClient}
         />
       )}
 
