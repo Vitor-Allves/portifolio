@@ -14,6 +14,7 @@ import {
 import { CONSENT_BADGE, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT, CRM_TD, CRM_TH, STAGE_DOT } from "./crm-styles";
 import { TASK_STATE_TONE, relativeTime, taskDueLabel, taskState, todaySp } from "./crm-format";
 import { TemperatureChip, brDay } from "./crm-fields";
+import CrmAssignDialog from "./CrmAssignDialog";
 import { Mascot } from "./crm-brand";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { TagChips, useCatalog } from "./crm-catalog-context";
@@ -60,6 +61,7 @@ export default function CrmContactsView({
   onOpenContact,
   onImport,
   canExport,
+  canAssign = false,
   onNew,
 }: {
   team: CrmTeamMember[];
@@ -69,6 +71,8 @@ export default function CrmContactsView({
   /** Absent when the profile can't import. */
   onImport?: () => void;
   canExport: boolean;
+  /** "Trocar o responsável de qualquer lead": bulk owner change (carteiras). */
+  canAssign?: boolean;
   onNew: () => void;
 }) {
   const { label, options, tagGroups } = useCatalog();
@@ -89,6 +93,11 @@ export default function CrmContactsView({
   const [sort, setSort] = useState("recent");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  // Carteiras: rows ticked for a bulk owner change; assigning = dialog open (selection or the whole filter).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [assigning, setAssigning] = useState<null | "selection" | "filter">(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [facets, setFacets] = useState<CrmFacets>({ segments: [], cities: [] });
   const [result, setResult] = useState<{ key: string; data: CrmPage<CrmContactCard> | null; error: string | null } | null>(null);
 
@@ -118,7 +127,7 @@ export default function CrmContactsView({
     return p;
   }, [q, stage, owner, source, segment, city, consent, tag, temperature, service, returnDue, archived]);
 
-  const key = `${params.toString()}|${sort}|${page}|${version}`;
+  const key = `${params.toString()}|${sort}|${page}|${version}|${reload}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -159,7 +168,17 @@ export default function CrmContactsView({
   const resetPage = <T,>(set: (v: T) => void) => (v: T) => {
     set(v);
     setPage(1);
+    setSelected(new Set());
   };
+  const pageIds = data?.rows.map((c) => c.id) ?? [];
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <section aria-label="Contatos" className="space-y-3">
@@ -199,6 +218,7 @@ export default function CrmContactsView({
               {m.name}
             </option>
           ))}
+          <option value="inactive">Responsável desativado</option>
         </select>
         <select value={source} onChange={(e) => resetPage(setSource)(e.target.value)} aria-label="Origem" className={CRM_FILTER}>
           <option value="">Todas as origens</option>
@@ -281,6 +301,11 @@ export default function CrmContactsView({
         </button>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {canAssign && total > 0 && (
+            <button type="button" onClick={() => setAssigning(selected.size > 0 ? "selection" : "filter")} className={CRM_BTN_OUTLINE}>
+              Trocar responsável{selected.size > 0 ? ` (${selected.size})` : ""}
+            </button>
+          )}
           {canExport && (
             <a href={`/api/crm/contacts/export/?${params}`} className={CRM_BTN_OUTLINE} download>
               Exportar CSV
@@ -312,6 +337,41 @@ export default function CrmContactsView({
       </div>
 
       {result?.error && <p className="text-[12.5px] text-crm-red">{result.error}</p>}
+      {notice && (
+        <p className="rounded-lg border border-crm-green/30 bg-crm-green/[0.07] px-3 py-2 text-[12px] text-crm-green" role="status">
+          {notice}
+        </p>
+      )}
+      {canAssign && selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-crm-accent/30 bg-crm-accent/[0.06] px-3.5 py-2 text-[12.5px]">
+          <span>
+            {selected.size} selecionado{selected.size === 1 ? "" : "s"}
+          </span>
+          {total > selected.size && (
+            <button type="button" onClick={() => setAssigning("filter")} className="font-semibold text-crm-accent hover:opacity-80">
+              Usar todos os {total.toLocaleString("pt-BR")} do filtro
+            </button>
+          )}
+          <button type="button" onClick={() => setSelected(new Set())} className="ml-auto text-crm-dim hover:text-crm-text">
+            Limpar seleção
+          </button>
+        </div>
+      )}
+      {assigning && (
+        <CrmAssignDialog
+          ids={assigning === "selection" ? [...selected] : undefined}
+          filters={assigning === "filter" ? Object.fromEntries(params) : undefined}
+          count={assigning === "selection" ? selected.size : total}
+          team={team}
+          onClose={() => setAssigning(null)}
+          onDone={(message) => {
+            setAssigning(null);
+            setSelected(new Set());
+            setNotice(message);
+            setReload((v) => v + 1);
+          }}
+        />
+      )}
 
       {data && data.rows.length === 0 ? (
         <div className="flex items-end justify-between gap-4 rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] px-6 pt-5 overflow-hidden">
@@ -328,6 +388,26 @@ export default function CrmContactsView({
           <table className="hidden md:table w-full text-[12.5px]">
             <thead className="bg-crm-sunken border-b border-crm-line">
               <tr>
+                {canAssign && (
+                  <th className={`${CRM_TH} w-8`}>
+                    <input
+                      type="checkbox"
+                      checked={allOnPage}
+                      onChange={() =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const id of pageIds) {
+                            if (allOnPage) next.delete(id);
+                            else next.add(id);
+                          }
+                          return next;
+                        })
+                      }
+                      aria-label="Selecionar os contatos desta página"
+                      className="h-4 w-4 accent-[var(--crm-accent)]"
+                    />
+                  </th>
+                )}
                 <th className={CRM_TH}>Contato</th>
                 <th className={CRM_TH}>Empresa</th>
                 <th className={CRM_TH}>WhatsApp / e-mail</th>
@@ -341,6 +421,17 @@ export default function CrmContactsView({
             <tbody className="divide-y divide-crm-line">
               {data?.rows.map((c) => (
                 <tr key={c.id} onClick={() => onOpenContact(c.id)} className="cursor-pointer hover:bg-crm-hover transition-colors">
+                  {canAssign && (
+                    <td className={CRM_TD} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(c.id)}
+                        onChange={() => toggle(c.id)}
+                        aria-label={`Selecionar ${c.name}`}
+                        className="h-4 w-4 accent-[var(--crm-accent)]"
+                      />
+                    </td>
+                  )}
                   <td className={CRM_TD}>
                     <button
                       type="button"

@@ -1,7 +1,7 @@
 // Painel (Fase 4) in the browser, on the base fixture: home page, period and
 // owner filters, October 2026 numbers, Comercial sees only their own, every
 // section still opens, dark theme and the phone.
-import { BASE, launchBrowser, ok, shot } from "../lib/helpers.mjs";
+import { BASE, launchBrowser, loginRequest, ok, shot } from "../lib/helpers.mjs";
 
 
 const browser = await launchBrowser();
@@ -15,7 +15,7 @@ async function open(username, { width = 1440, height = 900 } = {}) {
       document.head.appendChild(st);
     });
   });
-  ok((await ctx.request.post(`${BASE}/api/analise/login/`, { data: { username, password: "crm-teste-123" } })).ok(), `login ${username}`);
+  ok((await loginRequest(ctx.request, username)).ok(), `login ${username}`);
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`${username}: ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !/400|403|404|409|502/.test(m.text()) && errors.push(`${username}: ${m.text()}`));

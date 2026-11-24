@@ -178,6 +178,8 @@ export type TeamChange = {
   access?: { from: CrmAccess; to: CrmAccess };
   permissions?: { from: CrmPermissionOverrides; to: CrmPermissionOverrides };
   details?: { jobTitle: string | null; department: string | null };
+  /** Their open sessions were ended (promoted to Administrador without 2FA). */
+  endedSessions?: boolean;
 };
 
 /**
@@ -206,6 +208,12 @@ export async function updateTeamMember(s: CrmSession, userId: string, patch: Tea
     access = patch.access;
     set("crm_role", access);
     change.access = { from: current.access, to: access };
+    // Administradores log in with 2FA: someone promoted without it is signed
+    // out everywhere, so the next login walks them through enrolling.
+    if (access === "administrador" && !current.totpEnabled) {
+      sets.push("session_version = session_version + 1");
+      change.endedSessions = true;
+    }
   }
   if (patch.permissions !== undefined || change.access) {
     if (patch.permissions !== undefined) {
@@ -310,4 +318,28 @@ export async function resetCrmUserPassword(s: CrmSession, userId: string): Promi
   const password = generatePassword();
   await resetInternalUserPassword(userId, password);
   return { target, password };
+}
+
+/**
+ * Encerrar sessões (Administrador): signs someone out on every device right
+ * away (their next request needs a new login). Not for oneself, and not for
+ * the general administrator.
+ */
+export async function endSessions(s: CrmSession, userId: string): Promise<CrmTeamRow> {
+  requireCap(s, "manageTeam");
+  if (userId === s.userId) throw new CrmForbiddenError("Para sair dos seus próprios dispositivos, use Sair.");
+  const target = await teamMember(userId);
+  if (!target.active) throw new CrmForbiddenError("Essa pessoa já foi desativada.");
+  if (target.locked) throw new CrmForbiddenError("As sessões do Administrador geral são gerenciadas no Intelligence.");
+  const db = await getDb();
+  await db.query(`UPDATE internal_users SET session_version = session_version + 1 WHERE id = $1`, [userId]);
+  return target;
+}
+
+/** An Administrador whose session predates the 2FA requirement: the CRM asks them to sign in again to set it up. */
+export async function needsTotpSetup(s: CrmSession): Promise<boolean> {
+  if (s.role !== "administrador") return false;
+  const db = await getDb();
+  const { rows } = await db.query<{ totp_enabled: boolean }>(`SELECT totp_enabled FROM internal_users WHERE id = $1`, [s.userId]);
+  return rows[0] ? !rows[0].totp_enabled : false;
 }

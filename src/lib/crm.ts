@@ -223,6 +223,8 @@ export function contactWhere(f: ContactFilters): { sql: string; values: unknown[
   if (f.stage && isCrmStage(f.stage)) add((n) => `c.stage = $${n}`, f.stage);
   if (f.owner === "mine" && f.currentUserId) add((n) => `c.owner_id = $${n}`, f.currentUserId);
   else if (f.owner === "none") where.push("c.owner_id IS NULL");
+  // Leads still with someone who was deactivated (a carteira to transfer).
+  else if (f.owner === "inactive") where.push("c.owner_id IN (SELECT id FROM internal_users WHERE revoked_at IS NOT NULL)");
   else if (f.owner && f.owner !== "all" && f.owner !== "mine") add((n) => `c.owner_id = $${n}`, f.owner);
   if (f.source) add((n) => `c.source = $${n}`, f.source);
   if (f.tag) add((n) => `EXISTS (SELECT 1 FROM crm_contact_tags ct WHERE ct.contact_id = c.id AND ct.tag_id = $${n})`, f.tag);

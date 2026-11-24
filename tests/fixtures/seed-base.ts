@@ -4,6 +4,7 @@
 // checked by hand. Never run against a real database.
 import { getDb } from "../../src/lib/db";
 import { hashPassword } from "../../src/lib/password";
+import { encryptSecret } from "../../src/lib/secret-crypto";
 
 (async () => {
   const db = await getDb();
@@ -16,6 +17,10 @@ import { hashPassword } from "../../src/lib/password";
     await db.query(`INSERT INTO internal_users (id, name, password_hash, role, username) VALUES ($1,$2,$3,$4,$5)`, [id, name, hash, role, username]);
   }
   await db.query(`UPDATE internal_users SET crm_role = CASE role WHEN 'gestor' THEN 'gestor' WHEN 'analista' THEN 'comercial' ELSE 'administrador' END`);
+  // CRM Administradores log in with 2FA (Fase 2): a fixed, test-only secret (tests/lib/helpers.mjs computes the codes).
+  await db.query(`UPDATE internal_users SET totp_enabled = true, totp_secret_enc = $1 WHERE id = 'u-admin'`, [
+    encryptSecret("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"),
+  ]);
   const t = (d: string) => `${d}T12:00:00-03:00`;
   const contacts = [
     ["c1", "Ana Ribeiro", "5515990000001", "u-vitor", "indicacao", "2026-10-03", null],

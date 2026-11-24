@@ -53,7 +53,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -782,6 +782,16 @@ async function ensureSchema(): Promise<void> {
     }
 
     await done(11);
+  }
+
+  if (current < 12) {
+    // v12 — Fase 2, entrega 2: the Auditoria screen and each person's
+    // activity read the history across all contacts, newest first, and by
+    // who did it. Indexes only.
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_events_created_idx ON crm_events (created_at DESC)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_events_user_idx ON crm_events (user_id, created_at DESC)`);
+
+    await done(12);
   }
 }
 

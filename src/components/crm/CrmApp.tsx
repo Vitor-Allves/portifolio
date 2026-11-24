@@ -38,6 +38,7 @@ import CrmStageDialog, { needsStageDialog, type CrmStageFields } from "./CrmStag
 import { TemperatureChip } from "./crm-fields";
 import CrmTasksView from "./CrmTasksView";
 import CrmSettingsView from "./CrmSettingsView";
+import CrmAuditView from "./CrmAuditView";
 import { CrmCatalogProvider, TagChips, useCatalog } from "./crm-catalog-context";
 import type { CrmCatalog } from "@/lib/crm-catalog";
 import CrmAgendaView from "./CrmAgendaView";
@@ -61,6 +62,8 @@ type CrmAppProps = {
   /** What this person may do: the profile plus their individual exceptions (Fase 2). */
   caps: CrmCapabilities;
   showIntelligenceLink: boolean;
+  /** An Administrador without 2FA (session from before it became required): asked to sign in again to set it up. */
+  totpPending?: boolean;
   /** Personalização: lists and tags. */
   initialCatalog: CrmCatalog;
 };
@@ -266,6 +269,7 @@ function CrmAppInner({
   role,
   caps,
   showIntelligenceLink,
+  totpPending = false,
 }: Omit<CrmAppProps, "initialCatalog">) {
   const catalog = useCatalog();
   // Without the right to reassign, owner pickers offer only oneself (Comercial) or no one (Marketing).
@@ -465,7 +469,7 @@ function CrmAppInner({
           "companies",
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
           ...(caps.customize ? (["settings"] as const) : []),
-          ...(caps.manageTeam ? (["team"] as const) : []),
+          ...(caps.manageTeam ? (["team", "audit"] as const) : []),
         ]}
         whatsappConfigured={whatsappConfigured}
         initialTheme={initialTheme}
@@ -500,6 +504,23 @@ function CrmAppInner({
         </header>
 
       <div className="px-4 sm:px-6 py-5 space-y-4">
+        {totpPending && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-crm-amber/35 bg-crm-amber/[0.08] px-4 py-2.5 text-[12.5px]" role="alert">
+            <span className="text-crm-text">
+              <strong>Ative o 2FA.</strong> Administradores do CRM entram com código do aplicativo autenticador. Saia e entre de novo para cadastrar.
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/analise/logout/", { method: "POST" }).catch(() => {});
+                window.location.href = "/intelligence/login/?from=/crm/";
+              }}
+              className="ml-auto text-[12.5px] font-semibold text-crm-amber hover:opacity-80"
+            >
+              Sair e ativar agora
+            </button>
+          </div>
+        )}
         {view === "dashboard" && <CrmWelcome userName={currentUserName} deals={deals} tasks={tasks} unread={unread} now={now} />}
 
         {view === "board" && (
@@ -631,12 +652,15 @@ function CrmAppInner({
             onOpenContact={(id) => openContact(id)}
             onImport={caps.importContacts ? () => setImportOpen(true) : undefined}
             canExport={caps.exportContacts}
+            canAssign={caps.assignAnyOwner}
             onNew={() => setNewOpen(true)}
           />
         ) : view === "campaigns" && caps.editCampaigns ? (
           <CrmCampaignsView team={team} canSend={caps.sendCampaigns} templatesConfigured={templatesConfigured} onOpenContact={(id) => openContact(id, "conversa")} />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
+        ) : view === "audit" && caps.manageTeam ? (
+          <CrmAuditView team={team} onOpenContact={(id) => openContact(id)} />
         ) : view === "team" && caps.manageTeam ? (
           <CrmTeamView currentUserId={currentUserId} onChanged={() => void refresh()} />
         ) : view === "companies" ? (

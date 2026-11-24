@@ -26,6 +26,8 @@ export type InternalUserMatch = {
   totpEnabled: boolean;
   totpSecretEnc: string | null;
   totpRecoveryHashes: string[];
+  /** CRM profile as stored (null = follows the Intelligence role). */
+  crmRole: string | null;
 };
 
 function mapRow(r: {
@@ -203,9 +205,10 @@ export async function matchInternalUser(username: string, password: string): Pro
     totp_enabled: boolean;
     totp_secret_enc: string | null;
     totp_recovery_hashes: string[];
+    crm_role: string | null;
   }>(
     `SELECT id, name, username, password_hash, role, session_version, must_change_password,
-            totp_enabled, totp_secret_enc, totp_recovery_hashes
+            totp_enabled, totp_secret_enc, totp_recovery_hashes, crm_role
      FROM internal_users WHERE lower(username) = $1 AND revoked_at IS NULL`,
     [cleanUsername]
   );
@@ -235,6 +238,7 @@ export async function matchInternalUser(username: string, password: string): Pro
     totpEnabled: row.totp_enabled,
     totpSecretEnc: row.totp_secret_enc,
     totpRecoveryHashes: row.totp_recovery_hashes,
+    crmRole: row.crm_role,
   };
 }
 

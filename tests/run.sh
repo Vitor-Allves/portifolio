@@ -16,6 +16,8 @@ export FAKE_GRAPH_DIR="${FAKE_GRAPH_DIR:-$(mktemp -d)}"
 export FAKE_GRAPH_PORT="${FAKE_GRAPH_PORT:-3199}"
 export CRM_TEST_BASE="http://localhost:${PORT}"
 export DATABASE_URL="$TEST_DATABASE_URL"
+# Test-only: signs sessions and encrypts the fixture Administrador's 2FA secret (seeds need it too).
+export ANALYTICS_SESSION_SECRET="test-only-session-secret-0123456789abcdef"
 LOGS="${CRM_TEST_LOGS:-$FAKE_GRAPH_DIR}"
 mkdir -p "$LOGS"
 
@@ -83,12 +85,14 @@ run_suite() {
     fields-e2e) reset_db base campaigns && start_server && node tests/suites/fields.e2e.mjs ;;
     team-api) reset_db base campaigns && start_server && npx tsx tests/suites/team.api.mjs ;;
     team-e2e) reset_db base campaigns && start_server && node tests/suites/team.e2e.mjs ;;
+    access-api) reset_db base campaigns && start_server && node tests/suites/access.api.mjs ;;
+    access-e2e) reset_db base campaigns && start_server && node tests/suites/access.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"
