@@ -14,7 +14,9 @@ import {
 } from "@/lib/crm-permissions";
 import { STAFF_ROLE_LABELS } from "@/lib/session-scope";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_TD, CRM_TH } from "./crm-styles";
-import { initials } from "./crm-format";
+import { dateTime, initials } from "./crm-format";
+import { describeEvent } from "./crm-event-text";
+import { formatBRL, type CrmEventKind } from "@/lib/crm-types";
 import { useCatalog } from "./crm-catalog-context";
 
 const ACCESS_TONE: Record<CrmAccess, string> = {
@@ -190,15 +192,170 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
+type Counts = { contacts: number; deals: number; tasks: number; companies: number };
+const countsText = (c: Counts) =>
+  `${c.contacts} contato${c.contacts === 1 ? "" : "s"}, ${c.deals} oportunidade${c.deals === 1 ? "" : "s"} aberta${c.deals === 1 ? "" : "s"}, ${c.tasks} tarefa${c.tasks === 1 ? "" : "s"} pendente${c.tasks === 1 ? "" : "s"} e ${c.companies} empresa${c.companies === 1 ? "" : "s"}`;
+
+/** Carteira: what the person owns, and handing all of it to someone else (e.g. when they leave). */
+function PortfolioSection({ person, targets, onChanged }: { person: CrmTeamRow; targets: CrmTeamRow[]; onChanged: (message: string) => void }) {
+  const [counts, setCounts] = useState<Counts | null>(null);
+  const [to, setTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/crm/team/${person.id}/transfer/`)
+      .then((r) => r.json())
+      .then((d: { counts?: Counts }) => !cancelled && d.counts && setCounts(d.counts))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [person.id, version]);
+
+  const total = counts ? counts.contacts + counts.deals + counts.tasks + counts.companies : 0;
+  async function transfer() {
+    setBusy(true);
+    const res = await fetch(`/api/crm/team/${person.id}/transfer/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toUserId: to === "__none" ? null : to }),
+    });
+    setBusy(false);
+    const data = (await res.json().catch(() => null)) as (Counts & { toName: string | null; error?: string }) | null;
+    if (!res.ok || !data) return setError(data?.error ?? "Não foi possível transferir.");
+    setError(null);
+    setTo(null);
+    setVersion((v) => v + 1);
+    onChanged(`Carteira de ${person.name} transferida para ${data.toName ?? "ninguém (sem responsável)"}: ${countsText(data)}.`);
+  }
+
+  return (
+    <section className="space-y-2" aria-label="Carteira">
+      <h3 className={CRM_LABEL}>Carteira</h3>
+      <p className="text-[12.5px] text-crm-dim">{counts ? (total > 0 ? `Com ${person.name}: ${countsText(counts)}.` : "Nada no nome dessa pessoa.") : "Carregando…"}</p>
+      {counts && total > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={to ?? ""} onChange={(e) => setTo(e.target.value || null)} aria-label="Transferir carteira para" className={`${CRM_INPUT} !w-auto`}>
+            <option value="">Transferir tudo para…</option>
+            {targets.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+            <option value="__none">Sem responsável</option>
+          </select>
+          <button type="button" disabled={!to || busy} onClick={() => void transfer()} className={CRM_BTN_PRIMARY}>
+            {busy ? "Transferindo..." : "Transferir carteira"}
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className={CRM_ALERT} role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+type Activity = {
+  days: number;
+  messagesSent: number;
+  notes: number;
+  tasksDone: number;
+  stageMoves: number;
+  won: number;
+  wonValueCents: number;
+  lastActivityAt: string | null;
+  recent: { id: string; at: string; kind: CrmEventKind; payload: Record<string, unknown>; contactName: string }[];
+};
+
+/** Produtividade e histórico de atividades da pessoa. */
+function ActivitySection({ personId }: { personId: string }) {
+  const { label } = useCatalog();
+  const [days, setDays] = useState(30);
+  const [activity, setActivity] = useState<{ days: number; data: Activity } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/crm/team/${personId}/activity/?days=${days}`)
+      .then((r) => r.json())
+      .then((d: { activity?: Activity }) => !cancelled && d.activity && setActivity({ days, data: d.activity }))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [personId, days]);
+
+  const a = activity?.days === days ? activity.data : null;
+  const tiles = a
+    ? [
+        ["Mensagens enviadas", String(a.messagesSent)],
+        ["Notas", String(a.notes)],
+        ["Tarefas concluídas", String(a.tasksDone)],
+        ["Mudanças de etapa", String(a.stageMoves)],
+        ["Ganhos", a.won ? `${a.won} · ${formatBRL(a.wonValueCents)}` : "0"],
+      ]
+    : [];
+  return (
+    <section className="space-y-2" aria-label="Atividade">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className={CRM_LABEL}>Atividade</h3>
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Período da atividade" className={`${CRM_FILTER} !text-[12px]`}>
+          <option value={7}>Últimos 7 dias</option>
+          <option value={30}>Últimos 30 dias</option>
+          <option value={90}>Últimos 90 dias</option>
+        </select>
+      </div>
+      {!a ? (
+        <p className="text-[12.5px] text-crm-dim">Carregando…</p>
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {tiles.map(([k, v]) => (
+              <div key={k} className="rounded-xl border border-crm-line bg-crm-card px-3 py-2">
+                <dt className="text-[11px] text-crm-dim">{k}</dt>
+                <dd className="text-[15px] font-semibold tabular-nums">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-[11.5px] text-crm-faint">Última atividade: {a.lastActivityAt ? dateTime(a.lastActivityAt) : "nenhuma ainda"}</p>
+          {a.recent.length > 0 && (
+            <details className="rounded-xl border border-crm-line bg-crm-card">
+              <summary className="cursor-pointer px-3 py-2 text-[12.5px] font-semibold">Últimas ações ({a.recent.length})</summary>
+              <ol className="divide-y divide-crm-line">
+                {a.recent.map((e) => (
+                  <li key={e.id} className="px-3 py-2 text-[12px]">
+                    <p className="text-crm-text">
+                      <span className="font-semibold">{e.contactName}</span> · {describeEvent(e, label)}
+                    </p>
+                    <p className="text-[10.5px] text-crm-faint">{dateTime(e.at)}</p>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Cargo, departamento, permissions (profile + exceptions) and, for CRM-only logins, password and deactivation. */
 function PersonPanel({
   person,
   self,
+  targets,
   onClose,
   onChanged,
 }: {
   person: CrmTeamRow;
   self: boolean;
+  /** Who can receive this person's carteira (active, with CRM access). */
+  targets: CrmTeamRow[];
   onClose: () => void;
   /** `message`: something to show on the list (the panel may close, e.g. after a deactivation). */
   onChanged: (message?: string) => void;
@@ -208,7 +365,7 @@ function PersonPanel({
   const [overrides, setOverrides] = useState<CrmPermissionOverrides>(person.overrides);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<null | "reset" | "deactivate">(null);
+  const [confirming, setConfirming] = useState<null | "reset" | "deactivate" | "sessions">(null);
   const [adminPassword, setAdminPassword] = useState("");
   const [newPassword, setNewPassword] = useState<string | null>(null);
   const role = person.access === "sem_acesso" ? null : person.access;
@@ -241,9 +398,9 @@ function PersonPanel({
     onChanged();
   }
 
-  async function sensitive(kind: "reset" | "deactivate") {
-    const res = await fetch(`/api/crm/team/${person.id}/${kind === "reset" ? "reset-password" : "deactivate"}/`, {
-      method: "POST",
+  async function sensitive(kind: "reset" | "deactivate" | "sessions") {
+    const res = await fetch(`/api/crm/team/${person.id}/${kind === "reset" ? "reset-password" : kind === "sessions" ? "sessions" : "deactivate"}/`, {
+      method: kind === "sessions" ? "DELETE" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ adminPassword }),
     });
@@ -252,6 +409,7 @@ function PersonPanel({
     setAdminPassword("");
     setConfirming(null);
     if (kind === "reset") setNewPassword(((await res.json()) as { password: string }).password);
+    else if (kind === "sessions") setNotice(`Sessões de ${person.name} encerradas: a pessoa precisa entrar de novo.`);
     else {
       const message = `${person.name} foi desativado(a). Nada do que essa pessoa fez foi apagado.`;
       setNotice(message);
@@ -400,16 +558,28 @@ function PersonPanel({
             )}
           </section>
 
+          <PortfolioSection person={person} targets={targets} onChanged={(m) => (setNotice(m), onChanged())} />
+
+          <ActivitySection personId={person.id} />
+
           <section className="space-y-2">
             <h3 className={CRM_LABEL}>Acesso</h3>
+            <p className="text-[12px] text-crm-dim">
+              2FA:{" "}
+              {person.totpEnabled ? (
+                <span className="text-crm-green font-medium">ativo</span>
+              ) : person.access === "administrador" ? (
+                <span className="text-crm-amber font-medium">pendente: será pedido no próximo login (obrigatório para Administrador)</span>
+              ) : (
+                "não usa"
+              )}
+            </p>
             {newPassword ? (
               <OneTimePassword username={person.username} password={newPassword} onDone={() => setNewPassword(null)} />
             ) : !person.active ? (
               <p className="text-[12.5px] text-crm-dim">Desativado: não entra mais, e tudo o que fez continua no CRM.</p>
             ) : self ? (
               <p className="text-[12.5px] text-crm-dim">Sua senha muda em Intelligence → Trocar senha.</p>
-            ) : !person.crmOnly ? (
-              <p className="text-[12.5px] text-crm-dim">Essa pessoa também usa o Intelligence: senha e desativação ficam com o administrador geral, no Intelligence.</p>
             ) : confirming ? (
               <form
                 onSubmit={(e) => {
@@ -421,7 +591,9 @@ function PersonPanel({
                 <p className="text-[12.5px]">
                   {confirming === "reset"
                     ? `Gerar uma senha temporária nova para ${person.name}? As sessões abertas dessa pessoa são encerradas.`
-                    : `Desativar ${person.name}? A pessoa não entra mais; leads, tarefas e histórico continuam como estão.`}
+                    : confirming === "sessions"
+                      ? `Encerrar as sessões de ${person.name} em todos os dispositivos? A pessoa precisa entrar de novo.`
+                      : `Desativar ${person.name}? A pessoa não entra mais; leads, tarefas e histórico continuam como estão.`}
                 </p>
                 <input
                   value={adminPassword}
@@ -439,19 +611,33 @@ function PersonPanel({
                     Cancelar
                   </button>
                   <button type="submit" className={CRM_BTN_PRIMARY}>
-                    {confirming === "reset" ? "Gerar senha" : "Desativar"}
+                    {confirming === "reset" ? "Gerar senha" : confirming === "sessions" ? "Encerrar sessões" : "Desativar"}
                   </button>
                 </div>
               </form>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setConfirming("reset")} className={CRM_BTN_OUTLINE}>
-                  Gerar senha temporária
-                </button>
-                <button type="button" onClick={() => setConfirming("deactivate")} className={`${CRM_BTN_OUTLINE} hover:!text-crm-red hover:!border-crm-red/40`}>
-                  Desativar acesso
-                </button>
-              </div>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {!person.locked && (
+                    <button type="button" onClick={() => setConfirming("sessions")} className={CRM_BTN_OUTLINE}>
+                      Encerrar sessões
+                    </button>
+                  )}
+                  {person.crmOnly && (
+                    <>
+                      <button type="button" onClick={() => setConfirming("reset")} className={CRM_BTN_OUTLINE}>
+                        Gerar senha temporária
+                      </button>
+                      <button type="button" onClick={() => setConfirming("deactivate")} className={`${CRM_BTN_OUTLINE} hover:!text-crm-red hover:!border-crm-red/40`}>
+                        Desativar acesso
+                      </button>
+                    </>
+                  )}
+                </div>
+                {!person.crmOnly && (
+                  <p className="text-[12.5px] text-crm-dim">Essa pessoa também usa o Intelligence: senha e desativação ficam com o administrador geral, no Intelligence.</p>
+                )}
+              </>
             )}
             {person.department && <p className="text-[11px] text-crm-faint">Departamento: {label("department", person.department)}</p>}
           </section>
@@ -504,8 +690,11 @@ export default function CrmTeamView({ currentUserId, onChanged }: { currentUserI
     });
     setBusy(null);
     if (!res.ok) return setError(await errorOf(res, "Não foi possível salvar."));
+    const data = (await res.json().catch(() => null)) as { endedSessions?: boolean } | null;
     setError(null);
-    setSaved(`${m.name}: agora ${accessLabel(access)}.`);
+    setSaved(
+      `${m.name}: agora ${accessLabel(access)}.${data?.endedSessions ? " Administrador entra com 2FA: a pessoa foi desconectada e vai cadastrar o 2FA no próximo login." : ""}`
+    );
     await load();
     onChanged();
   }
@@ -654,15 +843,18 @@ export default function CrmTeamView({ currentUserId, onChanged }: { currentUserI
         <PersonPanel
           key={open.id}
           person={open}
+          targets={(team ?? []).filter((m) => m.active && m.access !== "sem_acesso" && m.id !== open.id)}
           self={open.id === currentUserId}
           onClose={() => setOpenId(null)}
           onChanged={(message) => {
-            // A message means the panel is done (deactivation): close it, show it on the list.
-            if (message) {
-              setSaved(message);
-              setOpenId(null);
-            }
-            void load();
+            // A message means the panel is done (deactivation): once the list is
+            // reloaded (so it no longer shows the person), close it and show it there.
+            void load().then(() => {
+              if (message) {
+                setSaved(message);
+                setOpenId(null);
+              }
+            });
             onChanged();
           }}
         />

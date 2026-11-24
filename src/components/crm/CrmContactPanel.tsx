@@ -10,14 +10,13 @@ import {
   serviceWindowRemainingMs,
   stageLabel,
   type CrmContactDetail,
-  type CrmEvent,
   type CrmMessage,
   type CrmQuickReply,
   type CrmTeamMember,
   type CrmTemplate,
 } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
-import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, timeOfDay, todaySp, windowLabel } from "./crm-format";
+import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, todaySp, windowLabel } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
@@ -27,8 +26,7 @@ import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
 import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
 import CrmTagsEditor from "./CrmTagsEditor";
 import { SegmentSelect, TagChips, useCatalog } from "./crm-catalog-context";
-import type { OptionKind } from "@/lib/crm-catalog";
-import { TAG_VIA } from "@/lib/crm-catalog";
+import { describeEvent } from "./crm-event-text";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -116,78 +114,6 @@ function MessageBubble({ message }: { message: CrmMessage }) {
       </div>
     </div>
   );
-}
-
-function describeEvent(e: CrmEvent, label: (kind: OptionKind, id: string) => string): string {
-  const p = e.payload;
-  switch (e.kind) {
-    case "created":
-      if (p.via === "importacao") return `Contato importado da planilha "${String(p.fileName ?? "planilha")}"`;
-      return p.via === "anuncio" ? "Contato criado por um anúncio de clique para o WhatsApp" : p.via === "whatsapp" ? "Contato criado ao mandar mensagem" : "Contato criado";
-    case "stage":
-      return `Etapa${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${
-        p.auto ? " (automático, o lead respondeu)" : ""
-      }${p.lostReason ? ` · motivo: ${label("lost_reason", String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}${
-        p.wonReason ? ` · motivo: ${label("won_reason", String(p.wonReason))}${p.wonNote ? ` (${String(p.wonNote)})` : ""}` : ""
-      }${p.to === "ganho" && typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
-    case "owner":
-      return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}`;
-    case "next_action":
-      return p.text || p.at ? `Próxima ação: ${p.text ?? "sem descrição"}${p.at ? ` · ${shortDate(String(p.at))}` : ""}` : "Próxima ação removida";
-    case "note":
-      return String(p.text ?? "");
-    case "edited": {
-      const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
-      return changes.map((c) => `${c.field}: ${c.from ?? "vazio"} → ${c.to ?? "vazio"}`).join(" · ") || "Dados editados";
-    }
-    case "consent":
-      return p.to === "sim" ? "Consentimento: aceitou ser contatado" : "Consentimento: não informado";
-    case "opt_out":
-      if (p.value && p.auto) return `Descadastrado automaticamente (respondeu "${typeof p.text === "string" ? p.text : "SAIR"}" no WhatsApp)`;
-      return p.value ? "Marcado como descadastrado (não quer mais contato)" : "Descadastro removido";
-    case "archived":
-      return "Contato arquivado";
-    case "restored":
-      return p.auto ? "Voltou ao funil (mandou mensagem)" : "Contato restaurado";
-    case "deal": {
-      if (p.action === "created") return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
-      const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
-      const show = (c: { field: string }, v: string | null) =>
-        v === null
-          ? "vazio"
-          : c.field === "Valor" || c.field === "Valor negociado"
-            ? formatBRL(Number(v))
-            : c.field === "Previsão de fechamento"
-              ? shortDate(v)
-              : v;
-      return `Oportunidade "${String(p.title)}": ${changes.map((c) => `${c.field} ${show(c, c.from)} → ${show(c, c.to)}`).join(" · ")}`;
-    }
-    case "task": {
-      const what = `${label("task_kind", String(p.kind))}: ${String(p.title)}`;
-      const when = typeof p.dueAt === "string" ? ` · ${shortDate(p.dueAt)}${p.allDay === false ? ` ${timeOfDay(p.dueAt)}` : ""}` : "";
-      const result = p.result ? ` — ${String(p.result)}` : "";
-      switch (p.action) {
-        case "created":
-          return `Tarefa agendada · ${what}${when}`;
-        case "logged":
-          return `Registrou ${what}${result}`;
-        case "done":
-          return `Concluiu ${what}${result}`;
-        case "rescheduled":
-          return `Reagendou ${what}${when || " · sem data"}`;
-        case "reopened":
-          return `Reabriu ${what}`;
-        case "canceled":
-          return `Cancelou ${what}`;
-        default:
-          return what;
-      }
-    }
-    case "tag": {
-      const via = p.via && p.via !== "manual" ? ` (${TAG_VIA.find((v) => v.id === p.via)?.label ?? String(p.via)})` : "";
-      return p.action === "removed" ? `Etiqueta removida: ${String(p.label)}` : `Etiqueta adicionada: ${String(p.label)}${via}`;
-    }
-  }
 }
 
 function QuickReplies({

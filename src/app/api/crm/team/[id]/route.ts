@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (change.access) await writeAudit({ ...base, action: "crm.role_change", metadata: { from: change.access.from, to: change.access.to } });
     if (change.permissions) await writeAudit({ ...base, action: "crm.permission_change", metadata: { from: change.permissions.from, to: change.permissions.to } });
     if (change.details) await writeAudit({ ...base, action: "crm.user_update", metadata: change.details });
-    return NextResponse.json({ ok: true, access: change.access?.to });
+    return NextResponse.json({ ok: true, access: change.access?.to, endedSessions: change.endedSessions ?? false });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/team/[id] PATCH");
   }

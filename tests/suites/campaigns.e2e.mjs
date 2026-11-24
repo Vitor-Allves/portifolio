@@ -1,7 +1,7 @@
 // Campanhas (Fase 5) in the browser, on base + campaign fixtures: Marketing
 // drafts, Comercial doesn't see it, Gestor sends and reads the results, the
 // conversation shows the campaign, dark theme and the phone.
-import { BASE, launchBrowser, ok, shot } from "../lib/helpers.mjs";
+import { BASE, launchBrowser, loginRequest, ok, shot } from "../lib/helpers.mjs";
 
 const browser = await launchBrowser();
 const errors = [];
@@ -14,7 +14,7 @@ async function open(username, { width = 1440, height = 900, dark = false } = {})
       document.head.appendChild(st);
     });
   });
-  ok((await ctx.request.post(`${BASE}/api/analise/login/`, { data: { username, password: "crm-teste-123" } })).ok(), `login ${username}`);
+  ok((await loginRequest(ctx.request, username)).ok(), `login ${username}`);
   const page = await ctx.newPage();
   page.setDefaultTimeout(60000);
   page.on("pageerror", (e) => errors.push(`${username}: ${e.message}`));

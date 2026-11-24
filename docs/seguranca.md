@@ -22,8 +22,12 @@ regras que valem para todas as fases. Atualizar a cada fase.
   produção, válida por 12h. A cada requisição o servidor relê a conta: conta
   desativada, senha redefinida ou sessão encerrada perdem o acesso na hora
   (`session_version`).
-- 2FA (TOTP) obrigatório para o **administrador geral**; segredo guardado
-  criptografado (`src/lib/secret-crypto.ts`), com códigos de recuperação.
+- 2FA (TOTP) obrigatório para o **administrador geral** e, desde a Fase 2,
+  para todo **Administrador do CRM**; segredo guardado criptografado
+  (`src/lib/secret-crypto.ts`), com códigos de recuperação. Promover alguém
+  sem 2FA a Administrador encerra as sessões dessa pessoa.
+- Encerramento remoto de sessões: o Administrador do CRM desconecta uma
+  pessoa de todos os dispositivos (`session_version`).
 - Limite de tentativas de login por IP e por usuário (5/min). Hoje vale por
   instância do servidor (memória), não no conjunto: ver pendências.
 - Recuperação de senha: feita pelo administrador (não há e-mail no sistema).
@@ -133,7 +137,8 @@ inclusive valores e etapas das oportunidades.
 | Testes fora do repositório, sem verificação automática | Alta | **Corrigido**: `tests/` + CI |
 | Sem execução agendada no servidor (automações, filas) | Alta | Pendente: decisão Vercel Pro ou alternativa |
 | Plano Hobby da Vercel é para uso não comercial | Alta | Pendente: decisão de plano |
-| 2FA não obrigatório para Administrador/Gestor do CRM | Média | Planejado para a Fase 2 |
+| 2FA não obrigatório para Administrador/Gestor do CRM | Média | **Corrigido** para Administradores (Fase 2); Gestor fica opcional |
+| Código 2FA pode ser reutilizado dentro da mesma janela de 30s | Baixa | Pendente (guardar o último código aceito) |
 | Limite de tentativas por instância, não global | Média | Pendente (exige Redis/Upstash) |
 | Recuperação de senha só pelo administrador | Média | Depende do e-mail (Fase 4) |
 | Backups dependentes do plano Free do Neon | Média | Pendente: decisão de plano + rotina própria |

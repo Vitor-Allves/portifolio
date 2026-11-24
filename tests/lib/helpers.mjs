@@ -4,11 +4,28 @@ import fs from "node:fs";
 import path from "node:path";
 import pg from "pg";
 import { chromium } from "playwright";
+import { Secret, TOTP } from "otpauth";
 
 export const BASE = process.env.CRM_TEST_BASE ?? "http://localhost:3100";
 export const FAKE_GRAPH_DIR = process.env.FAKE_GRAPH_DIR ?? "/tmp/crm-fake-graph";
 export const WEBHOOK_SECRET = "local-app-secret";
 export const PASSWORD = "crm-teste-123";
+/** Test-only TOTP secret of the fixture's Administrador (CRM Administradores log in with 2FA since Fase 2). */
+export const TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+
+/** The current 6-digit code for TEST_TOTP_SECRET. */
+export function totpCode() {
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(TEST_TOTP_SECRET) }).generate();
+}
+
+/** Logs a request context in; completes the 2FA step when the account has it. */
+export async function loginRequest(request, username, password = PASSWORD) {
+  const res = await request.post(`${BASE}/api/analise/login/`, { data: { username, password } });
+  if (!res.ok()) return res;
+  const body = await res.json().catch(() => ({}));
+  if (body.stage === "verify") return request.post(`${BASE}/api/analise/login/totp/`, { data: { code: totpCode() } });
+  return res;
+}
 
 export function ok(cond, msg) {
   if (!cond) throw new Error("ASSERT: " + msg);
@@ -36,7 +53,7 @@ export async function login(browser, username, { width = 1440, height = 900, dar
       document.head.appendChild(st);
     });
   });
-  const res = await ctx.request.post(`${BASE}/api/analise/login/`, { data: { username, password: PASSWORD } });
+  const res = await loginRequest(ctx.request, username);
   ok(res.ok(), `login ${username}`);
   if (!open) return { ctx, page: null, api: ctx.request };
   const page = await ctx.newPage();

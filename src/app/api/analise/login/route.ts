@@ -9,6 +9,7 @@ import {
   sessionMaxAgeSeconds,
 } from "@/lib/analise-session-node";
 import { matchInternalUser } from "@/lib/internal-users";
+import { effectiveCrmAccess } from "@/lib/crm-permissions";
 import { matchClientUser } from "@/lib/client-access";
 import { writeAudit } from "@/lib/audit-log";
 
@@ -45,12 +46,13 @@ function setPendingCookie(res: NextResponse, token: string) {
 
 /**
  * Username + password login — no e-mail involved. administrador_geral
- * accounts never get a full session directly from this route: they get a
- * short-lived "pending" cookie and a `stage` telling the frontend whether
- * to collect a TOTP code (`verify`, already enrolled) or walk through 2FA
- * enrollment first (`enroll`, first login) — see
- * /api/analise/login/totp and /api/analise/2fa/enroll/*. Every other role,
- * and every client login, gets a full session immediately.
+ * accounts, and since the CRM's Fase 2 every CRM Administrador, never get a
+ * full session directly from this route: they get a short-lived "pending"
+ * cookie and a `stage` telling the frontend whether to collect a TOTP code
+ * (`verify`, already enrolled) or walk through 2FA enrollment first
+ * (`enroll`, first login) — see /api/analise/login/totp and
+ * /api/analise/2fa/enroll/*. Every other role, and every client login, gets
+ * a full session immediately.
  */
 export async function POST(req: NextRequest) {
   const key = clientKey(req);
@@ -91,7 +93,8 @@ export async function POST(req: NextRequest) {
   try {
     const staffMatch = await matchInternalUser(cleanUsername, password);
     if (staffMatch) {
-      if (staffMatch.role === "administrador_geral") {
+      const requiresTotp = staffMatch.role === "administrador_geral" || effectiveCrmAccess(staffMatch.crmRole, staffMatch.role) === "administrador";
+      if (requiresTotp) {
         const stage = staffMatch.totpEnabled ? "verify" : "enroll";
         const pending = createPendingToken(staffMatch.id, stage, rememberMe);
         const res = NextResponse.json({ ok: true, stage });

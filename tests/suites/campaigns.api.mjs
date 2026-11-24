@@ -1,12 +1,12 @@
 // Campanhas (Fase 5) through the API, on base + campaign fixtures, with the
 // fake Meta API: permissions, audience rules, variables, sending, SAIR,
 // parallel batches, delivery/read/reply, rate limit, cancel, abandoned sends.
-import { BASE, closeDb, fakeGraphRateLimit, fakeGraphSent as sent, inbound, launchBrowser, ok, sql, webhook as hook } from "../lib/helpers.mjs";
+import { BASE, closeDb, fakeGraphRateLimit, fakeGraphSent as sent, inbound, launchBrowser, loginRequest, ok, sql, webhook as hook } from "../lib/helpers.mjs";
 
 const browser = await launchBrowser();
 async function login(username) {
   const ctx = await browser.newContext();
-  const r = await ctx.request.post(`${BASE}/api/analise/login/`, { data: { username, password: "crm-teste-123" } });
+  const r = await loginRequest(ctx.request, username);
   ok(r.ok(), `login ${username}`);
   return ctx.request;
 }

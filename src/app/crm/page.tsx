@@ -9,7 +9,7 @@ import { listBoardDeals } from "@/lib/crm-deals";
 import { listTasks } from "@/lib/crm-tasks";
 import { getCatalog } from "@/lib/crm-options";
 import { isWhatsAppConfigured } from "@/lib/whatsapp";
-import { crmSessionFor, visibleTo, type CrmSession } from "@/lib/crm-access";
+import { crmSessionFor, needsTotpSetup, visibleTo, type CrmSession } from "@/lib/crm-access";
 import CrmApp from "@/components/crm/CrmApp";
 import { CRM_SIDEBAR_COOKIE, CRM_THEME_COOKIE, parseCrmTheme } from "@/components/crm/crm-theme";
 
@@ -41,9 +41,10 @@ export default async function CrmPage() {
   let loaded: Awaited<ReturnType<typeof loadBoard>> | null = null;
   let session: CrmSession | null = null;
   let loadError: unknown = null;
+  let totpPending = false;
   try {
     session = await crmSessionFor(scope.userId, scope.userName, scope.role);
-    if (session) loaded = await loadBoard(session);
+    if (session) [loaded, totpPending] = await Promise.all([loadBoard(session), needsTotpSetup(session)]);
   } catch (err) {
     loadError = err;
   }
@@ -83,6 +84,7 @@ export default async function CrmPage() {
         initialSidebarCollapsed={sidebarCollapsed}
         role={session.role}
         caps={session.caps}
+        totpPending={totpPending}
         // A CRM-only login (no companies in the Intelligence) has nothing to go back to there.
         showIntelligenceLink={scope.role === "administrador_geral" || scope.accountIds.length > 0}
         initialCatalog={loaded.catalog}

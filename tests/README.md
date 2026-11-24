@@ -29,10 +29,13 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `fields-e2e` | Entrega 2 no navegador: diálogo ao mover para Proposta e Ganho, card e filtros do funil, campos no painel do contato, lista de Contatos, empresa com CNPJ, celular e tema escuro |
 | `team-api` | Fase 2 pela API: perfis iguais a antes, exceções valendo no servidor (exportar, ver todos, funil, arquivar), "Usuários e permissões" nunca por exceção, ninguém muda o próprio, cargo/departamento, login só do CRM (criar, primeiro acesso, senha nova, desativar) e auditoria |
 | `team-e2e` | Fase 2 no navegador: exceção e cargo no painel da pessoa, nova pessoa com senha temporária, desativar, Departamentos na Personalização, exceção valendo para a pessoa, celular e tema escuro |
+| `access-api` | Fase 2 · entrega 2 pela API: 2FA de Administrador no login, troca de responsável em lote (prévia, seleção, filtro, histórico), transferência de carteira (inclusive de quem foi desativado), atividade por pessoa, Auditoria (filtros), promoção a Administrador encerra sessões, encerrar sessões |
+| `access-e2e` | Fase 2 · entrega 2 no navegador: trocar responsável em lote em Contatos, carteira e atividade no painel da pessoa, Auditoria (filtros, contato abre da linha), celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Dados de teste: `tests/fixtures/seed-base.ts` (usuários `vitor` Gestor,
-`joao` Comercial, `admin` Administrador; senha `crm-teste-123`) e
+`joao` Comercial, `admin` Administrador com 2FA de teste; senha
+`crm-teste-123`; `tests/lib/helpers.mjs` gera o código) e
 `seed-campaigns.ts` (usuária `maria` Marketing e contatos para as regras de
 campanha). Só rodam contra o banco local de teste.
 

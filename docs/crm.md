@@ -106,6 +106,8 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Personalização (listas e etiquetas) | sim | não | não | não |
   | Arquivar e restaurar contatos | sim | sim | nos seus | sim |
   | Usuários e permissões (perfis, exceções, cargos, logins só CRM) | sim | não | não | não |
+  | Trocar responsável em lote (Contatos) | sim | sim | não | não |
+  | Transferir a carteira de uma pessoa, encerrar sessões, Auditoria | sim | não | não | não |
 
   Lead de outra pessoa, para o Comercial, responde como "não encontrado".
   O Administrador geral do Intelligence é sempre Administrador do CRM; ninguém
@@ -132,6 +134,33 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   senha nunca é gravada no registro). Quem também usa o Intelligence continua
   sendo gerenciado lá, pelo administrador geral. Desativar não apaga nada:
   leads, tarefas e histórico continuam com o nome da pessoa.
+
+  **2FA para Administradores do CRM:** desde a Fase 2, entrar como
+  Administrador do CRM pede o código do aplicativo autenticador (como já era
+  para o administrador geral); quem ainda não tem cadastra no próximo login.
+  Promover alguém sem 2FA a Administrador encerra as sessões dessa pessoa,
+  para o cadastro acontecer na hora. Um Administrador com sessão antiga e
+  sem 2FA vê um aviso para sair e cadastrar.
+
+  **Carteiras:** quem pode trocar o responsável de qualquer lead (Gestor,
+  Administrador) seleciona contatos na lista (ou usa todos os do filtro, até
+  5.000) e escolhe o novo responsável; dá para levar junto as oportunidades
+  abertas e as tarefas pendentes. Antes de confirmar, a tela mostra quanto
+  vai mudar. O Administrador transfere a carteira inteira de uma pessoa
+  (contatos, oportunidades abertas em qualquer contato, tarefas pendentes e
+  contas de empresa) no painel dela. Cada contato e oportunidade movidos
+  ganham uma linha no histórico ("carteira"), e a operação vai para a
+  auditoria (`crm.portfolio_assign`, `crm.portfolio_transfer`). Filtro
+  "Responsável desativado" acha leads de quem saiu.
+
+  **Auditoria** (Administrador): ações administrativas do CRM (perfis,
+  permissões, acessos, sessões, importações, exportações, campanhas,
+  Personalização, carteiras), com antes → depois, e mudanças comerciais nos
+  registros (etapas, valores, responsáveis, edições, arquivamentos,
+  descadastros), por pessoa e período. No painel de cada pessoa: atividade
+  (mensagens enviadas, notas, tarefas concluídas, mudanças de etapa, ganhos)
+  e as últimas ações. **Encerrar sessões** desconecta a pessoa de todos os
+  dispositivos (`crm.session_end`).
 
 - **Sem duplicidade:** telefone (as duas grafias de celular BR, com e sem o 9)
   e e-mail (sem diferenciar maiúsculas) são únicos — no cadastro, na edição e
@@ -197,6 +226,25 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 2, entrega 2: carteiras, auditoria e acesso (schema v12)
+
+- **Carteiras:** trocar responsável em lote na lista de Contatos (seleção ou
+  filtro, com prévia do que muda, levando oportunidades abertas e tarefas
+  pendentes); transferir a carteira inteira de uma pessoa no painel dela;
+  filtro "Responsável desativado".
+- **Auditoria** (nova seção em Administração): ações administrativas e
+  mudanças comerciais, com filtros por pessoa, ação/tipo e período; o
+  contato abre direto da linha.
+- **Produtividade e histórico por pessoa** no painel de Usuários e
+  permissões (7, 30 ou 90 dias).
+- **2FA obrigatório para Administradores do CRM** no login; aviso para quem
+  ainda não cadastrou.
+- **Encerrar sessões** de uma pessoa à distância (Administrador, confirmando
+  a própria senha).
+- Banco v12: só índices em `crm_events` (por data e por pessoa).
+- Testes: `access-api` e `access-e2e`; o Administrador dos testes entra com
+  2FA (código gerado a partir de um segredo só de teste).
 
 ### Especificação-mestra v1.0 — Fase 2, entrega 1: usuários e permissões (schema v11)
 
