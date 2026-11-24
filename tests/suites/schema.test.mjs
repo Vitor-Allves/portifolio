@@ -54,13 +54,26 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 14;
+const LATEST = 15;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v13: undo exactly what v14 (automações) added.
+// Back to v14: undo exactly what v15 (conversas) added.
+async function downgradeToV14(name) {
+  await query(
+    name,
+    `DROP INDEX crm_contacts_attendant_idx; DROP INDEX crm_messages_created_idx;
+     ALTER TABLE crm_contacts DROP COLUMN attendant_id, DROP COLUMN attendant_since;
+     DELETE FROM crm_contact_tags WHERE tag_id IN (SELECT id FROM crm_tags WHERE category = 'atendimento');
+     DELETE FROM crm_tags WHERE category = 'atendimento';
+     DELETE FROM schema_migrations WHERE version = 15;`
+  );
+}
+
+// Back to v13: undo exactly what v15 and v14 (automações) added.
 async function downgradeToV13(name) {
+  await downgradeToV14(name);
   await query(name, `DROP TABLE crm_notifications; DROP TABLE crm_automation_runs; DROP TABLE crm_automations; DELETE FROM schema_migrations WHERE version = 14;`);
 }
 
@@ -127,7 +140,7 @@ ok((await query(B, `SELECT name FROM crm_contacts WHERE id = 'keep-me'`))[0]?.na
 const sources = (await query(B, `SELECT id, label FROM crm_options WHERE kind = 'source' ORDER BY sort`)).map((r) => `${r.id}=${r.label}`).join(",");
 ok(sources === "anuncio=Tráfego pago,bni=BNI,site=Site,evento=Evento,indicacao=Indicação,prospeccao_manual=Prospecção manual,outro=Outro", `origens seeded with the old codes (${sources})`);
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind = 'segment' AND label = 'Odontologia'`))[0].n === 1, "segment in use became a list option");
-ok((await query(B, `SELECT count(*)::int AS n FROM crm_tags`))[0].n === 14, "initial tags seeded");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_tags`))[0].n === 19, "initial tags seeded (with the v15 Atendimento ones)");
 // v10: new columns are optional; the opportunity's origin comes from its contact; nothing else is filled in.
 const deal = (await query(B, `SELECT source, service, negotiated_cents, won_reason, value_cents, stage FROM crm_deals WHERE id = 'keep-deal'`))[0];
 ok(deal.source === "bni" && deal.service === null && deal.negotiated_cents === null && deal.won_reason === null, "v10: deal origin backfilled from the contact, new fields empty");
@@ -177,6 +190,10 @@ ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN
 const autos = await query(B, `SELECT id, status FROM crm_automations ORDER BY id`);
 ok(autos.length === 10 && autos.every((r) => r.status === "desativada"), `v14: ten automations, all desativadas (${autos.map((r) => r.status).join(",")})`);
 ok((await query(B, `SELECT (SELECT count(*) FROM crm_automation_runs) + (SELECT count(*) FROM crm_notifications) AS n`))[0].n === "0", "v14: no runs and no notices yet");
+// v15 (Fase 4, entrega 1): Atendimento tags; no conversation starts with someone attending it.
+const attendanceTags = (await query(B, `SELECT label FROM crm_tags WHERE category = 'atendimento' ORDER BY sort`)).map((r) => r.label).join(",");
+ok(attendanceTags === "Aguardando cliente,Dúvida,Suporte,Reclamação,Urgente", `v15: Atendimento tags seeded (${attendanceTags})`);
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_contacts WHERE attendant_id IS NOT NULL`))[0].n === 0, "v15: nobody is attending any conversation yet");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

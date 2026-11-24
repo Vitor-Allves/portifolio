@@ -33,7 +33,9 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   Serviços), data prevista de retorno (`return_at`) e decisor
   (`is_decision_maker`). Última interação (mensagem, nota ou tarefa
   concluída, a mais recente) e próxima atividade (a tarefa pendente mais
-  próxima) são calculadas na leitura, não gravadas.
+  próxima) são calculadas na leitura, não gravadas. Desde a v15: quem está
+  atendendo a conversa do WhatsApp agora (`attendant_id`, `attendant_since`)
+  — diferente do responsável pelo lead (carteira).
 - `crm_deals` — oportunidades (os cards do funil): título, valor estimado em
   centavos (`value_cents`), etapa, responsável, previsão de fechamento, motivo e
   detalhe da perda, data em que entrou na etapa e em que fechou. Um contato
@@ -232,6 +234,23 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   15 min, 1 h ou 1 dia antes; tarefa de dia todo: no dia ou na véspera, às
   8h. Reagendar faz o lembrete valer de novo; concluir ou cancelar tira do
   sino. Dispensar o próprio lembrete não exige poder editar o funil.
+- **Atendimento das conversas** (`crm-conversations.ts`): responder uma
+  conversa sem atendimento faz a pessoa assumir; responder uma que outra
+  pessoa atende é recusado (409, nada é enviado) até a pessoa clicar em
+  "Assumir e responder". A tomada é atômica (trava do contato), então duas
+  pessoas respondendo ao mesmo tempo uma conversa livre não conseguem as
+  duas. Transferir só para quem envia WhatsApp e vê o lead; quem recebe é
+  avisado no sino. Encerrar/transferir: quem atende ou quem pode trocar
+  responsáveis (Gestor, Administrador). Quem foi desativado não segura
+  conversa. Campanhas não assumem atendimento. Tudo fica no histórico do
+  contato.
+- **Tempo de resposta**: da primeira mensagem do contato depois do nosso
+  silêncio até a nossa primeira resposta que não é de campanha, em horas
+  corridas (não horário comercial), 7 ou 30 dias; o Comercial vê os números
+  dos leads que enxerga. "Aguardando" = a mensagem mais recente é do contato.
+  Mensagem recebida na hora é gravada com o horário de chegada (o WhatsApp
+  manda o horário só em segundos); reentregas atrasadas mantêm o horário do
+  WhatsApp.
 - **Automações** (`crm-automations.ts`): nenhuma envia mensagem — criam
   tarefas, lembretes, linhas no histórico ("Automação") e avisos no sino. As
   de evento (1 novo lead, 2 lead atribuído, 4 reunião agendada, 5 proposta
@@ -273,6 +292,27 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 4, entrega 1: conversas (schema v15)
+
+- **Atendimento:** quem está atendendo cada conversa, desde quando;
+  Assumir, Transferir (com aviso no sino de quem recebe) e Encerrar.
+  Responder uma conversa livre assume; responder a de outra pessoa pede
+  "Assumir e responder" — nunca duas pessoas respondendo sem saber.
+- **Etiquetas de atendimento** (nova categoria na Personalização: Aguardando
+  cliente, Dúvida, Suporte, Reclamação, Urgente), direto na conversa e na
+  lista.
+- **Filtros:** Aguardando (nossa resposta), atendimento (meus, sem
+  atendimento, de uma pessoa), etiqueta — além de etapa, responsável e não
+  lidas.
+- **Tempo de resposta:** "Aguardando · X" em cada conversa; resposta média
+  da equipe e por pessoa (7/30 dias) e quantas aguardam agora.
+- **Atalhos na conversa:** + Tarefa (formulário de tarefa no contato) e
+  + Oportunidade.
+- Banco v15: só acréscimos (`crm_contacts.attendant_id`/`attendant_since`,
+  índices, etiquetas de atendimento).
+- Testes: `conversations-api` (inclui duas respostas simultâneas) e
+  `conversations-e2e`.
 
 ### Especificação-mestra v1.0 — Fase 3, entrega 2: automações (schema v14)
 

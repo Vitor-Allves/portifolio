@@ -20,6 +20,9 @@ export class CrmForbiddenError extends Error {}
 /** The record doesn't exist — or isn't visible to this profile, which reads the same (→ 404). */
 export class CrmNotFoundError extends Error {}
 
+/** Someone else got there first (e.g. is already attending the conversation) (→ 409, message shown as-is). */
+export class CrmConflictError extends Error {}
+
 export function iso(d: Date | string | null): string | null {
   if (!d) return null;
   return d instanceof Date ? d.toISOString() : new Date(d).toISOString();

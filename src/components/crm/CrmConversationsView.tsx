@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { CRM_STAGES, stageLabel, type CrmConversation, type CrmStage, type CrmTeamMember } from "@/lib/crm-types";
-import { CRM_FILTER, CRM_INPUT, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
+import { CRM_STAGES, stageLabel, type CrmConversation, type CrmResponseStats, type CrmStage, type CrmTeamMember } from "@/lib/crm-types";
+import { CRM_FILTER, CRM_INPUT, CRM_LINK_BTN, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
 import { chatTime, initials, windowLabel } from "./crm-format";
+import { TagChip, useCatalog } from "./crm-catalog-context";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
 
@@ -21,8 +22,27 @@ export function StageTag({ stage }: { stage: CrmStage }) {
   );
 }
 
-function ConversationRow({ c, selected, now, onOpen }: { c: CrmConversation; selected: boolean; now: number; onOpen: () => void }) {
+/** "12 min", "3 h", "2 d" — how long something has been waiting. */
+export function waitLabel(sinceIso: string, now: number): string {
+  const min = Math.max(0, Math.floor((now - Date.parse(sinceIso)) / 60_000));
+  if (min < 60) return `${min} min`;
+  if (min < 48 * 60) return `${Math.floor(min / 60)} h`;
+  return `${Math.floor(min / 1440)} d`;
+}
+
+/** Minutes as "45 min" / "2 h 10 min". */
+function minutesLabel(m: number | null): string {
+  if (m === null) return "—";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return `${h} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+function ConversationRow({ c, selected, now, currentUserId, onOpen }: { c: CrmConversation; selected: boolean; now: number; currentUserId: string; onOpen: () => void }) {
+  const { tag } = useCatalog();
   const unread = c.unreadCount > 0;
+  const waitingMin = c.waitingSince ? (now - Date.parse(c.waitingSince)) / 60_000 : 0;
+  const attendanceTags = c.tagIds.map((id) => tag(id)).filter((t) => t && t.category === "atendimento");
   // The last message was ours when nothing came in after it.
   const ours = Boolean(c.lastMessageAt) && (!c.lastInboundAt || Date.parse(c.lastMessageAt!) > Date.parse(c.lastInboundAt));
   const win = windowLabel(c.lastInboundAt, now);
@@ -67,7 +87,25 @@ function ConversationRow({ c, selected, now, onOpen }: { c: CrmConversation; sel
           {c.optedOutAt && (
             <span className="rounded-full border border-crm-red/25 bg-crm-red/10 px-2 py-0.5 text-[10.5px] font-semibold text-crm-red">Descadastrado</span>
           )}
-          <span className="ml-auto">
+          {attendanceTags.map((t) => (
+            <TagChip key={t!.id} tag={t!} small />
+          ))}
+          {c.waitingSince && (
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${
+                waitingMin >= 240 ? "border-crm-red/25 bg-crm-red/10 text-crm-red" : waitingMin >= 30 ? "border-crm-amber/30 bg-crm-amber/10 text-crm-amber" : "border-crm-line text-crm-dim"
+              }`}
+              title="Tempo desde a primeira mensagem do contato ainda sem resposta"
+            >
+              Aguardando · {waitLabel(c.waitingSince, now)}
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-1.5">
+            {c.attendantId && (
+              <span className="text-[10.5px] text-crm-dim whitespace-nowrap" title="Quem está atendendo a conversa">
+                Atende: {c.attendantId === currentUserId ? "você" : c.attendantName}
+              </span>
+            )}
             <OwnerAvatar name={c.ownerName} />
           </span>
         </span>
@@ -85,12 +123,14 @@ export default function CrmConversationsView({
   team,
   version,
   now,
+  currentUserId,
   selectedId,
   onOpen,
   panel,
   whatsappConfigured,
 }: {
   team: CrmTeamMember[];
+  currentUserId: string;
   version: number;
   now: number;
   selectedId: string | null;
@@ -101,9 +141,16 @@ export default function CrmConversationsView({
 }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const { tagGroups } = useCatalog();
+  const [show, setShow] = useState<"all" | "unread" | "waiting">("all");
+  const unreadOnly = show === "unread";
   const [stage, setStage] = useState("");
   const [owner, setOwner] = useState("all");
+  const [attendant, setAttendant] = useState("all");
+  const [tagFilter, setTagFilter] = useState("");
+  const [statsDays, setStatsDays] = useState<7 | 30>(7);
+  const [stats, setStats] = useState<CrmResponseStats | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [limit, setLimit] = useState(PAGE);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState(false);
@@ -114,13 +161,29 @@ export default function CrmConversationsView({
     return () => clearTimeout(t);
   }, [search]);
 
-  const filterKey = JSON.stringify([query, unreadOnly, stage, owner]);
+  // Tempo de resposta (the strip above the list).
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/crm/conversations/stats/?days=${statsDays}`)
+      .then(async (res) => {
+        if (res.ok && !cancelled) setStats((await res.json()) as CrmResponseStats);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [statsDays, version]);
+
+  const filterKey = JSON.stringify([query, show, stage, owner, attendant, tagFilter]);
   useEffect(() => {
     let cancelled = false;
     const qs = new URLSearchParams({ owner, limit: String(limit) });
     if (query) qs.set("q", query);
-    if (unreadOnly) qs.set("unread", "1");
+    if (show === "unread") qs.set("unread", "1");
+    if (show === "waiting") qs.set("waiting", "1");
     if (stage) qs.set("stage", stage);
+    if (attendant !== "all") qs.set("attendant", attendant);
+    if (tagFilter) qs.set("tag", tagFilter);
     fetch(`/api/crm/conversations/?${qs}`)
       .then(async (res) => {
         if (!res.ok) throw new Error("fetch failed");
@@ -134,7 +197,7 @@ export default function CrmConversationsView({
     return () => {
       cancelled = true;
     };
-  }, [filterKey, owner, limit, query, unreadOnly, stage, version]);
+  }, [filterKey, owner, limit, query, show, stage, attendant, tagFilter, version]);
 
   // A new filter starts again from the first page.
   function changeFilter(apply: () => void) {
@@ -144,7 +207,7 @@ export default function CrmConversationsView({
 
   const rows = result?.rows ?? [];
   const loading = !result || result.key !== filterKey;
-  const filtered = Boolean(query || unreadOnly || stage || owner !== "all");
+  const filtered = Boolean(query || show !== "all" || stage || owner !== "all" || attendant !== "all" || tagFilter);
 
   return (
     <section aria-label="Conversas" className="space-y-3">
@@ -154,7 +217,47 @@ export default function CrmConversationsView({
           <code className="bg-crm-card border border-crm-line px-1.5 py-0.5 rounded">docs/whatsapp-crm-setup.md</code>).
         </p>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] overflow-hidden h-[calc(100dvh-10.5rem)] min-h-[460px]">
+      {stats && (
+        <section aria-label="Tempo de resposta" className="rounded-xl border border-crm-line bg-crm-card px-4 py-2.5 text-[12.5px] shadow-[var(--crm-shadow)]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>
+              <span className="text-crm-dim">Resposta média ({stats.days} dias):</span> <strong>{minutesLabel(stats.team.avgMinutes)}</strong>
+              <span className="text-crm-faint"> · {stats.team.answered} respondidas</span>
+            </span>
+            <span>
+              <span className="text-crm-dim">Aguardando resposta agora:</span>{" "}
+              <strong className={stats.waitingNow > 0 ? "text-crm-amber" : ""}>{stats.waitingNow}</strong>
+            </span>
+            <span className="ml-auto flex items-center gap-2">
+              <span className={CRM_SEGMENT_TRACK} role="group" aria-label="Período do tempo de resposta">
+                {([7, 30] as const).map((d) => (
+                  <button key={d} type="button" aria-pressed={statsDays === d} onClick={() => setStatsDays(d)} className={`${crmSegment(statsDays === d)} !py-1 !px-2.5 !text-[11.5px]`}>
+                    {d} dias
+                  </button>
+                ))}
+              </span>
+              {stats.people.length > 0 && (
+                <button type="button" className={`${CRM_LINK_BTN} !text-[12px]`} aria-expanded={statsOpen} onClick={() => setStatsOpen((v) => !v)}>
+                  {statsOpen ? "Esconder" : "Por pessoa"}
+                </button>
+              )}
+            </span>
+          </div>
+          {statsOpen && (
+            <ul className="mt-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3" aria-label="Tempo de resposta por pessoa">
+              {stats.people.map((p) => (
+                <li key={p.userId} className="flex items-center justify-between gap-2 rounded-lg bg-crm-sunken px-3 py-1.5">
+                  <span className="truncate">{p.name}</span>
+                  <span className="tabular-nums whitespace-nowrap">
+                    <strong>{minutesLabel(p.avgMinutes)}</strong> <span className="text-crm-faint">· {p.answered}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] overflow-hidden h-[calc(100dvh-13.5rem)] min-h-[460px]">
         <div className="flex flex-col min-h-0 min-w-0 lg:border-r lg:border-crm-line">
           <div className="p-3 space-y-2 border-b border-crm-line">
             <input
@@ -170,11 +273,14 @@ export default function CrmConversationsView({
             />
             <div className="flex flex-wrap items-center gap-2">
               <div className={CRM_SEGMENT_TRACK} role="group" aria-label="Mostrar">
-                <button type="button" aria-pressed={!unreadOnly} onClick={() => changeFilter(() => setUnreadOnly(false))} className={crmSegment(!unreadOnly)}>
+                <button type="button" aria-pressed={show === "all"} onClick={() => changeFilter(() => setShow("all"))} className={crmSegment(show === "all")}>
                   Todas
                 </button>
-                <button type="button" aria-pressed={unreadOnly} onClick={() => changeFilter(() => setUnreadOnly(true))} className={crmSegment(unreadOnly)}>
+                <button type="button" aria-pressed={unreadOnly} onClick={() => changeFilter(() => setShow("unread"))} className={crmSegment(unreadOnly)}>
                   Não lidas{result && result.unreadTotal > 0 ? ` · ${result.unreadTotal}` : ""}
+                </button>
+                <button type="button" aria-pressed={show === "waiting"} onClick={() => changeFilter(() => setShow("waiting"))} className={crmSegment(show === "waiting")}>
+                  Aguardando
                 </button>
               </div>
               <select value={stage} onChange={(e) => changeFilter(() => setStage(e.target.value))} aria-label="Filtrar por etapa" className={`${CRM_FILTER} !text-[12px]`}>
@@ -193,6 +299,28 @@ export default function CrmConversationsView({
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
+                ))}
+              </select>
+              <select value={attendant} onChange={(e) => changeFilter(() => setAttendant(e.target.value))} aria-label="Filtrar por atendimento" className={`${CRM_FILTER} !text-[12px]`}>
+                <option value="all">Qualquer atendimento</option>
+                <option value="mine">Meus atendimentos</option>
+                <option value="none">Sem atendimento</option>
+                {team.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    Atende: {m.name}
+                  </option>
+                ))}
+              </select>
+              <select value={tagFilter} onChange={(e) => changeFilter(() => setTagFilter(e.target.value))} aria-label="Filtrar por etiqueta" className={`${CRM_FILTER} !text-[12px] max-w-full`}>
+                <option value="">Todas as etiquetas</option>
+                {[...tagGroups].sort((a, b) => Number(b.id === "atendimento") - Number(a.id === "atendimento")).map((g) => (
+                  <optgroup key={g.id} label={g.label}>
+                    {g.tags.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -216,7 +344,7 @@ export default function CrmConversationsView({
                 <ul className="divide-y divide-crm-line">
                   {rows.map((c) => (
                     <li key={c.id}>
-                      <ConversationRow c={c} selected={c.id === selectedId} now={now} onOpen={() => onOpen(c.id)} />
+                      <ConversationRow c={c} selected={c.id === selectedId} now={now} currentUserId={currentUserId} onOpen={() => onOpen(c.id)} />
                     </li>
                   ))}
                 </ul>

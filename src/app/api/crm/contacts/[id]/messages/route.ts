@@ -4,12 +4,14 @@ import { CrmInputError, getContactForSending, recordOutbound } from "@/lib/crm";
 import { serviceWindowRemainingMs } from "@/lib/crm-types";
 import { requireCap, requireContact } from "@/lib/crm-access";
 import { sendTemplate, sendText } from "@/lib/whatsapp";
+import { claimForSending } from "@/lib/crm-conversations";
 
 export const runtime = "nodejs";
 
+/** `takeover: true` = answer a conversation someone else is attending (assumes it). */
 type SendBody =
-  | { kind: "text"; body?: unknown }
-  | { kind: "template"; name?: unknown; language?: unknown; params?: unknown };
+  | { kind: "text"; body?: unknown; takeover?: unknown }
+  | { kind: "template"; name?: unknown; language?: unknown; params?: unknown; takeover?: unknown };
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const actor = await crmActorFromRequest(req);
@@ -33,6 +35,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (serviceWindowRemainingMs(contact.lastInboundAt) === 0) {
         throw new CrmInputError("A janela de 24h está fechada — para falar com este contato, envie um modelo aprovado.");
       }
+      // Atendimento: answering takes a free conversation; someone else's needs an explicit takeover (409 otherwise).
+      await claimForSending(actor, id, body.takeover === true);
       const waMessageId = await sendText(contact.phone, text);
       await recordOutbound(id, { waMessageId, type: "text", body: text, templateName: null }, actor);
       return NextResponse.json({ ok: true });
@@ -44,6 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!name || !language) throw new CrmInputError("Escolha um modelo.");
       const values = Array.isArray(body.params) ? body.params.map((p) => String(p ?? "").trim()) : [];
       if (values.some((v) => !v)) throw new CrmInputError("Preencha todos os campos do modelo.");
+      await claimForSending(actor, id, body.takeover === true);
       const waMessageId = await sendTemplate(contact.phone, name, language, values);
       await recordOutbound(id, { waMessageId, type: "template", body: values.length ? values.join(" · ") : null, templateName: name }, actor);
       return NextResponse.json({ ok: true });

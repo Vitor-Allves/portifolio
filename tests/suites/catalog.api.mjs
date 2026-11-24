@@ -25,7 +25,10 @@ ok((await fetch(`${BASE}/api/crm/catalog/`)).status === 401, "anonymous refused"
 let cat = await catalog();
 const sourceLabels = cat.options.filter((o) => o.kind === "source").map((o) => o.label);
 ok(sourceLabels.join(",") === "Tráfego pago,BNI,Site,Evento,Indicação,Prospecção manual,Outro", `origens from the old list (${sourceLabels})`);
-ok(cat.tags.length === 14 && cat.tags.some((t) => t.category === "classificacao" && t.label === "Em negociação"), "initial tags");
+ok(
+  cat.tags.length === 19 && cat.tags.some((t) => t.category === "classificacao" && t.label === "Em negociação") && cat.tags.filter((t) => t.category === "atendimento").length === 5,
+  "initial tags (with the Atendimento ones, Fase 4)"
+);
 ok(!cat.tags.some((t) => /frio|morno|quente/i.test(t.label)), "temperature is not a tag");
 
 // ---- options ----

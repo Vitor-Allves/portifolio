@@ -345,6 +345,7 @@ export default function CrmDealsTasksTab({
   now,
   onReload,
   onOpenTask,
+  startNewDeal = false,
 }: {
   detail: CrmContactDetail;
   /** Profiles that can't touch the funnel (Marketing) see opportunities and tasks without editing them. */
@@ -357,10 +358,12 @@ export default function CrmDealsTasksTab({
   /** Refetch the contact (and the board) after a change. */
   onReload: () => Promise<void>;
   onOpenTask?: (taskId: string) => void;
+  /** Open with the "nova oportunidade" form already showing (from the conversation's shortcut). */
+  startNewDeal?: boolean;
 }) {
   const { label } = useCatalog();
   const [error, setError] = useState<string | null>(null);
-  const [newDeal, setNewDeal] = useState<{ title: string; value: string } | null>(null);
+  const [newDeal, setNewDeal] = useState<{ title: string; value: string } | null>(startNewDeal && !readOnly ? { title: "", value: "" } : null);
   const selected = detail.deals.find((d) => d.id === selectedDealId) ?? null;
   const pending = detail.tasks.filter((t) => !t.doneAt);
   const done = detail.tasks.filter((t) => t.doneAt);

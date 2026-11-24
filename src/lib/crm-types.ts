@@ -252,10 +252,28 @@ export type CrmContactCard = {
   lastInteractionAt: string | null;
   /** Earliest pending task. */
   nextTask: CrmTaskSummary | null;
+  /** Who is answering this conversation now (atendimento; not the lead's owner) and since when. */
+  attendantId: string | null;
+  attendantName: string | null;
+  attendantSince: string | null;
 };
 
 /** A WhatsApp conversation in the Conversas list: the contact plus the funnel stages of its opportunities (the "tags"). */
-export type CrmConversation = CrmContactCard & { dealStages: CrmStage[] };
+export type CrmConversation = CrmContactCard & {
+  dealStages: CrmStage[];
+  /** First message from the contact still without an answer from us (null = nothing waiting). */
+  waitingSince: string | null;
+};
+
+/** Tempo de resposta: from a contact's first unanswered message to our first reply, in a period. */
+export type CrmResponseStats = {
+  days: number;
+  /** Whole team (or what this profile sees). */
+  team: { answered: number; avgMinutes: number | null };
+  people: { userId: string; name: string; answered: number; avgMinutes: number }[];
+  /** Conversations waiting for us right now. */
+  waitingNow: number;
+};
 
 export type CrmMessage = {
   id: string;
@@ -288,7 +306,9 @@ export type CrmEventKind =
   | "task"
   | "tag"
   /** Written by an automation (Fase 3): payload { automation, text }. */
-  | "automation";
+  | "automation"
+  /** Atendimento of the conversation (Fase 4): payload { action: assumed|takeover|transferred|ended, from, to }. */
+  | "attendance";
 
 export type CrmEvent = {
   id: string;
