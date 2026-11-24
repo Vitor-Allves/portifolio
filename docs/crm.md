@@ -204,6 +204,10 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   liga, sincroniza ou vê os números quem lá vê todas as contas de anúncio do
   cliente. Investimento e custos seguem "ver valores".
 
+  **Assistente de IA (Fase 7):** "Pedir resumos e análises ao assistente de
+  IA" — Administrador e Gestor por padrão; outros perfis por exceção. Só
+  funciona com a IA configurada no servidor (`ANTHROPIC_API_KEY`).
+
   **Logins só do CRM:** o Administrador do CRM cria o acesso de quem só usa o
   CRM (perfil "Analista" no Intelligence, sem nenhuma empresa: lá não vê
   nada; ao entrar, vai direto para o CRM). A senha temporária aparece uma vez
@@ -310,6 +314,25 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   fonte oficial e a tela diz isso. Ligar, trocar ou desfazer a ligação fica
   no histórico do cliente e na auditoria (`crm.intelligence_link`); desfazer
   mantém as sincronizações já feitas.
+- **Assistente de IA:** três análises — resumo do lead (botão "Resumo" no
+  painel do contato), resumo executivo do Painel (com a comparação com o
+  período anterior, oportunidades paradas e produtividade) e relatório
+  mensal do cliente (aba Acompanhamento). Cada uma mostra três partes
+  separadas: **Dados do CRM** (lidos com as mesmas regras das telas: o
+  Comercial só o que é seu, Marketing sem valores, mídia só com acesso no
+  Intelligence), **Cálculos do sistema** (com a fórmula) e, só quando a
+  pessoa pede, a **Leitura da IA**, marcada como gerada por IA. Os dados e
+  cálculos funcionam sem IA. A IA (Claude Opus 5.5, da Anthropic, com
+  fallback do próprio servidor da Anthropic se o pedido for recusado)
+  recebe só os dados e cálculos daquela análise, sem telefones nem e-mails,
+  com a instrução de não inventar nem recalcular números e de tratar
+  mensagens de leads como dado, nunca como instrução. O texto da IA não é
+  salvo. Limite: 30 pedidos por pessoa a cada 24 horas. Cada pedido vai
+  para a auditoria (`crm.ai_request`: tipo, resultado e tokens, nunca o
+  conteúdo). Recusa ou falha da IA aparecem como aviso e os dados ficam.
+  Para ligar: criar `ANTHROPIC_API_KEY` nas variáveis de ambiente da
+  Vercel (nunca no código nem no chat); cada pedido tem custo na conta da
+  Anthropic.
 - **Acompanhamento mensal:** um por cliente por mês, só de mês que já
   começou; precisa de pelo menos um campo. Salvar por cima do que outra
   pessoa salvou enquanto você editava é recusado (409) em vez de apagar o
@@ -421,6 +444,26 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 7, entrega 2: assistente de IA
+
+- **Resumo do lead**, **resumo executivo do Painel** e **relatório mensal do
+  cliente**, cada um com Dados do CRM, Cálculos do sistema e Leitura da IA
+  separados (especificação, módulo 18).
+- A IA só entra quando configurada (`ANTHROPIC_API_KEY` na Vercel) e para
+  quem tem a nova permissão "Pedir resumos e análises ao assistente de IA"
+  (Administrador e Gestor por padrão); sem ela, as análises mostram os
+  dados e os cálculos.
+- A IA recebe só o que a pessoa pode ver, sem telefones nem e-mails; limite
+  de 30 pedidos por pessoa a cada 24 horas; cada pedido na auditoria
+  (`crm.ai_request`), sem o conteúdo.
+- Dependência nova: `@anthropic-ai/sdk`. `CRM_AI_BASE_URL` aponta para uma
+  API falsa só nos testes (ignorado na Vercel).
+- Sem mudança no banco.
+- Testes: `ai-api` (sem chave: dados e cálculos, nada enviado; com chave:
+  quando chama, o que envia e o que não envia, permissões, recusa, falha,
+  auditoria e limite) e `ai-e2e` (Painel, contato e cliente, Comercial sem
+  IA, celular e tema escuro).
 
 ### Especificação-mestra v1.0 — Fase 7, entrega 1: indicadores de mídia do Legado Intelligence (schema v20)
 
