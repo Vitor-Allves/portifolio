@@ -147,5 +147,11 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   propostas enviadas, vendas, perdas, conversão, ticket médio, receita
   recorrente, pipeline, negociações paradas, reuniões, atividades, tarefas
   atrasadas e comparação por vendedor, período e origem.
-- [ ] 9. Relatórios, Intelligence, LGPD
+- [x] 9a. Relatórios — 14 relatórios novos na seção Relatórios (funil,
+  vendas por período e por vendedor, propostas enviadas/aprovadas e
+  expiradas, motivos de perda, produtividade, clientes ativos, contratos a
+  vencer, receita recorrente, comissões, resultados por origem, por anúncio
+  e das campanhas), com filtros, totais, planilha e PDF, nas mesmas regras de
+  acesso do resto do CRM.
+- [ ] 9b. LGPD, 2FA e segurança
 - [ ] 10. Documentação e testes finais

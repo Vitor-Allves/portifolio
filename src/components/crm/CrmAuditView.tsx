@@ -131,7 +131,9 @@ function details(r: AdminRow): string {
     case "crm.transfer_decision":
       return `${String(m.contact ?? "")}: ${m.status === "aprovada" ? "aprovada" : m.status === "recusada" ? "recusada" : String(m.status ?? "")} (${String(m.from ?? "sem responsável")} → ${String(m.to ?? "")}, pedida por ${String(m.requestedBy ?? "")})${m.note ? ` · ${String(m.note)}` : ""}`;
     case "crm.report_export":
-      return `${String(m.what ?? "")} · ${String(m.from ?? "")} a ${String(m.to ?? "")}${m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""}`;
+      return `${String(m.what ?? "")}${m.format ? ` (${m.format === "pdf" ? "PDF" : "planilha"})` : ""}${m.from ? ` · ${String(m.from)} a ${String(m.to ?? "")}` : ""}${
+        m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""
+      }`;
     case "crm.ai_request":
       return `${String(m.kindLabel ?? m.kind ?? "")} · ${String(m.status ?? "")}${typeof m.outputTokens === "number" ? ` · ${m.inputTokens} + ${m.outputTokens} tokens` : ""}`;
     case "crm.intelligence_link":

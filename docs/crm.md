@@ -548,6 +548,31 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
 ## Registro de alterações
 
+### Evolução v1.0 — relatórios e resultados por origem e anúncio
+
+- **Relatórios** (especificação, itens 14 e 15): além da Tabulação
+  comercial, a seção traz Funil comercial, Vendas por período, Vendas por
+  vendedor, Propostas enviadas e aprovadas, Propostas expiradas, Motivos de
+  perda, Produtividade, Clientes ativos, Contratos próximos do vencimento,
+  Receita recorrente, Comissões, Resultados por origem, Resultados por
+  anúncio (leads de anúncio de clique para o WhatsApp, pelo anúncio que o
+  WhatsApp informa, e o que viraram) e Resultados das campanhas. Cada um tem
+  filtros (período, vendedor, origem ou prazo), resumo, tabela com totais,
+  linha que abre o lead ou o cliente, e planilha e PDF (com "Exportar
+  relatórios"; auditados com o formato).
+- **Mesmos números e mesmas regras do resto do CRM:** as definições do
+  Painel, do Financeiro e da produtividade; sem "ver a produtividade da
+  equipe" (Comercial), só o que é seu, mesmo que peça de outra pessoa;
+  clientes pedem "ver clientes ativos"; sem "ver os valores dos contratos"
+  os valores somem e Receita recorrente e Comissões são recusados;
+  campanhas só para quem edita campanhas; contatos arquivados ficam de fora.
+- Código: `crm-report-catalog.ts` (servidor), `crm-report-catalog-types.ts`,
+  rotas `/api/crm/reports/[id]` e `/api/crm/reports/[id]/export`,
+  `CrmReportTable.tsx`. Sem mudança no banco.
+- Testes: `reports-api` (outubro conferido com o Painel; propostas,
+  clientes, contratos, comissões e anúncios criados agora; permissões;
+  planilha, PDF e auditoria) e `reports-e2e`.
+
 ### Evolução v1.0 — indicadores de produtividade
 
 - **Painel** (especificação, item 12): três números novos, cada um com a

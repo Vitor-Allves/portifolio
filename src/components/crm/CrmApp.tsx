@@ -778,6 +778,10 @@ function CrmAppInner({
             version={dataVersion}
             now={now}
             onOpenContact={(id) => openContact(id, "negocio")}
+            onOpenClient={caps.viewClients ? (id) => openClient(id) : undefined}
+            viewClients={caps.viewClients}
+            seeContractValues={caps.viewClients && caps.seeContractValues}
+            seeCampaigns={caps.editCampaigns}
           />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />

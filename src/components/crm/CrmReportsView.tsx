@@ -7,6 +7,8 @@ import type { CrmTabulationReport } from "@/lib/crm-reports";
 import { CRM_ALERT, CRM_FILTER, CRM_INPUT, CRM_LINK_BTN, CRM_TD, CRM_TH } from "./crm-styles";
 import { PRESETS, dateTime, presetRange, shortDate, spDate, type Preset } from "./crm-format";
 import { useCatalog } from "./crm-catalog-context";
+import CrmReportTable from "./CrmReportTable";
+import { CRM_REPORTS, type CrmReportId } from "@/lib/crm-report-catalog-types";
 
 const brl = (cents: number) => formatBRL(cents, { compact: true }) || "R$ 0";
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
@@ -19,14 +21,13 @@ const GROUP_TONE: Record<CloseGroup, { text: string; dot: string }> = {
   futuro: { text: "text-crm-amber", dot: "bg-crm-amber" },
 };
 
-/** The reports this section offers (more join in the Relatórios module). */
-const REPORTS = [
-  {
-    id: "tabulacao",
-    label: "Tabulação comercial",
-    hint: "Como cada oportunidade foi encerrada: resultado positivo, perda comercial, sem conversão ou oportunidade futura, por motivo e por vendedor.",
-  },
-] as const;
+/** The reports this section offers: the Tabulação comercial, then the evolução's (crm-report-catalog). */
+const TABULATION = {
+  id: "tabulacao",
+  label: "Tabulação comercial",
+  hint: "Como cada oportunidade foi encerrada: resultado positivo, perda comercial, sem conversão ou oportunidade futura, por motivo e por vendedor.",
+} as const;
+type ReportChoice = "tabulacao" | CrmReportId;
 
 function GroupTile({ group, count, valueCents, share, active, onClick }: { group: CloseGroup; count: number; valueCents: number; share: number | null; active: boolean; onClick: () => void }) {
   return (
@@ -355,7 +356,13 @@ function TabulationReport({
 }
 
 /** Relatórios: reports with filters, on screen and as planilha / PDF (with "Exportar relatórios"). */
-export default function CrmReportsView(props: {
+export default function CrmReportsView({
+  viewClients = false,
+  seeContractValues = false,
+  seeCampaigns = false,
+  onOpenClient,
+  ...props
+}: {
   team: CrmTeamMember[];
   currentUserId: string;
   seeAll: boolean;
@@ -363,14 +370,28 @@ export default function CrmReportsView(props: {
   version: number;
   now: number;
   onOpenContact: (contactId: string) => void;
+  onOpenClient?: (clientId: string) => void;
+  /** What the profile may see (the server refuses the rest anyway). */
+  viewClients?: boolean;
+  seeContractValues?: boolean;
+  seeCampaigns?: boolean;
 }) {
-  const [report, setReport] = useState<(typeof REPORTS)[number]["id"]>("tabulacao");
-  const def = REPORTS.find((r) => r.id === report)!;
+  const available = [
+    TABULATION,
+    ...CRM_REPORTS.filter(
+      (r) =>
+        !(["clientes", "contratos_vencimento", "receita"].includes(r.id) && !viewClients) &&
+        !(["receita", "comissoes"].includes(r.id) && !seeContractValues) &&
+        !(r.id === "campanhas" && !seeCampaigns)
+    ),
+  ];
+  const [report, setReport] = useState<ReportChoice>("tabulacao");
+  const def = available.find((r) => r.id === report) ?? TABULATION;
   return (
     <section aria-label="Relatórios" className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <select value={report} onChange={(e) => setReport(e.target.value as typeof report)} aria-label="Relatório" className={`${CRM_FILTER} !font-semibold`}>
-          {REPORTS.map((r) => (
+        <select value={def.id} onChange={(e) => setReport(e.target.value as ReportChoice)} aria-label="Relatório" className={`${CRM_FILTER} !font-semibold`}>
+          {available.map((r) => (
             <option key={r.id} value={r.id}>
               {r.label}
             </option>
@@ -378,7 +399,7 @@ export default function CrmReportsView(props: {
         </select>
         <p className="text-[12.5px] text-crm-dim min-w-0">{def.hint}</p>
       </div>
-      {report === "tabulacao" && <TabulationReport {...props} />}
+      {def.id === "tabulacao" ? <TabulationReport {...props} /> : <CrmReportTable key={def.id} id={def.id} {...props} onOpenClient={onOpenClient} />}
     </section>
   );
 }
