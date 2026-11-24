@@ -42,6 +42,14 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
       if (p.action === "formalized") return `${n} formalizada: contrato nº ${String(p.contractNumber ?? "").padStart(4, "0")}`;
       return n;
     }
+    case "scheduled_message": {
+      const at = p.sendAt ? `${shortDate(String(p.sendAt))} às ${timeOfDay(String(p.sendAt))}` : "";
+      const what = p.kind === "template" ? `Modelo "${String(p.templateName ?? "")}"` : "Mensagem";
+      if (p.action === "scheduled") return `${what} agendado${p.kind === "template" ? "" : "a"} para ${at}`;
+      if (p.action === "canceled") return `Mensagem agendada para ${at} cancelada`;
+      if (p.action === "sent") return `Mensagem agendada para ${at} enviada`;
+      return `Mensagem agendada para ${at} não enviada: ${String(p.error ?? "")}`;
+    }
     case "file":
       return p.action === "archived" ? `Documento arquivado: ${String(p.name ?? "")}` : `Documento anexado: ${String(p.name ?? "")}`;
     case "transfer": {

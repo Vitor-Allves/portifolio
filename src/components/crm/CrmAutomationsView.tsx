@@ -42,6 +42,10 @@ const CLIENT_RULES: string[] = ["cliente_onboarding", "renovacao_contrato", "cli
 
 /** Prazo, in words. */
 function deadline(def: AutomationDef, cfg: AutomationConfig): string {
+  if (def.id === "proposta_aprovada" && !cfg.createTask) return "Na hora (sem tarefa)";
+  if (def.id === "proposta_vencendo") return `${plural(cfg.days ?? 0, "dia", "dias")} antes do vencimento da proposta`;
+  if (def.id === "retorno_agendado") return (cfg.days ?? 1) <= 1 ? "Tarefa no dia do retorno" : `Tarefa ${plural((cfg.days ?? 1) - 1, "dia", "dias")} antes do retorno`;
+  if (def.id === "oportunidade_sem_responsavel") return `${plural(cfg.days ?? 0, "dia", "dias")} sem responsável`;
   if (def.id === "renovacao_contrato") return `${plural(cfg.days ?? 0, "dia", "dias")} antes do fim do contrato`;
   if (def.id === "cliente_sem_atualizacao") return `A partir do dia ${cfg.dayOfMonth ?? 25} do mês (tarefa para o dia)`;
   if (def.fields.includes("dueDays")) return cfg.dueDays ? `Tarefa para ${plural(cfg.dueDays, "dia", "dias")} depois` : "Tarefa para o mesmo dia";
@@ -56,6 +60,10 @@ function responsible(def: AutomationDef, cfg: AutomationConfig, team: CrmTeamMem
   if (def.id === "lead_atribuido") return "O novo responsável do lead";
   if (def.id === "resposta_campanha") return cfg.notifyOwner ? "Aviso para o responsável do lead" : "Sem aviso";
   if (def.id === "reuniao_agendada") return "O responsável da reunião";
+  if (def.id === "transferencia_solicitada") return `Gestores e Administradores${cfg.notifyOwner ? " e o responsável atual do lead" : ""}`;
+  if (def.id === "proposta_aprovada") return `Responsável da proposta${cfg.notifyManagers ? " (aviso também aos Gestores)" : ""}`;
+  if (def.id === "proposta_vencendo") return `Responsável da proposta (sem responsável: ${cfg.fallbackOwnerId ? name(cfg.fallbackOwnerId) : "não avisa ninguém"})`;
+  if (def.id === "oportunidade_sem_responsavel") return cfg.fallbackOwnerId ? name(cfg.fallbackOwnerId) : "Gestores e Administradores";
   if (CLIENT_RULES.includes(def.id)) return `Responsável pelo cliente (sem responsável: ${cfg.fallbackOwnerId ? name(cfg.fallbackOwnerId) : def.id === "renovacao_contrato" ? "não avisa ninguém" : "ninguém"})`;
   if (!def.fields.includes("owner")) return "—";
   const main = !cfg.owner || cfg.owner === "lead" ? "Responsável do lead" : name(cfg.owner);
@@ -130,7 +138,17 @@ function ConfigForm({
       )}
       {has("days") && (
         <label className="block">
-          <span className={CRM_LABEL}>{def.id === "lead_sem_resposta" ? "Dias sem resposta" : def.id === "renovacao_contrato" ? "Dias antes do fim" : "Dias parado"}</span>
+          <span className={CRM_LABEL}>
+            {
+              ({
+                lead_sem_resposta: "Dias sem resposta",
+                renovacao_contrato: "Dias antes do fim",
+                proposta_vencendo: "Dias antes do vencimento",
+                retorno_agendado: "Dias de antecedência (1 = no dia)",
+                oportunidade_sem_responsavel: "Dias sem responsável",
+              } as Record<string, string>)[def.id] ?? "Dias parado"
+            }
+          </span>
           <input type="number" min={1} max={90} value={draft.days ?? 1} onChange={(e) => set({ days: Number(e.target.value) })} aria-label="Dias" className={`${CRM_INPUT} mt-1`} />
         </label>
       )}
@@ -169,7 +187,13 @@ function ConfigForm({
       )}
       {has("fallbackOwnerId") && (!draft.owner || draft.owner === "lead") && (
         <label className="block">
-          <span className={CRM_LABEL}>{CLIENT_RULES.includes(def.id) ? "Se o cliente não tiver responsável" : "Se o lead não tiver responsável"}</span>
+          <span className={CRM_LABEL}>
+            {def.id === "oportunidade_sem_responsavel"
+              ? "Quem avisar (vazio: Gestores e Administradores)"
+              : CLIENT_RULES.includes(def.id)
+                ? "Se o cliente não tiver responsável"
+                : "Se o lead não tiver responsável"}
+          </span>
           <select
             value={draft.fallbackOwnerId ?? ""}
             onChange={(e) => set({ fallbackOwnerId: e.target.value || null })}
@@ -198,6 +222,18 @@ function ConfigForm({
         <label className="flex items-center gap-2 text-[13px] self-end pb-2">
           <input type="checkbox" checked={draft.notifyOwner === true} onChange={(e) => set({ notifyOwner: e.target.checked })} className="accent-[var(--crm-accent)]" />
           Avisar o responsável no sino
+        </label>
+      )}
+      {has("notifyManagers") && (
+        <label className="flex items-center gap-2 text-[13px] self-end pb-2">
+          <input type="checkbox" checked={draft.notifyManagers === true} onChange={(e) => set({ notifyManagers: e.target.checked })} className="accent-[var(--crm-accent)]" />
+          Avisar também os Gestores
+        </label>
+      )}
+      {has("createTask") && (
+        <label className="flex items-center gap-2 text-[13px] self-end pb-2">
+          <input type="checkbox" checked={draft.createTask === true} onChange={(e) => set({ createTask: e.target.checked })} className="accent-[var(--crm-accent)]" />
+          Criar também a tarefa
         </label>
       )}
       {has("sources") && (

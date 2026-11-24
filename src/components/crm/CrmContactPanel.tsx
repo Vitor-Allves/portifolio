@@ -32,6 +32,7 @@ import { SegmentSelect, TagChip, TagChips, useCatalog } from "./crm-catalog-cont
 import type { TaskDraft } from "./CrmTaskDialog";
 import { describeEvent } from "./crm-event-text";
 import CrmAnalysisDialog from "./CrmAnalysisDialog";
+import CrmScheduledMessages, { defaultScheduleValue } from "./CrmScheduledMessages";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -223,7 +224,15 @@ function QuickReplies({
   );
 }
 
-function TemplatePicker({ templatesConfigured, onSend }: { templatesConfigured: boolean; onSend: (t: CrmTemplate, params: string[]) => Promise<void> }) {
+function TemplatePicker({
+  templatesConfigured,
+  onSend,
+  actionLabel = "Enviar modelo",
+}: {
+  templatesConfigured: boolean;
+  onSend: (t: CrmTemplate, params: string[]) => Promise<void>;
+  actionLabel?: string;
+}) {
   const [templates, setTemplates] = useState<CrmTemplate[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [chosen, setChosen] = useState("");
@@ -297,7 +306,7 @@ function TemplatePicker({ templatesConfigured, onSend }: { templatesConfigured: 
         }}
         className={CRM_BTN_PRIMARY}
       >
-        {sending ? "Enviando..." : "Enviar modelo"}
+        {sending ? "Enviando..." : actionLabel}
       </button>
     </div>
   );
@@ -343,6 +352,9 @@ export default function CrmContactPanel({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  /** Mensagem agendada: null = send now; else the datetime-local value to send at. */
+  const [scheduleAt, setScheduleAt] = useState<string | null>(null);
+  const [scheduledVersion, setScheduledVersion] = useState(0);
   const [note, setNote] = useState("");
   const [form, setForm] = useState<ContactForm | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -413,6 +425,7 @@ export default function CrmContactPanel({
   }
 
   async function send(body: Record<string, unknown>) {
+    if (scheduleAt !== null) return schedule(body);
     setSending(true);
     // Someone else attending: the button says "Assumir e responder", so sending takes the conversation over.
     const res = await fetch(`/api/crm/contacts/${contactId}/messages/`, {
@@ -428,6 +441,31 @@ export default function CrmContactPanel({
     setActionError(null);
     await load();
     onChanged();
+    return true;
+  }
+
+  /** Agendar: the same message, to go out at the chosen time (the server checks every rule again then). */
+  async function schedule(body: Record<string, unknown>) {
+    const at = scheduleAt ? new Date(scheduleAt) : null;
+    if (!at || Number.isNaN(at.getTime())) {
+      setActionError("Escolha a data e a hora do envio.");
+      return false;
+    }
+    setSending(true);
+    const res = await fetch(`/api/crm/contacts/${contactId}/scheduled-messages/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, sendAt: at.toISOString() }),
+    });
+    setSending(false);
+    if (!res.ok) {
+      setActionError(await errorFrom(res, "Não foi possível agendar."));
+      return false;
+    }
+    setActionError(null);
+    setScheduleAt(null);
+    setScheduledVersion((v) => v + 1);
+    await load();
     return true;
   }
 
@@ -919,7 +957,42 @@ export default function CrmContactPanel({
                     </p>
                   ) : !whatsappConfigured ? (
                     <p className="text-[12px] text-crm-dim">O WhatsApp ainda não está conectado — enviar mensagens começa quando o número for ligado ao CRM.</p>
-                  ) : windowOpen && !showTemplates ? (
+                  ) : null}
+                  {caps.sendWhatsApp && detail.phone && whatsappConfigured && (
+                    <>
+                      <CrmScheduledMessages
+                        contactId={detail.id}
+                        refreshKey={`${scheduledVersion}:${detail.messages.length}:${detail.messages.at(-1)?.status ?? ""}`}
+                        canCancel={caps.sendWhatsApp}
+                        onChanged={() => void load()}
+                      />
+                      {scheduleAt !== null && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-crm-line bg-crm-sunken px-3 py-2">
+                          <label htmlFor="crm-schedule-at" className="text-[12px] font-medium text-crm-text">
+                            Enviar em
+                          </label>
+                          <input
+                            id="crm-schedule-at"
+                            type="datetime-local"
+                            value={scheduleAt}
+                            onChange={(e) => setScheduleAt(e.target.value)}
+                            aria-label="Data e hora do envio"
+                            className={`${CRM_INPUT} w-auto max-w-full`}
+                          />
+                          <button type="button" onClick={() => setScheduleAt(null)} className="text-[12px] text-crm-dim hover:text-crm-text">
+                            Não agendar
+                          </button>
+                          {windowOpen && !showTemplates && scheduleAt && detail.lastInboundAt && Date.parse(scheduleAt) > Date.parse(detail.lastInboundAt) + 86_400_000 && (
+                            <p className="basis-full text-[11.5px] text-crm-amber">
+                              A janela de 24h fecha em {dateTime(new Date(Date.parse(detail.lastInboundAt) + 86_400_000).toISOString())}: se o contato não
+                              escrever de novo até lá, a mensagem livre não sai. Para depois disso, agende um modelo aprovado.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {!caps.sendWhatsApp || !detail.phone || !whatsappConfigured ? null : windowOpen && !showTemplates ? (
                     <form onSubmit={sendText} className="space-y-2">
                       <textarea
                         value={text}
@@ -946,12 +1019,17 @@ export default function CrmContactPanel({
                         >
                           Enviar modelo
                         </button>
+                        {scheduleAt === null && !detail.optedOutAt && (
+                          <button type="button" onClick={() => setScheduleAt(defaultScheduleValue())} className={CRM_BTN_OUTLINE}>
+                            Agendar
+                          </button>
+                        )}
                         <button
                           type="submit"
                           disabled={sending || !text.trim()}
                           className={`ml-auto ${CRM_BTN_PRIMARY}`}
                         >
-                          {sending ? "Enviando..." : attendedByOther ? "Assumir e responder" : "Enviar"}
+                          {scheduleAt !== null ? (sending ? "Agendando..." : "Agendar envio") : sending ? "Enviando..." : attendedByOther ? "Assumir e responder" : "Enviar"}
                         </button>
                       </div>
                     </form>
@@ -964,10 +1042,16 @@ export default function CrmContactPanel({
                       )}
                       <TemplatePicker
                         templatesConfigured={templatesConfigured}
+                        actionLabel={scheduleAt !== null ? "Agendar modelo" : "Enviar modelo"}
                         onSend={async (t, params) => {
                           if (await send({ kind: "template", name: t.name, language: t.language, params })) setShowTemplates(false);
                         }}
                       />
+                      {scheduleAt === null && !detail.optedOutAt && (
+                        <button type="button" onClick={() => setScheduleAt(defaultScheduleValue())} className="text-[12px] text-crm-dim hover:text-crm-text">
+                          Agendar o envio do modelo
+                        </button>
+                      )}
                       {windowOpen && (
                         <button type="button" onClick={() => setShowTemplates(false)} className="text-[12px] text-crm-dim hover:text-crm-text">
                           ← Voltar para mensagem livre

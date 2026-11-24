@@ -7,6 +7,7 @@
 // tasks, like a carteira transfer. Everything is kept: the request, who
 // asked, who decided, when and why, in the lead's history and in the audit.
 
+import { afterTransferRequested } from "./crm-automation-hooks";
 import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
@@ -127,11 +128,8 @@ export async function requestTransfer(s: CrmSession, input: TransferInput): Prom
     );
     await addEvent(client, contactId, "transfer", { action: "requested", requestId: id, from: fromName, to: target.name, reason, requestedBy: s.userName }, s);
     const name = c.rows[0]?.name ?? "lead";
-    const managers = (await approvers(client)).map((a) => a.id).filter((x) => x !== s.userId);
-    await notify(client, managers, `Transferência solicitada: ${name}`, `${s.userName} pede ${name} (${fromName ?? "sem responsável"} → ${target.name}): ${reason}`, contactId);
-    if (ownerId && ownerId !== s.userId && !managers.includes(ownerId)) {
-      await notify(client, [ownerId], `Pedido de transferência: ${name}`, `${s.userName} pediu a transferência deste lead seu para ${target.name}. Um Gestor vai decidir.`, contactId);
-    }
+    // Who approves (and the lead's owner) are told by the automation "Transferência solicitada" (on by default).
+    await afterTransferRequested(client, id);
     return name;
   });
   await writeAudit({

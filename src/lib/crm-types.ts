@@ -362,7 +362,9 @@ export type CrmEventKind =
   | "diagnosis"
   /** A document attached or archived (evolução v1.0): payload { action: attached|archived, fileId, name }. */
   | "file"
-  | "proposal";
+  | "proposal"
+  /** Mensagem agendada (evolução v1.0): payload { action: scheduled|canceled|sent|failed, id, sendAt, kind, templateName, error }. */
+  | "scheduled_message";
 
 export type CrmEvent = {
   id: string;

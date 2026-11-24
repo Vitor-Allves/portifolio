@@ -20,7 +20,7 @@ import { CrmConflictError, CrmForbiddenError, CrmInputError, CrmNotFoundError, a
 import { canAct, canSee, requireCap, type CrmSession } from "./crm-access";
 import { parseMoneyToCents } from "./crm-types";
 import { updateDealTx } from "./crm-deals";
-import { approvers } from "./crm-transfers";
+import { afterProposalApproved } from "./crm-automation-hooks";
 import {
   PROPOSAL_FINAL,
   PROPOSAL_OPEN,
@@ -902,6 +902,7 @@ export async function changeStatus(
     await event(client, id, "status", r.version, { from: r.status, to, reason, via: "equipe" }, s);
     await addEvent(client, r.contact_id, "proposal", { action: to, proposalId: id, number: r.number, version: r.version, reason, via: "equipe" }, s);
     await audit(s, "crm.proposal_status", r, { from: r.status, to, reason, version: r.version });
+    if (to === "aprovada") await afterProposalApproved(client, r.id);
     return to;
   });
 }
@@ -1061,15 +1062,10 @@ export async function decidePublic(
       r.contact_id,
       JSON.stringify({ action: decision, proposalId: r.id, number: r.number, version: r.sent_version, via: "cliente", name }),
     ]);
+    // An approval: the automation "Proposta aprovada" (on by default) tells the owner and the Gestores and creates the formalization task.
     const owner = ownerOf(r);
-    const managers = decision === "aprovada" ? await approvers(client) : [];
-    await notify(
-      client,
-      [...(owner ? [owner] : []), ...managers.map((m) => m.id)],
-      `Proposta nº ${proposalNumber(r.number)} ${decision}`,
-      decision === "aprovada" ? `${name} aprovou "${r.title}". Registre a venda na oportunidade.` : `${name} recusou "${r.title}".`,
-      r.contact_id,
-    );
+    if (decision === "aprovada") await afterProposalApproved(client, r.id);
+    else if (owner) await notify(client, [owner], `Proposta nº ${proposalNumber(r.number)} recusada`, `${name} recusou "${r.title}".`, r.contact_id);
     await audit(null, "crm.proposal_status", r, { from: r.status, to: decision, via: "cliente", name, email, version: r.sent_version, ip: meta.ip });
     return decision;
   });

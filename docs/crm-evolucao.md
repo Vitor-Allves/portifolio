@@ -70,8 +70,12 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   envia (link copiado/WhatsApp/e-mail).
 - **Comissões:** regras configuráveis (pessoa, serviço, modalidade,
   percentual e base de cálculo); o CRM calcula, não paga.
-- **Mensagens agendadas e automações diárias:** prontas; rodam quando o
-  agendamento da Vercel (`CRON_SECRET`) for ligado, ou em "Rodar agora".
+- **Automações diárias:** prontas; rodam quando o agendamento da Vercel
+  (`CRON_SECRET`) for ligado, ou em "Rodar agora".
+- **Mensagens agendadas:** saem no horário enquanto houver alguém com o CRM
+  aberto (a consulta do sino confere as vencidas) e pelo agendamento da
+  Vercel quando ligado; sem nenhum dos dois, saem quando alguém abrir o CRM.
+  No horário, todas as regras de um envio são conferidas de novo.
 
 ## 3. Ordem de construção
 
@@ -130,6 +134,12 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   cancelamentos, perdido no funil, parcelas dos próximos 6 meses e comissões
   por contrato e por vendedor, com planilha/PDF; regras de comissão por
   vendedor, serviço e modalidade (a mais específica vale).
-- [ ] 8. Automações, agendamento, indicadores
+- [x] 8a. Automações e agendamento — seis automações novas (11 proposta
+  perto do vencimento, 12 retorno agendado, 13 diagnóstico realizado, 14
+  oportunidade sem responsável, 15 transferência solicitada, 16 proposta
+  aprovada), com prazos, responsáveis e ações configuráveis; mensagens de
+  WhatsApp agendadas (texto ou modelo), canceláveis, com as regras de envio
+  conferidas de novo no horário e o motivo quando não saem.
+- [ ] 8b. Indicadores de produtividade
 - [ ] 9. Relatórios, Intelligence, LGPD
 - [ ] 10. Documentação e testes finais

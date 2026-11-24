@@ -32,6 +32,21 @@ export function afterTaskCreated(client: Client, taskId: string): Promise<void> 
   return onCommit(client, async () => (await engine()).onTaskCreated(taskId));
 }
 
+/** A diagnóstico comercial was saved (evolução v1.0). */
+export function afterDiagnosis(client: Client, contactId: string, diagnosisId: string): Promise<void> {
+  return onCommit(client, async () => (await engine()).onDiagnosis(contactId, diagnosisId));
+}
+
+/** Someone asked for a lead (evolução v1.0). */
+export function afterTransferRequested(client: Client, requestId: string): Promise<void> {
+  return onCommit(client, async () => (await engine()).onTransferRequested(requestId));
+}
+
+/** A proposal was approved, by the client or recorded by the team (evolução v1.0). */
+export function afterProposalApproved(client: Client, proposalId: string): Promise<void> {
+  return onCommit(client, async () => (await engine()).onProposalApproved(proposalId));
+}
+
 /** A WhatsApp message arrived from an existing contact. */
 export function afterInbound(client: Client, contactId: string, at: Date): Promise<void> {
   return onCommit(client, async () => (await engine()).onInbound(contactId, at));

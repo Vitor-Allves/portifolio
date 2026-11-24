@@ -58,8 +58,10 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   empresa, ou atividade interna (sem contato nem empresa).
 - `crm_task_events` (v13) — o histórico de cada tarefa: criada, editada
   (quais campos), reagendada, responsável trocado, mudança de situação.
-- `crm_automations` (v14) — as dez automações da especificação: situação
-  (ativa, pausada, desativada — todas começam desativadas), parâmetros
+- `crm_automations` (v14, v27) — as dezesseis automações (dez da Fase 3,
+  seis da evolução v1.0): situação (ativa, pausada, desativada — todas
+  começam desativadas, menos "Transferência solicitada" e "Proposta
+  aprovada", que só dão os avisos que o CRM já dava), parâmetros
   ajustáveis (`config`: prazo, responsável, tipo de tarefa, prioridade,
   dias, lembrete...; o padrão fica no código, `crm-automation-defs.ts`) e a
   última verificação diária. `crm_automation_runs` — uma linha por execução
@@ -180,6 +182,10 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   e data de entrega.
 - `crm_client_satisfaction` (v25) — avaliações de satisfação (0 a 10) com
   comentário, quem registrou e quando.
+- `crm_scheduled_messages` (v27) — mensagens de WhatsApp agendadas: texto
+  livre ou modelo aprovado (nome, idioma, campos), contato, horário, quem
+  agendou, situação (`pendente` → `enviando` → `enviada` ou `falhou`, com o
+  motivo; ou `cancelada`, com quem cancelou) e o id da mensagem no WhatsApp.
 - `crm_commission_rules` (v26) — regras de comissão: nome, vendedor (ou
   todos), serviço (ou todos), modalidade (mensalidades, valores únicos ou
   ambos), percentual e quantas mensalidades contam. `crm_contracts.status_changed_at`
@@ -503,7 +509,18 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   quando um contrato vigente termina nos próximos X dias (uma vez por data
   de fim); a 9, a partir do dia X do mês, cria a tarefa de atualização para
   cliente em Onboarding ou Ativo sem o acompanhamento do mês (uma por mês).
-  As 8 e 9 rodam na verificação diária, como a 3 e a 6.
+  As 8 e 9 rodam na verificação diária, como a 3 e a 6. Evolução v1.0: as
+  11 (proposta perto do vencimento), 12 (retorno agendado) e 14
+  (oportunidade sem responsável) também rodam na verificação diária; a 13
+  (diagnóstico salvo), a 15 (transferência pedida) e a 16 (proposta
+  aprovada, pelo link ou registrada pela equipe) rodam no evento.
+- **Mensagens agendadas** (`crm-scheduled-messages.ts`): são um envio de
+  quem agendou, só que mais tarde — no horário as regras de envio são
+  conferidas de novo (perfil, responsável, descadastro, janela de 24h para
+  texto livre, atendimento de outra pessoa) e, se alguma falhar, a mensagem
+  não sai e fica "não enviada" com o motivo. Cada uma é reservada antes de
+  sair, então nunca vai duas vezes, e uma interrompida no meio do envio
+  nunca é repetida sozinha.
 - **Situação da tarefa:** cancelada só volta reativada (pendente); concluir
   pede o resultado (opcional). Tudo entra no histórico da tarefa e, quando
   há contato, no histórico do contato.
@@ -530,6 +547,51 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — automações 11–16 e mensagens agendadas (schema v27)
+
+- **Seis automações novas** (especificação, item 7), no mesmo motor, com
+  prazos, responsáveis e ações configuráveis na tela Automações:
+  11 proposta perto do vencimento (aviso ao responsável, uma vez por data de
+  validade); 12 retorno agendado (tarefa na data combinada com o contato,
+  se ele não tiver tarefa pendente); 13 diagnóstico realizado (tarefa do
+  próximo passo — "Preparar a proposta"); 14 oportunidade sem responsável
+  (aviso a quem for escolhido ou aos Gestores e Administradores, uma vez por
+  oportunidade); 15 transferência solicitada (aviso a quem aprova e, se
+  marcado, ao responsável atual); 16 proposta aprovada (aviso ao
+  responsável e, se marcado, aos Gestores; tarefa de formalização opcional).
+  A 15 e a 16 começam ligadas porque assumem os avisos que o CRM já dava ao
+  pedir transferência e ao aprovar proposta (a tarefa da 16 começa
+  desligada); um Administrador pode desligá-las. "Encaminhamento para
+  operação após fechamento" já é a automação 7 (cliente em onboarding) e o
+  "Formalizar contrato" da proposta. Nenhuma automação envia mensagem.
+- **Mensagens agendadas** (item 11): na conversa, "Agendar" leva o texto (ou,
+  com a janela de 24h fechada, um modelo aprovado) para sair na data e hora
+  escolhidas, até 30 dias à frente e até 10 por contato. Aviso quando o
+  horário passa da janela de 24h. A conversa mostra uma linha com as
+  agendadas e as que não saíram; o detalhe abre com "Ver", com Cancelar. No
+  horário, tudo o que vale para um envio é conferido de novo: quem agendou
+  continua ativo e com "enviar WhatsApp", o lead continua sendo dele (ou
+  sem responsável), o contato não se descadastrou, texto livre só com a
+  janela aberta e ninguém mais assumiu a conversa. Se algo mudou, a
+  mensagem não sai: fica "não enviada" com o motivo, no histórico do lead e
+  num aviso no sino de quem agendou. Contato descadastrado não recebe
+  mensagem agendada.
+- **Quem envia no horário:** `GET /api/cron/scheduled-messages` (protegida
+  por `CRON_SECRET`, para um agendamento frequente na Vercel), a verificação
+  diária (`/api/cron/automations`) e, entre uma e outra, o próprio CRM: a
+  consulta do sino (uma vez por minuto em cada CRM aberto) confere as
+  vencidas depois de responder (`after()` do Next.js), no máximo a cada 20
+  segundos por instância. Cada mensagem é reservada (`enviando`) por um
+  único envio antes de sair, então nunca vai duas vezes; uma que ficou
+  "enviando" por mais de 10 minutos (o processo caiu no meio) vira "não
+  enviada" e não é reenviada sozinha, porque pode ter saído.
+- Banco v27: as seis automações em `crm_automations` (as duas ligadas só se
+  ninguém tiver mexido nelas) e `crm_scheduled_messages`.
+- Testes: `automations-ev-api`, `scheduled-messages-api` e
+  `scheduled-messages-e2e`; `automations-api`/`automations-e2e` contam 16
+  regras; o teste de banco confere a v27 (escolha anterior de um
+  Administrador mantida).
 
 ### Evolução v1.0 — financeiro comercial e comissões (schema v26)
 

@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
 import { CrmInputError, addEvent, cleanText, iso, type CrmActor } from "./crm-core";
 import { parseMoneyToCents } from "./crm-types";
+import { afterDiagnosis } from "./crm-automation-hooks";
 import { DIAGNOSIS_FIELDS, URGENCIES, type CrmDiagnosis, type DiagnosisData } from "./crm-diagnosis-fields";
 
 export { DIAGNOSIS_FIELDS, URGENCIES, type CrmDiagnosis, type DiagnosisData };
@@ -83,6 +84,7 @@ export async function saveDiagnosis(contactId: string, input: Record<string, unk
       [id, contactId, dealId, version, JSON.stringify(data), actor?.userId ?? null, actor?.userName ?? null],
     );
     await addEvent(client, contactId, "diagnosis", { version, diagnosisId: id, dealId, need: data.need }, actor);
+    await afterDiagnosis(client, contactId, id);
   });
   const db = await getDb();
   const { rows } = await db.query<Row>(`${SELECT} WHERE g.id = $1`, [id]);

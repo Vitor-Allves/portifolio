@@ -12,10 +12,13 @@ await go(a, "Automações");
 await a.getByRole("heading", { level: 1, name: "Automações" }).waitFor();
 const list = a.getByRole("list", { name: "Lista de automações" });
 await list.getByRole("region", { name: "Novo lead: tarefa de primeiro contato" }).waitFor();
-ok((await list.getByRole("listitem").count()) === 10, "the ten rules of the spec");
+ok((await list.getByRole("listitem").count()) === 16, "the sixteen rules (ten of Fase 3, six of the evolução)");
 ok((await list.getByText("Disponível na Fase 5 (clientes ativos)").count()) === 0, "7, 8 and 9 can be turned on (Fase 5 is here)");
 ok(await a.getByText(/ainda não agendada no servidor/).isVisible(), "says the daily check isn't scheduled yet (no CRON_SECRET here)");
-ok((await list.getByText("Desativada", { exact: true }).count()) === 10, "everything starts off");
+ok(
+  (await list.getByText("Desativada", { exact: true }).count()) === 14 && (await list.getByText("Ativa", { exact: true }).count()) === 2,
+  "everything starts off, except the two notices the CRM already gave (transfer requested, proposal approved)"
+);
 
 // ---- turn on "Novo lead", adjust "Proposta enviada" ----
 const novo = list.getByRole("region", { name: "Novo lead: tarefa de primeiro contato" });

@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 26;
+const LATEST = 27;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,19 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v25: undo exactly what v26 (financeiro) added.
+// Back to v26: undo exactly what v27 (automações e mensagens agendadas) added.
+async function downgradeToV26(name) {
+  await query(
+    name,
+    `DROP TABLE crm_scheduled_messages;
+     DELETE FROM crm_automations WHERE id IN ('proposta_vencendo', 'retorno_agendado', 'diagnostico_realizado', 'oportunidade_sem_responsavel', 'transferencia_solicitada', 'proposta_aprovada');
+     DELETE FROM schema_migrations WHERE version = 27;`
+  );
+}
+
+// Back to v25: undo exactly what v27 and v26 (financeiro) added.
 async function downgradeToV25(name) {
+  await downgradeToV26(name);
   await query(name, `DROP TABLE crm_commission_rules; ALTER TABLE crm_contracts DROP COLUMN status_changed_at; DELETE FROM schema_migrations WHERE version = 26;`);
 }
 
@@ -290,8 +301,13 @@ const priorities = (await query(B, `SELECT id, label, locked, color FROM crm_opt
 ok(priorities === "Alta:vermelho,Média*:amarelo,Baixa:cinza", `v13: priorities seeded, Média is the fallback (${priorities})`);
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority', 'stage') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
 // v14 (Fase 3, entrega 2): the ten automations, every one off — nothing changes until an Administrador turns one on.
+// v27 adds six; the two that only take over notices the CRM already gave start on.
 const autos = await query(B, `SELECT id, status FROM crm_automations ORDER BY id`);
-ok(autos.length === 10 && autos.every((r) => r.status === "desativada"), `v14: ten automations, all desativadas (${autos.map((r) => r.status).join(",")})`);
+const onByDefault = ["proposta_aprovada", "transferencia_solicitada"];
+ok(
+  autos.length === 16 && autos.every((r) => (r.status === "ativa") === onByDefault.includes(r.id)),
+  `v14 + v27: sixteen automations, all off but the two notices (${autos.map((r) => `${r.id}:${r.status}`).join(",")})`
+);
 ok((await query(B, `SELECT (SELECT count(*) FROM crm_automation_runs) + (SELECT count(*) FROM crm_notifications) AS n`))[0].n === "0", "v14: no runs and no notices yet");
 // v15 (Fase 4, entrega 1): Atendimento tags; no conversation starts with someone attending it.
 const attendanceTags = (await query(B, `SELECT label FROM crm_tags WHERE category = 'atendimento' ORDER BY sort`)).map((r) => r.label).join(",");
@@ -412,6 +428,25 @@ ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production u
 const changed = await query(db25, `SELECT id, status_changed_at IS NOT NULL AS has FROM crm_contracts ORDER BY id`);
 ok(changed.map((r) => `${r.id}:${r.has}`).join() === "k-3:false,k-new:false,k-old:true", "v26: only the cancelled contract gets the date (its last update)");
 ok((await query(db25, `SELECT count(*)::int AS n FROM crm_commission_rules`))[0].n === 0, "v26: no commission rules invented");
+// v27: the six new rules join; an Administrador's choice made before is never overridden; nothing is scheduled.
+await downgradeToV26(db25);
+await query(db25, `UPDATE crm_automations SET status = 'ativa', updated_by = NULL WHERE id = 'novo_lead'`);
+await query(db25, `INSERT INTO crm_automations (id, status, updated_by) VALUES ('proposta_aprovada', 'desativada', NULL)`);
+await query(db25, `INSERT INTO internal_users (id, name, email, username, role, password_hash) VALUES ('u-adm', 'Adm', 'adm@x.com', 'adm', 'administrador_geral', 'x')`);
+await query(db25, `UPDATE crm_automations SET updated_by = 'u-adm' WHERE id = 'proposta_aprovada'`);
+ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v26 → v${LATEST}`);
+const v27 = Object.fromEntries((await query(db25, `SELECT id, status FROM crm_automations`)).map((r) => [r.id, r.status]));
+ok(Object.keys(v27).length === 16, "v27: sixteen rules");
+ok(v27.transferencia_solicitada === "ativa" && v27.proposta_aprovada === "desativada", "v27: the transfer notice starts on; the approval one an Administrador had turned off stays off");
+ok(v27.novo_lead === "ativa" && v27.proposta_vencendo === "desativada" && v27.oportunidade_sem_responsavel === "desativada", "v27: existing choices kept; the other new rules start off");
+ok((await query(db25, `SELECT count(*)::int AS n FROM crm_scheduled_messages`))[0].n === 0, "v27: no scheduled messages");
+let refusedKind = false;
+try {
+  await query(db25, `INSERT INTO crm_scheduled_messages (id, contact_id, kind, body, send_at) VALUES ('m1', 'nao-existe', 'audio', 'x', now())`);
+} catch {
+  refusedKind = true;
+}
+ok(refusedKind, "v27: a scheduled message is a text or a template, of an existing contact");
 await admin(`DROP DATABASE IF EXISTS ${db25} WITH (FORCE)`);
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);

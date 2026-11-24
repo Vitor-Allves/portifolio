@@ -7,7 +7,7 @@ import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import { companyKey as crmCompanyKey } from "./crm-types";
 import { DEFAULT_OPTIONS, DEFAULT_TAGS, LOST_REASON_OLD_LABELS } from "./crm-catalog";
-import { AUTOMATION_DEFS } from "./crm-automation-defs";
+import { AUTOMATIONS_ON_BY_DEFAULT, AUTOMATION_DEFS } from "./crm-automation-defs";
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -905,7 +905,8 @@ async function ensureSchema(): Promise<void> {
       )
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_notifications_unread_idx ON crm_notifications (user_id, created_at DESC) WHERE read_at IS NULL`);
-    for (const a of AUTOMATION_DEFS) {
+    // The ten rules of the first version (v27 adds the others).
+    for (const a of AUTOMATION_DEFS.filter((d) => d.number <= 10)) {
       await db.query(`INSERT INTO crm_automations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [a.id]);
     }
 
@@ -1477,6 +1478,44 @@ async function ensureSchema(): Promise<void> {
       )
     `);
     await done(26);
+  }
+
+  if (current < 27) {
+    // v27 — Evolução v1.0 (automações e comunicação, itens 7 e 11): the six new
+    // automation rules (two of them on from the start, because they only take
+    // over notices the CRM already gave: transfer requested, proposal
+    // approved) and the messages scheduled to be sent later.
+    for (const a of AUTOMATION_DEFS) {
+      await db.query(`INSERT INTO crm_automations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [a.id]);
+    }
+    await db.query(`UPDATE crm_automations SET status = 'ativa' WHERE id = ANY($1) AND updated_by IS NULL AND status = 'desativada'`, [AUTOMATIONS_ON_BY_DEFAULT]);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_scheduled_messages (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        -- text = free message (only inside the 24h window); template = an approved model.
+        kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'template')),
+        body TEXT,
+        template_name TEXT,
+        template_language TEXT,
+        template_params JSONB NOT NULL DEFAULT '[]'::jsonb,
+        send_at TIMESTAMPTZ NOT NULL,
+        -- pendente → enviando (claimed by one dispatcher) → enviada | falhou; or cancelada.
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'enviando', 'enviada', 'cancelada', 'falhou')),
+        claimed_at TIMESTAMPTZ,
+        error TEXT,
+        wa_message_id TEXT,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        sent_at TIMESTAMPTZ,
+        canceled_by_name TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_scheduled_messages_due_idx ON crm_scheduled_messages (send_at) WHERE status = 'pendente'`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_scheduled_messages_contact_idx ON crm_scheduled_messages (contact_id, send_at DESC)`);
+    await done(27);
   }
 }
 
