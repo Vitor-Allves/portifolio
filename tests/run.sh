@@ -46,7 +46,7 @@ reset_db() {
 # Fresh app server (the login rate limit lives in memory, so each suite gets its own).
 start_server() {
   stop
-  rm -f "$FAKE_GRAPH_DIR"/sent.jsonl "$FAKE_GRAPH_DIR"/ratelimit
+  rm -f "$FAKE_GRAPH_DIR"/sent.jsonl "$FAKE_GRAPH_DIR"/ratelimit "$FAKE_GRAPH_DIR"/ai.jsonl "$FAKE_GRAPH_DIR"/ai-error
   # Meta Ads answers are cached by URL across runs; start from the fake's current ones.
   rm -rf .next/cache/fetch-cache
   node tests/fixtures/fake-graph.mjs > "$LOGS/fake-graph.log" 2>&1 &
@@ -64,6 +64,8 @@ start_server() {
   META_BUSINESS_ID="biz-test" \
   META_GRAPH_BASE_URL="http://localhost:${FAKE_GRAPH_PORT}" \
   CRON_SECRET="${CRON_SECRET_FOR_TEST:-}" \
+  ANTHROPIC_API_KEY="${AI_KEY_FOR_TEST:-}" \
+  CRM_AI_BASE_URL="http://localhost:${FAKE_GRAPH_PORT}" \
     "${cmd[@]}" > "$LOGS/server.log" 2>&1 &
   SERVER_PID=$!
   for _ in $(seq 1 120); do
@@ -112,12 +114,16 @@ run_suite() {
     goals-e2e) reset_db base campaigns && start_server && node tests/suites/goals.e2e.mjs ;;
     media-api) reset_db base campaigns && start_server && node tests/suites/media.api.mjs ;;
     media-e2e) reset_db base campaigns && start_server && node tests/suites/media.e2e.mjs ;;
+    # The AI assistant: first without a key (not configured), then with a test-only key against the fake API.
+    ai-api) reset_db base campaigns && start_server && node tests/suites/ai-off.api.mjs
+      local AI_KEY_FOR_TEST="test-only-anthropic-key"; start_server && node tests/suites/ai.api.mjs ;;
+    ai-e2e) local AI_KEY_FOR_TEST="test-only-anthropic-key"; reset_db base campaigns && start_server && node tests/suites/ai.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

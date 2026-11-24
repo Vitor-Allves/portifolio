@@ -61,6 +61,15 @@ regras que valem para todas as fases. Atualizar a cada fase.
 - Indicadores de mídia no CRM (Fase 7): só leitura na Meta, com a mesma
   chave do Intelligence, e ninguém vê pelo CRM contas de anúncio fora do
   próprio acesso no Intelligence.
+- Assistente de IA (Fase 7): a chave `ANTHROPIC_API_KEY` fica só nas
+  variáveis de ambiente da Vercel; o navegador nunca fala com a Anthropic.
+  A IA recebe só os dados que a pessoa já pode ver naquela análise, sem
+  telefones nem e-mails; o texto gerado não é salvo; cada pedido é
+  auditado sem o conteúdo; limite de 30 pedidos por pessoa por dia. Nos
+  testes, `CRM_AI_BASE_URL` aponta para uma API falsa (ignorado na Vercel).
+  Enviar dados de leads e clientes para a Anthropic é tratamento de dados
+  pessoais por um fornecedor: avalie e registre isso na política de
+  privacidade antes de ligar a IA.
 - Dependências: `npm audit` sem falhas em 23/11/2026 (Next.js 16.4.6). A
   verificação automática (CI) roda em todo PR.
 

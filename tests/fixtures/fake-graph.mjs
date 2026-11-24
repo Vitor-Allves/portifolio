@@ -3,6 +3,11 @@
 // permanent error; the file $FAKE_GRAPH_DIR/ratelimit makes every send fail
 // with Meta's spam rate-limit code.
 //
+// Anthropic Messages API (the CRM's AI assistant): POST /v1/messages answers
+// with the requested sections; each request body is logged to
+// $FAKE_GRAPH_DIR/ai.jsonl. The file $FAKE_GRAPH_DIR/ai-error makes it fail
+// (500); a request mentioning RECUSE-ISTO gets a refusal.
+//
 // Meta Ads (the Intelligence's Marketing API reads): business "biz-test" has
 // act_111 (two campaigns), act_222 (one) and act_999 (always fails). Numbers
 // scale with the month asked (October = 10×, November = 11×) so a month's
@@ -88,6 +93,27 @@ http
         res.writeHead(code, { "Content-Type": "application/json" });
         res.end(JSON.stringify(obj));
       };
+      if (req.method === "POST" && req.url.startsWith("/v1/messages")) {
+        const b = JSON.parse(body || "{}");
+        fs.appendFileSync(path.join(DIR, "ai.jsonl"), JSON.stringify({ headers: { beta: req.headers["anthropic-beta"] ?? null, auth: req.headers["x-api-key"] ?? req.headers.authorization ?? null }, body: b }) + "\n");
+        if (fs.existsSync(path.join(DIR, "ai-error"))) return json(500, { type: "error", error: { type: "api_error", message: "fake: overloaded" } });
+        const prompt = String(b.messages?.[0]?.content ?? "");
+        const refused = prompt.includes("RECUSE-ISTO");
+        const sections = [...prompt.matchAll(/## ([^,.]+?)(?=,|\.| \(|$)/g)].map((m) => m[1].trim());
+        const name = (prompt.match(/"analise":"([^"]+)"/) ?? [])[1] ?? "análise";
+        const text = sections.map((t) => `## ${t}\n- Leitura de teste para ${name}.`).join("\n\n");
+        return json(200, {
+          id: `msg_fake_${++n}`,
+          type: "message",
+          role: "assistant",
+          model: b.model,
+          content: refused ? [] : [{ type: "text", text }],
+          stop_reason: refused ? "refusal" : "end_turn",
+          stop_details: refused ? { type: "refusal", category: null, explanation: "fake refusal" } : null,
+          stop_sequence: null,
+          usage: { input_tokens: Math.ceil(prompt.length / 4), output_tokens: Math.ceil(text.length / 4) },
+        });
+      }
       if (req.method === "GET" && req.url.includes("message_templates")) return json(200, { data: TEMPLATES });
       if (req.method === "GET") {
         const ads = metaAds(new URL(req.url, "http://localhost"));

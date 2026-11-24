@@ -49,6 +49,8 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `goals-e2e` | Fase 6 · entrega 2 no navegador: definir as metas do mês, progresso com o ritmo esperado, copiar do mês anterior, produtividade num período, cartão de metas no Painel, Comercial sem editar nem exportar, celular e tema escuro |
 | `media-api` | Fase 7 · entrega 1 pela API: ligar o cliente ativo ao cliente do Intelligence (só Administrador/Gestor, auditoria, histórico, um para um), sincronizar o mês na Meta falsa e conferir com a API do próprio Intelligence, histórico de sincronizações, mês corrente até hoje, contas que falham, acesso do Intelligence e "ver valores" |
 | `media-e2e` | Fase 7 · entrega 1 no navegador: ligar e sincronizar pela aba Acompanhamento, mês corrente e outubro, campanhas, ligação no histórico, Marketing sem valores, celular e tema escuro |
+| `ai-api` | Fase 7 · entrega 2 pela API: sem chave (dados e cálculos, IA "não configurada", nada enviado) e com uma chave de teste contra a API falsa: só chama quando pedido, modelo/fallback/esforço, o que vai e o que não vai para a IA (telefone, e-mail, leads de outros, valores sem permissão), permissão "useAi", recusa, falha, auditoria e limite diário |
+| `ai-e2e` | Fase 7 · entrega 2 no navegador: resumo executivo no Painel, resumo do lead no contato, relatório do mês no cliente, Comercial sem IA, celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Os indicadores de mídia (Fase 7) leem uma Meta falsa (`tests/fixtures/fake-graph.mjs`,
@@ -56,6 +58,12 @@ negócio `biz-test` com as contas `act_111`, `act_222` e `act_999`, que sempre
 falha): o `tests/run.sh` sobe o servidor com uma chave falsa e
 `META_GRAPH_BASE_URL`, e apaga o cache de respostas da Meta (`.next/cache/fetch-cache`)
 antes de cada suíte.
+
+O assistente de IA (Fase 7) usa uma API falsa da Anthropic no mesmo
+`fake-graph.mjs` (`POST /v1/messages`, cada pedido gravado em `ai.jsonl`; o
+arquivo `ai-error` faz falhar e um texto com `RECUSE-ISTO` gera recusa). Só
+`ai-api` (na segunda metade) e `ai-e2e` sobem o servidor com uma chave de
+teste; nas outras suítes a IA fica "não configurada".
 
 A rota da verificação diária só funciona com `CRON_SECRET`: o `tests/run.sh`
 sobe o servidor de `automations-api` com um valor só de teste; nas outras

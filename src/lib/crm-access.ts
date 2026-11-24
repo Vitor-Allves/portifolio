@@ -81,6 +81,7 @@ const DENIED: Record<keyof CrmCapabilities, string> = {
   exportReports: "Seu perfil não exporta relatórios.",
   manageGoals: "Só Administrador e Gestor definem as metas.",
   linkIntelligence: "Só Administrador e Gestor ligam clientes ao Intelligence.",
+  useAi: "Seu perfil não usa o assistente de IA.",
 };
 
 export function requireCap(s: CrmSession, cap: keyof CrmCapabilities): void {

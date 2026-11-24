@@ -72,13 +72,15 @@ export type CrmCapabilities = {
   manageGoals: boolean;
   /** Link an active client to its client in Legado Intelligence (Fase 7). Needs viewClients. */
   linkIntelligence: boolean;
+  /** Ask the AI assistant for summaries and analyses (Fase 7) — only works once the AI is configured. */
+  useAi: boolean;
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: false, manageGoals: false, linkIntelligence: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false, exportReports: true, manageGoals: false, linkIntelligence: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true, useAi: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true, useAi: true },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: false, manageGoals: false, linkIntelligence: false, useAi: false },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false, exportReports: true, manageGoals: false, linkIntelligence: false, useAi: false },
 };
 
 export type CrmCap = keyof CrmCapabilities;
@@ -143,6 +145,11 @@ export const CRM_PERMISSION_MODULES: {
       { cap: "seeContractValues", action: "Visualizar", label: "Ver os valores dos contratos (e o investimento em mídia)" },
       { cap: "linkIntelligence", action: "Administrar", label: "Ligar clientes ativos ao Legado Intelligence" },
     ],
+  },
+  {
+    id: "ia",
+    label: "Assistente de IA",
+    items: [{ cap: "useAi", action: "Visualizar", label: "Pedir resumos e análises ao assistente de IA (quando a IA estiver configurada)" }],
   },
   {
     id: "administracao",
