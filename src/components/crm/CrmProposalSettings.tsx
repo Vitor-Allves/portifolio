@@ -96,23 +96,28 @@ export default function CrmProposalSettings({ run }: { run: Run }) {
         <p className="text-[12.5px] text-crm-dim">
           Acima deste percentual (sobre o valor bruto da proposta), a proposta só pode ser enviada depois que um Gestor autorizar o desconto.
         </p>
-        <div className="flex items-center gap-2">
-          <input
-            value={limit}
-            onChange={(e) => setLimit(e.target.value)}
-            inputMode="decimal"
-            aria-label="Desconto máximo (%)"
-            className={`${CRM_INPUT} !w-24`}
-          />
-          <span className="text-[13px] text-crm-dim">%</span>
-          <button
-            type="button"
-            onClick={() => void run(() => send("/api/crm/proposal-settings/", "PATCH", { discountLimitPct: limit }), "Desconto máximo salvo.").then(reload)}
-            className={CRM_BTN_PRIMARY}
-          >
-            Salvar
-          </button>
-        </div>
+        {/* Only once the saved value is in: typing before it arrives would be overwritten by it. */}
+        {templates === null ? (
+          <p className="text-[12.5px] text-crm-dim">Carregando...</p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              inputMode="decimal"
+              aria-label="Desconto máximo (%)"
+              className={`${CRM_INPUT} !w-24`}
+            />
+            <span className="text-[13px] text-crm-dim">%</span>
+            <button
+              type="button"
+              onClick={() => void run(() => send("/api/crm/proposal-settings/", "PATCH", { discountLimitPct: limit }), "Desconto máximo salvo.").then(reload)}
+              className={CRM_BTN_PRIMARY}
+            >
+              Salvar
+            </button>
+          </div>
+        )}
       </section>
 
       <section aria-label="Modelos de proposta" className="space-y-2">

@@ -241,9 +241,12 @@ verificações**, nenhuma falha. Comando: `npm test` (ver `tests/README.md`).
   dado se perde; cada migração da evolução tem sua conferência.
 - Nenhum teste fala com serviços reais: WhatsApp, Meta e Anthropic são
   simulados; nenhuma mensagem real foi enviada.
-- O CI do GitHub roda tipos, lint, build e todas as suítes a cada envio (o
-  do commit dos indicadores passou; um envio anterior, do financeiro, teve
-  uma falha que não se repetiu em nenhuma rodada seguinte, local ou no CI).
+- O CI do GitHub roda tipos, lint, build e todas as suítes a cada envio.
+  Duas rodadas falharam no mesmo ponto (Personalização → Propostas): o
+  campo "Desconto máximo" aparecia antes de carregar o valor salvo, e o
+  carregamento podia apagar o que acabara de ser digitado. Corrigido (o
+  campo só aparece depois de carregar); a falha foi reproduzida antes da
+  correção e não ocorre depois.
 - Observado durante o desenvolvimento (não em produção): no modo de
   desenvolvimento, a primeira compilação de uma página às vezes passa do
   tempo limite de uma suíte de navegador; repetida, passa. No modo de
