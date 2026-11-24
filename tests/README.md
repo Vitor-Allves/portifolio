@@ -47,7 +47,15 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `dashboard-reports-e2e` | Fase 6 · entrega 1 no navegador: cartões clicáveis, lista do indicador abrindo o contato, filtros de origem e etapa, linha "Agora", exportação só para quem pode, celular e tema escuro |
 | `goals-api` | Fase 6 · entrega 2 pela API: realizado das metas igual ao Painel (equipe e por pessoa), definir, manter e remover metas (auditoria só quando muda), validações, só Administrador/Gestor definem, Comercial só a própria linha, produtividade por pessoa (tarefas, conversas, tempo de resposta, sem campanha nem arquivados) com o total da equipe igual ao Painel, exportação CSV (conteúdo, permissão, auditoria) |
 | `goals-e2e` | Fase 6 · entrega 2 no navegador: definir as metas do mês, progresso com o ritmo esperado, copiar do mês anterior, produtividade num período, cartão de metas no Painel, Comercial sem editar nem exportar, celular e tema escuro |
+| `media-api` | Fase 7 · entrega 1 pela API: ligar o cliente ativo ao cliente do Intelligence (só Administrador/Gestor, auditoria, histórico, um para um), sincronizar o mês na Meta falsa e conferir com a API do próprio Intelligence, histórico de sincronizações, mês corrente até hoje, contas que falham, acesso do Intelligence e "ver valores" |
+| `media-e2e` | Fase 7 · entrega 1 no navegador: ligar e sincronizar pela aba Acompanhamento, mês corrente e outubro, campanhas, ligação no histórico, Marketing sem valores, celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
+
+Os indicadores de mídia (Fase 7) leem uma Meta falsa (`tests/fixtures/fake-graph.mjs`,
+negócio `biz-test` com as contas `act_111`, `act_222` e `act_999`, que sempre
+falha): o `tests/run.sh` sobe o servidor com uma chave falsa e
+`META_GRAPH_BASE_URL`, e apaga o cache de respostas da Meta (`.next/cache/fetch-cache`)
+antes de cada suíte.
 
 A rota da verificação diária só funciona com `CRON_SECRET`: o `tests/run.sh`
 sobe o servidor de `automations-api` com um valor só de teste; nas outras
