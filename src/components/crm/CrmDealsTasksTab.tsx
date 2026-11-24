@@ -2,9 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import {
+  STAGE_REQUIREMENTS,
   formatBRL,
   isClosedStage,
   stageLabel,
+  type CrmStageRequirement,
   type CrmContactDetail,
   type CrmDeal,
   type CrmTask,
@@ -14,26 +16,49 @@ import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_
 import { TASK_STATE_TONE, shortDate, spDate, taskDueLabel, taskState, timeOfDay } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { useCatalog } from "./crm-catalog-context";
+import { ServiceSelect, TemperatureSelect, centsToInput } from "./crm-fields";
 
 type Send = (url: string, method: "POST" | "PATCH", body: Record<string, unknown>) => Promise<boolean>;
 
-function centsToInput(cents: number | null): string {
-  if (cents === null) return "";
-  // "3.500,50" (never "3.500,5"); whole values without decimals: "12.000".
-  const digits = cents % 100 ? 2 : 0;
-  return (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
+type DealForm = {
+  title: string;
+  value: string;
+  negotiated: string;
+  close: string;
+  service: string;
+  source: string;
+  temperature: string;
+};
 
 function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
-  const [form, setForm] = useState<{ title: string; value: string; close: string } | null>(null);
-  const f = form ?? { title: deal.title, value: centsToInput(deal.valueCents), close: deal.expectedCloseAt ? spDate(deal.expectedCloseAt) : "" };
+  const { options } = useCatalog();
+  const [form, setForm] = useState<DealForm | null>(null);
+  const f: DealForm = form ?? {
+    title: deal.title,
+    value: centsToInput(deal.valueCents),
+    negotiated: centsToInput(deal.negotiatedCents),
+    close: deal.expectedCloseAt ? spDate(deal.expectedCloseAt) : "",
+    service: deal.service ?? "",
+    source: deal.source,
+    temperature: deal.temperature ?? "",
+  };
+  const required = STAGE_REQUIREMENTS[deal.stage] ?? [];
+  const star = (r: CrmStageRequirement) => (required.includes(r) ? " *" : "");
   return (
     <div className="space-y-2 rounded-xl border border-crm-line bg-crm-sunken p-3">
       <input value={f.title} onChange={(e) => setForm({ ...f, title: e.target.value })} aria-label="Título da oportunidade" placeholder="Título" className={CRM_INPUT} />
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className={CRM_LABEL}>Valor (R$)</span>
+          <span className={CRM_LABEL}>Valor estimado (R$){star("value")}</span>
           <input value={f.value} onChange={(e) => setForm({ ...f, value: e.target.value })} inputMode="decimal" aria-label="Valor da oportunidade" placeholder="Ex.: 2.500" className={`${CRM_INPUT} mt-1`} />
+        </label>
+        <label className="block">
+          <span className={CRM_LABEL}>Valor negociado (R$){star("negotiated")}</span>
+          <input value={f.negotiated} onChange={(e) => setForm({ ...f, negotiated: e.target.value })} inputMode="decimal" aria-label="Valor negociado da oportunidade" placeholder="Fechado com o cliente" className={`${CRM_INPUT} mt-1`} />
+        </label>
+        <label className="block">
+          <span className={CRM_LABEL}>Serviço{star("service")}</span>
+          <ServiceSelect value={f.service} onChange={(v) => setForm({ ...f, service: v })} label="Serviço da oportunidade" className={`${CRM_INPUT} mt-1`} />
         </label>
         <label className="block">
           <span className={CRM_LABEL}>
@@ -41,12 +66,45 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
           </span>
           <input type="date" value={f.close} onChange={(e) => setForm({ ...f, close: e.target.value })} aria-label="Previsão de fechamento" className={`${CRM_INPUT} mt-1`} />
         </label>
+        <label className="block">
+          <span className={CRM_LABEL}>Origem</span>
+          <select value={f.source} onChange={(e) => setForm({ ...f, source: e.target.value })} aria-label="Origem da oportunidade" className={`${CRM_INPUT} mt-1`}>
+            {options("source", deal.source).map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className={CRM_LABEL}>Temperatura</span>
+          <TemperatureSelect
+            value={f.temperature}
+            onChange={(v) => setForm({ ...f, temperature: v })}
+            label="Temperatura da oportunidade"
+            emptyLabel="A do contato"
+            className={`${CRM_INPUT} mt-1`}
+          />
+        </label>
       </div>
+      {required.length > 0 && <p className="text-[11px] text-crm-faint">* obrigatório em {stageLabel(deal.stage)}</p>}
       <button
         type="button"
         disabled={!form}
         onClick={async () => {
-          if (form && (await send(`/api/crm/deals/${deal.id}/`, "PATCH", { title: form.title, value: form.value, expectedCloseAt: form.close || null }))) setForm(null);
+          if (
+            form &&
+            (await send(`/api/crm/deals/${deal.id}/`, "PATCH", {
+              title: form.title,
+              value: form.value,
+              negotiatedValue: form.negotiated,
+              expectedCloseAt: form.close || null,
+              service: form.service || null,
+              source: form.source,
+              temperature: form.temperature || null,
+            }))
+          )
+            setForm(null);
         }}
         className={CRM_LINK_BTN}
       >
@@ -328,12 +386,14 @@ export default function CrmDealsTasksTab({
                     <span className="block text-[13px] font-semibold truncate">{d.title}</span>
                     <span className="block text-[11.5px] text-crm-dim truncate">
                       {stageLabel(d.stage)}
+                      {d.service ? ` · ${label("service", d.service)}` : ""}
                       {d.stage === "perdido" && d.lostReason ? ` · ${label("lost_reason", d.lostReason)}` : ""}
+                      {d.stage === "ganho" && d.wonReason ? ` · ${label("won_reason", d.wonReason)}` : ""}
                       {isClosedStage(d.stage) && d.closedAt ? ` · ${shortDate(d.closedAt)}` : ""}
                       {!isClosedStage(d.stage) && d.expectedCloseAt ? ` · previsão ${shortDate(d.expectedCloseAt)}` : ""}
                     </span>
                   </span>
-                  <span className="text-[13px] font-semibold tabular-nums whitespace-nowrap">{formatBRL(d.valueCents)}</span>
+                  <span className="text-[13px] font-semibold tabular-nums whitespace-nowrap">{formatBRL(d.negotiatedCents ?? d.valueCents)}</span>
                 </button>
               </li>
             ))}

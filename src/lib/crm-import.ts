@@ -15,6 +15,8 @@ import { getDb, withTransaction } from "./db";
 import {
   CRM_IMPORT_MAX_ROWS,
   companyKey,
+  formatCnpj,
+  normalizeCnpj,
   isCrmConsentStatus,
   isPlausibleEmail,
   normalizePhone,
@@ -90,6 +92,7 @@ type ParsedRow = {
   email: string | null;
   company: string | null;
   companyKey: string | null;
+  cnpj: string | null;
   jobTitle: string | null;
   segment: string | null;
   city: string | null;
@@ -104,6 +107,8 @@ type ParsedRow = {
 type Checked = {
   results: CrmImportRowResult[];
   fresh: ParsedRow[];
+  /** The CNPJ the sheet gives each company (by name key), for companies that don't have one yet. */
+  cnpjByKey: Map<string, string>;
   newCompanyKeys: Set<string>;
   newSegments: string[];
   unknownTags: string[];
@@ -160,6 +165,14 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
       fail("Sem WhatsApp e sem e-mail.");
       continue;
     }
+    let cnpj: string | null = null;
+    if (row.cnpj?.trim()) {
+      cnpj = normalizeCnpj(row.cnpj);
+      if (!cnpj) {
+        fail(`CNPJ inválido: "${row.cnpj.trim().slice(0, 30)}".`);
+        continue;
+      }
+    }
     const company = cleanText(row.company, 120)?.replace(/\s+/g, " ") ?? null;
     const consentFromSheet = matchConsent(row.consent);
     const consentSource = cleanText(row.consentSource, 200) ?? (consentFromSheet === "sim" || (!consentFromSheet && defaultConsent === "sim") ? defaultConsentSource : null);
@@ -170,6 +183,7 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
       email,
       company,
       companyKey: company ? companyKey(company) || null : null,
+      cnpj,
       jobTitle: cleanText(row.jobTitle, 80),
       segment: segmentOf(cleanText(row.segment, 80)),
       city: cleanText(row.city, 80),
@@ -200,10 +214,49 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
     if (c.email) byEmail.set(c.email, c.name);
   }
 
+  // CNPJ: a company already registered with it wins over the typed name; a
+  // name already registered with another CNPJ is refused (row error).
+  const sheetCnpjs = [...new Set(parsed.flatMap((r) => (r.cnpj ? [r.cnpj] : [])))];
+  const sheetKeys = [...new Set(parsed.flatMap((r) => (r.companyKey ? [r.companyKey] : [])))];
+  const registered = await db.query<{ cnpj: string; name: string; name_key: string }>(
+    `SELECT cnpj, name, name_key FROM crm_companies WHERE cnpj = ANY($1) OR (name_key = ANY($2) AND cnpj IS NOT NULL)`,
+    [sheetCnpjs, sheetKeys]
+  );
+  const companyByCnpj = new Map(registered.rows.map((c) => [c.cnpj, c]));
+  const cnpjOfKey = new Map(registered.rows.map((c) => [c.name_key, c]));
+  const cnpjByKey = new Map<string, string>();
+  const keyByCnpj = new Map<string, { company: string; key: string; line: number }>();
+
   const seenPhone = new Map<string, number>();
   const seenEmail = new Map<string, number>();
   const fresh: ParsedRow[] = [];
   for (const r of parsed) {
+    const fail = (message: string) => results.push({ line: r.line, name: r.name, status: "erro", message });
+    if (r.cnpj) {
+      const known = companyByCnpj.get(r.cnpj);
+      const earlier = keyByCnpj.get(r.cnpj);
+      if (known) {
+        r.company = known.name;
+        r.companyKey = known.name_key;
+      } else if (earlier) {
+        r.company = earlier.company;
+        r.companyKey = earlier.key;
+      } else if (!r.companyKey) {
+        fail(`Nenhuma empresa com o CNPJ ${formatCnpj(r.cnpj)} — preencha a coluna Empresa.`);
+        continue;
+      } else {
+        const other = cnpjOfKey.get(r.companyKey);
+        if (other && other.cnpj !== r.cnpj) {
+          fail(`A empresa ${other.name} já está cadastrada com outro CNPJ (${formatCnpj(other.cnpj)}).`);
+          continue;
+        }
+        const sheet = cnpjByKey.get(r.companyKey);
+        if (sheet && sheet !== r.cnpj) {
+          fail(`Mesma empresa da linha ${[...keyByCnpj.values()].find((k) => k.key === r.companyKey)?.line} com outro CNPJ.`);
+          continue;
+        }
+      }
+    }
     const dup = (message: string) => results.push({ line: r.line, name: r.name, status: "duplicado", message });
     const phoneHit = r.phone ? phoneVariants(r.phone).map((p) => byPhone.get(p)).find(Boolean) : undefined;
     if (phoneHit) {
@@ -225,6 +278,10 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
     }
     if (r.phone) for (const p of phoneVariants(r.phone)) seenPhone.set(p, r.line);
     if (r.email) seenEmail.set(r.email, r.line);
+    if (r.cnpj && r.companyKey && !companyByCnpj.has(r.cnpj) && !keyByCnpj.has(r.cnpj)) {
+      cnpjByKey.set(r.companyKey, r.cnpj);
+      keyByCnpj.set(r.cnpj, { company: r.company ?? "", key: r.companyKey, line: r.line });
+    }
     fresh.push(r);
     results.push({ line: r.line, name: r.name, status: "novo", message: null });
   }
@@ -240,6 +297,7 @@ async function checkRows(db: Db, rows: CrmImportRow[], defaults: CrmImportDefaul
   return {
     results,
     fresh,
+    cnpjByKey,
     newCompanyKeys,
     newSegments: [...newSegments.values()].filter((s) => freshSegments.has(s)),
     unknownTags: [...unknownTags],
@@ -308,17 +366,19 @@ export async function commitImport(
     const companyRows = [...firstByKey.values()];
     if (companyRows.length > 0) {
       await client.query(
-        `INSERT INTO crm_companies (id, name, name_key, segment, city, import_id, created_by)
-         SELECT gen_random_uuid()::text, t.name, t.key, t.segment, t.city, $5, $6
-         FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS t(name, key, segment, city)
+        `INSERT INTO crm_companies (id, name, name_key, segment, city, cnpj, status, import_id, created_by)
+         SELECT gen_random_uuid()::text, t.name, t.key, t.segment, t.city, t.cnpj, 'prospeccao', $6, $7
+         FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS t(name, key, segment, city, cnpj)
          ON CONFLICT (name_key) DO UPDATE
            SET segment = COALESCE(crm_companies.segment, EXCLUDED.segment),
-               city = COALESCE(crm_companies.city, EXCLUDED.city)`,
+               city = COALESCE(crm_companies.city, EXCLUDED.city),
+               cnpj = COALESCE(crm_companies.cnpj, EXCLUDED.cnpj)`,
         [
           companyRows.map((r) => r.company),
           companyRows.map((r) => r.companyKey),
           companyRows.map((r) => r.segment),
           companyRows.map((r) => r.city),
+          companyRows.map((r) => checked.cnpjByKey.get(r.companyKey!) ?? null),
           importId,
           actor.userId,
         ]

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { requireCap } from "@/lib/crm-access";
+import { requireCap, requireOwnerChange } from "@/lib/crm-access";
 import { createCompany, listCompanies, type CompanyInput } from "@/lib/crm-companies";
 
 export const runtime = "nodejs";
@@ -13,7 +13,20 @@ export async function GET(req: NextRequest) {
   const pageSize = Math.min(100, Math.max(1, Math.floor(Number(p.get("pageSize")) || 25)));
   try {
     return NextResponse.json(
-      await listCompanies({ q: p.get("q") ?? undefined, segment: p.get("segment") || undefined, city: p.get("city") || undefined }, page, pageSize)
+      await listCompanies(
+        {
+          q: p.get("q") ?? undefined,
+          segment: p.get("segment") || undefined,
+          city: p.get("city") || undefined,
+          state: p.get("state") || undefined,
+          status: p.get("status") || undefined,
+          owner: p.get("owner") || undefined,
+          currentUserId: actor.userId,
+          tag: p.get("tag") || undefined,
+        },
+        page,
+        pageSize
+      )
     );
   } catch (err) {
     return crmErrorResponse(err, "api/crm/companies GET");
@@ -27,6 +40,7 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
   try {
     requireCap(actor, "editContacts");
+    requireOwnerChange(actor, body.ownerId, null);
     return NextResponse.json({ id: await createCompany(body, actor) }, { status: 201 });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/companies POST");

@@ -33,6 +33,102 @@ export function isClosedStage(stage: string): boolean {
   return stage === "ganho" || stage === "perdido";
 }
 
+/**
+ * Exigência que cresce com a etapa: the first registration stays quick, and
+ * the funnel asks for more as the negotiation advances. The server enforces
+ * it on every move made by a person (automatic moves only go to "Em
+ * conversa"); the screens use the same list to ask before moving.
+ */
+export const STAGE_REQUIREMENTS: Partial<Record<CrmStage, readonly CrmStageRequirement[]>> = {
+  proposta: ["service", "value"],
+  ganho: ["service", "negotiated", "wonReason"],
+};
+export type CrmStageRequirement = "service" | "value" | "negotiated" | "wonReason";
+export const STAGE_REQUIREMENT_LABEL: Record<CrmStageRequirement, string> = {
+  service: "serviço",
+  value: "valor estimado",
+  negotiated: "valor negociado",
+  wonReason: "motivo do ganho",
+};
+export function missingForStage(
+  stage: string,
+  deal: { service: string | null; valueCents: number | null; negotiatedCents: number | null; wonReason: string | null }
+): CrmStageRequirement[] {
+  const has: Record<CrmStageRequirement, boolean> = {
+    service: Boolean(deal.service),
+    value: deal.valueCents !== null,
+    negotiated: deal.negotiatedCents !== null,
+    wonReason: Boolean(deal.wonReason),
+  };
+  return (STAGE_REQUIREMENTS[stage as CrmStage] ?? []).filter((r) => !has[r]);
+}
+/** "serviço, valor estimado e motivo do ganho" */
+export function joinPt(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} e ${items[items.length - 1]}`;
+}
+
+/** Temperatura do lead/oportunidade — a field, not a tag (fixed list). */
+export const CRM_TEMPERATURES = [
+  { id: "frio", label: "Frio" },
+  { id: "morno", label: "Morno" },
+  { id: "quente", label: "Quente" },
+] as const;
+export type CrmTemperature = (typeof CRM_TEMPERATURES)[number]["id"];
+export function isCrmTemperature(value: unknown): value is CrmTemperature {
+  return CRM_TEMPERATURES.some((t) => t.id === value);
+}
+export function temperatureLabel(id: string | null | undefined): string {
+  return CRM_TEMPERATURES.find((t) => t.id === id)?.label ?? "";
+}
+
+/** Situação comercial da empresa. */
+export const CRM_COMPANY_STATUSES = [
+  { id: "prospeccao", label: "Prospecção" },
+  { id: "negociacao", label: "Em negociação" },
+  { id: "cliente_ativo", label: "Cliente ativo" },
+  { id: "ex_cliente", label: "Ex-cliente" },
+  { id: "inativa", label: "Inativa" },
+] as const;
+export type CrmCompanyStatus = (typeof CRM_COMPANY_STATUSES)[number]["id"];
+export function isCrmCompanyStatus(value: unknown): value is CrmCompanyStatus {
+  return CRM_COMPANY_STATUSES.some((t) => t.id === value);
+}
+export function companyStatusLabel(id: string | null | undefined): string {
+  return CRM_COMPANY_STATUSES.find((t) => t.id === id)?.label ?? "";
+}
+
+export const BR_STATES = [
+  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA",
+  "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+] as const;
+
+/**
+ * CNPJ → 14 characters without punctuation, upper case; null when it isn't a
+ * valid CNPJ. Accepts the alphanumeric CNPJ (from July 2026): the first 12
+ * characters may be letters, each worth its ASCII code minus 48, and the two
+ * check digits stay numeric (mod 11, weights 2–9 from the right).
+ */
+export function normalizeCnpj(raw: string): string | null {
+  const v = raw.replace(/[\s./-]/g, "").toUpperCase();
+  if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(v)) return null;
+  if (/^(.)\1{13}$/.test(v)) return null;
+  const digit = (base: string) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) sum += (base.charCodeAt(base.length - 1 - i) - 48) * (2 + (i % 8));
+    const r = sum % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  const d1 = digit(v.slice(0, 12));
+  const d2 = digit(v.slice(0, 12) + d1);
+  return v.endsWith(`${d1}${d2}`) ? v : null;
+}
+
+/** "11222333000181" → "11.222.333/0001-81" (anything else is returned as is). */
+export function formatCnpj(cnpj: string | null): string {
+  if (!cnpj) return "";
+  return /^[0-9A-Z]{14}$/.test(cnpj) ? `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}` : cnpj;
+}
+
 /** Whether the lead agreed to be contacted. "descadastrado" is derived from opted_out_at, never stored here. */
 export const CRM_CONSENT = [
   { id: "sim", label: "Aceitou contato" },
@@ -109,6 +205,17 @@ export type CrmContactCard = {
   createdAt: string;
   /** Tags on the contact (crm_tags.id); labels and colors come from the catalog. */
   tagIds: string[];
+  temperature: CrmTemperature | null;
+  /** Serviço de interesse (crm_options kind "service"). */
+  serviceInterest: string | null;
+  /** Data prevista de retorno, "YYYY-MM-DD". */
+  returnAt: string | null;
+  /** Decisor na empresa. */
+  isDecisionMaker: boolean;
+  /** Latest message, note or finished task — whichever came last. */
+  lastInteractionAt: string | null;
+  /** Earliest pending task. */
+  nextTask: CrmTaskSummary | null;
 };
 
 /** A WhatsApp conversation in the Conversas list: the contact plus the funnel stages of its opportunities (the "tags"). */
@@ -166,6 +273,16 @@ export type CrmDeal = {
   expectedCloseAt: string | null;
   lostReason: CrmLostReason | null;
   lostNote: string | null;
+  /** Serviço (crm_options kind "service"). */
+  service: string | null;
+  /** Valor negociado, centavos — what a won opportunity is worth. */
+  negotiatedCents: number | null;
+  /** Origem (crm_options kind "source"); starts as the contact's. */
+  source: CrmSource;
+  /** The opportunity's own temperature, else the contact's. */
+  temperature: CrmTemperature | null;
+  wonReason: string | null;
+  wonNote: string | null;
   stageChangedAt: string;
   closedAt: string | null;
   createdAt: string;
@@ -179,7 +296,6 @@ export type CrmDealCard = CrmDeal & {
   company: string | null;
   phone: string | null;
   email: string | null;
-  source: CrmSource;
   referredBy: string | null;
   hasAdReferral: boolean;
   unreadCount: number;
@@ -254,11 +370,25 @@ export function formatBRL(cents: number | null, opts: { compact?: boolean } = {}
 
 export type CrmCompanyRow = {
   id: string;
+  /** Nome (fantasia) — how the team calls it. */
   name: string;
+  /** Razão social. */
+  legalName: string | null;
+  /** 14 characters, no punctuation (formatCnpj to show). */
+  cnpj: string | null;
   segment: string | null;
   city: string | null;
+  state: string | null;
+  address: string | null;
   website: string | null;
   notes: string | null;
+  /** Responsável pela conta. */
+  ownerId: string | null;
+  ownerName: string | null;
+  status: CrmCompanyStatus | null;
+  tagIds: string[];
+  /** Contacts marked as decisores. */
+  decisionMakers: { id: string; name: string }[];
   contactCount: number;
   /** Contacts still in the funnel (not won/lost/archived). */
   openCount: number;
@@ -267,7 +397,12 @@ export type CrmCompanyRow = {
   createdAt: string;
 };
 
-export type CrmCompanyDetail = CrmCompanyRow & { contacts: CrmContactCard[] };
+export type CrmCompanyDetail = CrmCompanyRow & {
+  contacts: CrmContactCard[];
+  /** Every opportunity of the company's contacts (open first, then the closed ones, newest first). */
+  deals: (CrmDeal & { contactName: string })[];
+  tagLinks: { tagId: string; via: string; byName: string | null; at: string }[];
+};
 
 export type CrmPage<T> = { rows: T[]; total: number; page: number; pageSize: number };
 
@@ -280,6 +415,7 @@ export const CRM_IMPORT_FIELDS = [
   { id: "phone", label: "WhatsApp / telefone" },
   { id: "email", label: "E-mail" },
   { id: "company", label: "Empresa" },
+  { id: "cnpj", label: "CNPJ" },
   { id: "jobTitle", label: "Cargo" },
   { id: "segment", label: "Segmento" },
   { id: "city", label: "Cidade" },

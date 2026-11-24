@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CRM_STAGES,
+  CRM_TEMPERATURES,
   formatPhone,
   stageLabel,
   type CrmContactCard,
@@ -11,7 +12,8 @@ import {
   type CrmTeamMember,
 } from "@/lib/crm-types";
 import { CONSENT_BADGE, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT, CRM_TD, CRM_TH, STAGE_DOT } from "./crm-styles";
-import { relativeTime } from "./crm-format";
+import { TASK_STATE_TONE, relativeTime, taskDueLabel, taskState, todaySp } from "./crm-format";
+import { TemperatureChip, brDay } from "./crm-fields";
 import { Mascot } from "./crm-brand";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { TagChips, useCatalog } from "./crm-catalog-context";
@@ -22,6 +24,25 @@ function ConsentBadge({ c }: { c: CrmContactCard }) {
   const key = c.optedOutAt ? "descadastrado" : c.consentStatus;
   const label = c.optedOutAt ? "Descadastrado" : c.consentStatus === "sim" ? "Aceitou" : "Não informado";
   return <span className={`inline-flex whitespace-nowrap text-[11px] px-2 py-0.5 rounded-full border ${CONSENT_BADGE[key]}`}>{label}</span>;
+}
+
+/** Última interação, próxima atividade e retorno previsto — the follow-up at a glance. */
+function FollowUp({ c, now }: { c: CrmContactCard; now: number }) {
+  const t = c.nextTask;
+  const overdueReturn = c.returnAt !== null && c.returnAt < todaySp();
+  return (
+    <span className="block space-y-0.5 text-[11.5px]">
+      <span className="block text-crm-dim whitespace-nowrap">Última: {c.lastInteractionAt ? relativeTime(c.lastInteractionAt, now) : "nenhuma"}</span>
+      {t ? (
+        <span className={`block truncate max-w-[220px] ${TASK_STATE_TONE[taskState(t.dueAt, t.allDay, now)]}`} title={t.title}>
+          Próxima: {t.title} · {taskDueLabel(t.dueAt, t.allDay, now)}
+        </span>
+      ) : (
+        <span className="block text-crm-faint">Sem próxima atividade</span>
+      )}
+      {c.returnAt && <span className={`block whitespace-nowrap ${overdueReturn ? "text-crm-amber font-medium" : "text-crm-dim"}`}>Retorno {brDay(c.returnAt)}</span>}
+    </span>
+  );
 }
 
 function StageTag({ stage }: { stage: CrmContactCard["stage"] }) {
@@ -60,7 +81,11 @@ export default function CrmContactsView({
   const [city, setCity] = useState("");
   const [consent, setConsent] = useState("");
   const [tag, setTag] = useState("");
+  const [temperature, setTemperature] = useState("");
+  const [service, setService] = useState("");
+  const [returnDue, setReturnDue] = useState("");
   const [archived, setArchived] = useState(false);
+  const [now] = useState(() => Date.now());
   const [sort, setSort] = useState("recent");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
@@ -86,9 +111,12 @@ export default function CrmContactsView({
     if (city) p.set("city", city);
     if (consent) p.set("consent", consent);
     if (tag) p.set("tag", tag);
+    if (temperature) p.set("temperature", temperature);
+    if (service) p.set("service", service);
+    if (returnDue) p.set("returnDue", returnDue);
     if (archived) p.set("archived", "1");
     return p;
-  }, [q, stage, owner, source, segment, city, consent, tag, archived]);
+  }, [q, stage, owner, source, segment, city, consent, tag, temperature, service, returnDue, archived]);
 
   const key = `${params.toString()}|${sort}|${page}|${version}`;
 
@@ -121,7 +149,8 @@ export default function CrmContactsView({
     };
   }, [version]);
 
-  const activeFilters = [stage, owner !== "all" ? owner : "", source, segment, city, consent, tag, archived ? "1" : ""].filter(Boolean).length;
+  const activeFilters = [stage, owner !== "all" ? owner : "", source, segment, city, consent, tag, temperature, service, returnDue, archived ? "1" : ""].filter(Boolean).length;
+  const services = options("service");
   const loading = result?.key !== key;
   const data = result?.data ?? null;
   const total = data?.total ?? 0;
@@ -217,6 +246,29 @@ export default function CrmContactsView({
             </optgroup>
           ))}
         </select>
+        <select value={temperature} onChange={(e) => resetPage(setTemperature)(e.target.value)} aria-label="Temperatura" className={CRM_FILTER}>
+          <option value="">Qualquer temperatura</option>
+          {CRM_TEMPERATURES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        {services.length > 0 && (
+          <select value={service} onChange={(e) => resetPage(setService)(e.target.value)} aria-label="Serviço de interesse" className={CRM_FILTER}>
+            <option value="">Qualquer serviço</option>
+            {services.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+        <select value={returnDue} onChange={(e) => resetPage(setReturnDue)(e.target.value)} aria-label="Retorno previsto" className={CRM_FILTER}>
+          <option value="">Qualquer retorno</option>
+          <option value="atrasado">Retorno atrasado</option>
+          <option value="7d">Retorno nos próximos 7 dias</option>
+        </select>
         <button
           type="button"
           aria-pressed={archived}
@@ -279,7 +331,7 @@ export default function CrmContactsView({
                 <th className={CRM_TH}>Contato</th>
                 <th className={CRM_TH}>Empresa</th>
                 <th className={CRM_TH}>WhatsApp / e-mail</th>
-                <th className={CRM_TH}>Segmento · cidade</th>
+                <th className={CRM_TH}>Acompanhamento</th>
                 <th className={CRM_TH}>Origem</th>
                 <th className={CRM_TH}>Etapa</th>
                 <th className={CRM_TH}>Responsável</th>
@@ -301,21 +353,30 @@ export default function CrmContactsView({
                       {c.name}
                     </button>
                     <span className="block text-[11.5px] text-crm-faint">
-                      {c.jobTitle ?? (c.lastMessageAt ? `msg ${relativeTime(c.lastMessageAt)}` : "")}
+                      {[c.jobTitle, c.isDecisionMaker ? "decisor" : null].filter(Boolean).join(" · ")}
                     </span>
-                    {c.tagIds.length > 0 && (
-                      <span className="mt-1 block">
+                    {(c.tagIds.length > 0 || c.temperature) && (
+                      <span className="mt-1 flex flex-wrap items-center gap-1">
+                        <TemperatureChip value={c.temperature} />
                         <TagChips ids={c.tagIds} max={3} />
                       </span>
                     )}
                   </td>
-                  <td className={`${CRM_TD} text-crm-dim`}>{c.company ?? "—"}</td>
+                  <td className={`${CRM_TD} text-crm-dim`}>
+                    {c.company ?? "—"}
+                    {(c.segment || c.city) && <span className="block text-[11.5px] text-crm-faint">{[c.segment, c.city].filter(Boolean).join(" · ")}</span>}
+                  </td>
                   <td className={`${CRM_TD} text-crm-dim`}>
                     {c.phone && <span className="block whitespace-nowrap">{formatPhone(c.phone)}</span>}
                     {c.email && <span className="block truncate max-w-[200px]">{c.email}</span>}
                   </td>
-                  <td className={`${CRM_TD} text-crm-dim`}>{[c.segment, c.city].filter(Boolean).join(" · ") || "—"}</td>
-                  <td className={`${CRM_TD} text-crm-dim whitespace-nowrap`}>{label("source", c.source)}</td>
+                  <td className={CRM_TD}>
+                    <FollowUp c={c} now={now} />
+                  </td>
+                  <td className={`${CRM_TD} text-crm-dim whitespace-nowrap`}>
+                    {label("source", c.source)}
+                    {c.serviceInterest && <span className="block text-[11.5px] text-crm-faint">{label("service", c.serviceInterest)}</span>}
+                  </td>
                   <td className={CRM_TD}>
                     <StageTag stage={c.stage} />
                   </td>
@@ -346,8 +407,10 @@ export default function CrmContactsView({
                   <span className="flex flex-wrap items-center gap-2 text-[11.5px] text-crm-dim">
                     <StageTag stage={c.stage} />
                     <ConsentBadge c={c} />
+                    <TemperatureChip value={c.temperature} />
                     <TagChips ids={c.tagIds} max={2} />
                   </span>
+                  <FollowUp c={c} now={now} />
                 </button>
               </li>
             ))}

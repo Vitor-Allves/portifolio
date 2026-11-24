@@ -10,7 +10,9 @@ import {
   formatPhone,
   isCrmConsentStatus,
   isCrmStage,
+  isCrmTemperature,
   isPlausibleEmail,
+  temperatureLabel,
   normalizePhone,
   phoneVariants,
   type CrmAdReferral,
@@ -29,7 +31,18 @@ import {
 } from "./crm-types";
 import { isOptOutText } from "./crm-campaign-rules";
 import { listContactTags, optionLabel, requireOptionId, requireSegment } from "./crm-options";
-import { CrmInputError, addEvent, cleanText, escapeLike, iso, resolveCompanyId, type CrmActor } from "./crm-core";
+import {
+  CrmInputError,
+  addEvent,
+  brDate,
+  cleanText,
+  escapeLike,
+  iso,
+  parseDateOnly,
+  parseTemperature,
+  resolveCompanyId,
+  type CrmActor,
+} from "./crm-core";
 import { createDealTx, listContactDeals, setContactStageTx, updateDealTx } from "./crm-deals";
 import { createTaskTx, listContactTasks } from "./crm-tasks";
 import type { InboundMessage, StatusUpdate } from "./whatsapp";
@@ -68,6 +81,16 @@ type CardRow = {
   archived_at: Date | null;
   created_at: Date;
   tag_ids: string[];
+  temperature: string | null;
+  service_interest: string | null;
+  return_at: string | null;
+  is_decision_maker: boolean;
+  last_interaction_at: Date | null;
+  task_id: string | null;
+  task_kind: string | null;
+  task_title: string | null;
+  task_due_at: Date | null;
+  task_all_day: boolean | null;
 };
 
 // Company name, segment and city come from the linked company when there is
@@ -81,10 +104,25 @@ const CARD_SELECT = `
          c.next_action, c.next_action_at, c.last_message_at, c.last_message_preview, c.last_inbound_at,
          c.unread_count, c.ad_referral, c.stage_changed_at, c.consent_status, c.consent_source, c.consent_at,
          c.opted_out_at, c.archived_at, c.created_at,
-         ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids
+         ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids,
+         c.temperature, c.service_interest, to_char(c.return_at, 'YYYY-MM-DD') AS return_at, c.is_decision_maker,
+         -- Última interação: the latest message, note or finished task (GREATEST skips nulls).
+         GREATEST(
+           c.last_message_at,
+           (SELECT max(e.created_at) FROM crm_events e WHERE e.contact_id = c.id AND e.kind = 'note'),
+           (SELECT max(t.done_at) FROM crm_tasks t WHERE t.contact_id = c.id AND t.done_at IS NOT NULL)
+         ) AS last_interaction_at,
+         nt.id AS task_id, nt.kind AS task_kind, nt.title AS task_title, nt.due_at AS task_due_at, nt.all_day AS task_all_day
   FROM crm_contacts c
   LEFT JOIN crm_companies co ON co.id = c.company_id
-  LEFT JOIN internal_users u ON u.id = c.owner_id`;
+  LEFT JOIN internal_users u ON u.id = c.owner_id
+  -- Próxima atividade: the earliest pending task.
+  LEFT JOIN LATERAL (
+    SELECT t.id, t.kind, t.title, t.due_at, t.all_day FROM crm_tasks t
+    WHERE t.contact_id = c.id AND t.done_at IS NULL AND t.canceled_at IS NULL
+    ORDER BY t.due_at ASC NULLS LAST, t.created_at
+    LIMIT 1
+  ) nt ON true`;
 
 function mapCard(r: CardRow): CrmContactCard {
   return {
@@ -115,6 +153,15 @@ function mapCard(r: CardRow): CrmContactCard {
     archivedAt: iso(r.archived_at),
     createdAt: iso(r.created_at)!,
     tagIds: r.tag_ids ?? [],
+    temperature: isCrmTemperature(r.temperature) ? r.temperature : null,
+    serviceInterest: r.service_interest,
+    returnAt: r.return_at,
+    isDecisionMaker: r.is_decision_maker,
+    lastInteractionAt: iso(r.last_interaction_at),
+    nextTask:
+      r.task_id && r.task_kind
+        ? { id: r.task_id, kind: r.task_kind, title: r.task_title ?? "", dueAt: iso(r.task_due_at), allDay: r.task_all_day ?? true }
+        : null,
   };
 }
 
@@ -142,6 +189,12 @@ export type ContactFilters = {
   archived?: boolean;
   /** Only contacts with this tag (crm_tags.id). */
   tag?: string;
+  /** frio | morno | quente */
+  temperature?: string;
+  /** Serviço de interesse (crm_options kind "service"). */
+  service?: string;
+  /** "atrasado" = return date already past; "7d" = due within the next 7 days. */
+  returnDue?: string;
   /** Comercial profile: only leads this user owns or that have no owner. */
   visibleTo?: string | null;
 };
@@ -173,6 +226,11 @@ export function contactWhere(f: ContactFilters): { sql: string; values: unknown[
   else if (f.owner && f.owner !== "all" && f.owner !== "mine") add((n) => `c.owner_id = $${n}`, f.owner);
   if (f.source) add((n) => `c.source = $${n}`, f.source);
   if (f.tag) add((n) => `EXISTS (SELECT 1 FROM crm_contact_tags ct WHERE ct.contact_id = c.id AND ct.tag_id = $${n})`, f.tag);
+  if (f.temperature && isCrmTemperature(f.temperature)) add((n) => `c.temperature = $${n}`, f.temperature);
+  if (f.service) add((n) => `c.service_interest = $${n}`, f.service);
+  // Brasília's calendar day, whatever the server's timezone.
+  if (f.returnDue === "atrasado") where.push(`c.return_at < (now() AT TIME ZONE 'America/Sao_Paulo')::date`);
+  else if (f.returnDue === "7d") where.push(`c.return_at BETWEEN (now() AT TIME ZONE 'America/Sao_Paulo')::date AND (now() AT TIME ZONE 'America/Sao_Paulo')::date + 7`);
   if (f.segment) add((n) => `COALESCE(co.segment, c.segment) = $${n}`, f.segment);
   if (f.city) add((n) => `COALESCE(co.city, c.city) = $${n}`, f.city);
   if (f.consent === "descadastrado") where.push("c.opted_out_at IS NOT NULL");
@@ -196,6 +254,9 @@ export function contactFiltersFromSearch(params: URLSearchParams, currentUserId:
     consent: get("consent"),
     companyId: get("company"),
     tag: get("tag"),
+    temperature: get("temperature"),
+    service: get("service"),
+    returnDue: get("returnDue"),
     archived: params.get("archived") === "1",
   };
 }
@@ -451,6 +512,10 @@ export type NewContactInput = {
   consentStatus?: unknown;
   consentSource?: unknown;
   ownerId?: unknown;
+  temperature?: unknown;
+  serviceInterest?: unknown;
+  returnAt?: unknown;
+  isDecisionMaker?: unknown;
   /** Open an opportunity in "Novo" for this lead (default true). */
   createDeal?: unknown;
   dealTitle?: unknown;
@@ -469,18 +534,25 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
   const consentStatus: CrmConsentStatus = isCrmConsentStatus(input.consentStatus) ? input.consentStatus : consentSource ? "sim" : "nao_informado";
   const segment = cleanText(input.segment, 80);
   const city = cleanText(input.city, 80);
+  const temperature = parseTemperature(input.temperature);
+  const returnAt = parseDateOnly(input.returnAt, "Data de retorno");
 
   return withTransaction(async (client) => {
     const dup = await findDuplicate(client, phone, email);
     if (dup) throw new CrmInputError(duplicateMessage(dup));
     const source: CrmSource = await requireOptionId(client, "source", input.source === undefined || input.source === "" ? "outro" : input.source);
+    const serviceInterest =
+      input.serviceInterest === undefined || input.serviceInterest === null || input.serviceInterest === ""
+        ? null
+        : await requireOptionId(client, "service", input.serviceInterest);
     await requireSegment(client, segment);
     const companyId = await resolveCompanyId(client, input.company, { segment, city }, actor);
     const id = randomUUID();
     await client.query(
       `INSERT INTO crm_contacts (id, phone, name, email, job_title, company_id, segment, city, source, referred_by,
-                                 consent_status, consent_source, consent_at, owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+                                 consent_status, consent_source, consent_at, owner_id,
+                                 temperature, service_interest, return_at, is_decision_maker)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         id,
         phone,
@@ -497,11 +569,19 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
         consentSource,
         consentStatus === "sim" ? new Date() : null,
         ownerId,
+        temperature,
+        serviceInterest,
+        returnAt,
+        input.isDecisionMaker === true,
       ]
     );
     await addEvent(client, id, "created", { via: "manual" }, actor);
     if (input.createDeal !== false) {
-      await createDealTx(client, { contactId: id, title: input.dealTitle, value: input.dealValue, ownerId: ownerId ?? "" }, actor);
+      await createDealTx(
+        client,
+        { contactId: id, title: input.dealTitle, value: input.dealValue, ownerId: ownerId ?? "", service: serviceInterest ?? undefined },
+        actor
+      );
     }
     return id;
   });
@@ -525,6 +605,10 @@ export type ContactPatch = {
   ownerId?: unknown;
   nextAction?: unknown;
   nextActionAt?: unknown;
+  temperature?: unknown;
+  serviceInterest?: unknown;
+  returnAt?: unknown;
+  isDecisionMaker?: unknown;
 };
 
 const FIELD_LABEL: Record<string, string> = {
@@ -538,6 +622,10 @@ const FIELD_LABEL: Record<string, string> = {
   source: "Origem",
   referred_by: "Indicado por",
   consent_source: "Como aceitou",
+  temperature: "Temperatura",
+  service_interest: "Serviço de interesse",
+  return_at: "Retorno previsto",
+  is_decision_maker: "Decisor",
 };
 
 /** Applies whatever fields are present; every meaningful change lands in the contact's history. false = no such contact. */
@@ -545,12 +633,15 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
   return withTransaction(async (client) => {
     const { rows } = await client.query<CardRow & { own_segment: string | null; own_city: string | null }>(
       `SELECT c.*, c.segment AS own_segment, c.city AS own_city, COALESCE(co.name, c.company) AS company,
+              to_char(c.return_at, 'YYYY-MM-DD') AS return_at_day,
               co.segment AS co_segment, co.city AS co_city
        FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id
        WHERE c.id = $1 FOR UPDATE OF c`,
       [id]
     );
-    const current = rows[0] as (CardRow & { own_segment: string | null; own_city: string | null; co_segment: string | null; co_city: string | null }) | undefined;
+    const current = rows[0] as
+      | (CardRow & { own_segment: string | null; own_city: string | null; co_segment: string | null; co_city: string | null; return_at_day: string | null })
+      | undefined;
     if (!current) return false;
 
     const sets: string[] = [];
@@ -605,6 +696,32 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
       const next = await requireOptionId(client, "source", patch.source, current.source);
       change("source", await optionLabel(client, "source", current.source), await optionLabel(client, "source", next));
       set("source", next);
+    }
+    if (patch.temperature !== undefined) {
+      const next = parseTemperature(patch.temperature);
+      change("temperature", temperatureLabel(current.temperature) || null, temperatureLabel(next) || null);
+      set("temperature", next);
+    }
+    if (patch.serviceInterest !== undefined && (patch.serviceInterest || null) !== current.service_interest) {
+      const next = patch.serviceInterest ? await requireOptionId(client, "service", patch.serviceInterest, current.service_interest) : null;
+      change(
+        "service_interest",
+        current.service_interest ? await optionLabel(client, "service", current.service_interest) : null,
+        next ? await optionLabel(client, "service", next) : null
+      );
+      set("service_interest", next);
+    }
+    if (patch.returnAt !== undefined) {
+      const next = parseDateOnly(patch.returnAt, "Data de retorno");
+      change("return_at", brDate(current.return_at_day), brDate(next));
+      set("return_at", next);
+    }
+    if (patch.isDecisionMaker !== undefined) {
+      const next = patch.isDecisionMaker === true;
+      if (next !== current.is_decision_maker) {
+        change("is_decision_maker", current.is_decision_maker ? "Sim" : "Não", next ? "Sim" : "Não");
+        set("is_decision_maker", next);
+      }
     }
 
     // Company first, then segment/city: they belong to the company when there is one.

@@ -2,23 +2,37 @@
 
 import { useState } from "react";
 import { TAG_VIA } from "@/lib/crm-catalog";
-import type { CrmContactDetail } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_FILTER, CRM_LABEL } from "./crm-styles";
 import { TagChip, useCatalog } from "./crm-catalog-context";
 import { dateTime } from "./crm-format";
 
-/** The contact's tags: chips (with who/how applied) plus add/remove for whoever may edit the contact. */
-export default function CrmTagsEditor({ detail, canEdit, onChanged }: { detail: CrmContactDetail; canEdit: boolean; onChanged: () => void }) {
+type TagLink = { tagId: string; via: string; byName: string | null; at: string };
+
+/**
+ * A record's tags (contact or company): chips (with who/how applied) plus
+ * add/remove for whoever may edit it. `endpoint` is the record's tags route,
+ * e.g. /api/crm/contacts/<id>/tags/.
+ */
+export default function CrmTagsEditor({
+  links,
+  endpoint,
+  canEdit,
+  onChanged,
+}: {
+  links: TagLink[];
+  endpoint: string;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
   const { tag, tagGroups } = useCatalog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const links = detail.tagLinks;
   const has = new Set(links.map((l) => l.tagId));
 
   async function send(method: "POST" | "DELETE", tagId: string) {
     setBusy(true);
     setError(null);
-    const res = await fetch(`/api/crm/contacts/${detail.id}/tags/${method === "DELETE" ? `?tagId=${encodeURIComponent(tagId)}` : ""}`, {
+    const res = await fetch(`${endpoint}${method === "DELETE" ? `?tagId=${encodeURIComponent(tagId)}` : ""}`, {
       method,
       headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
       body: method === "POST" ? JSON.stringify({ tagId }) : undefined,

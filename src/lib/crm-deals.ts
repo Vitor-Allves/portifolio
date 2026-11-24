@@ -8,15 +8,21 @@ import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import {
+  STAGE_REQUIREMENT_LABEL,
   isClosedStage,
   isCrmStage,
+  isCrmTemperature,
+  joinPt,
+  missingForStage,
   parseMoneyToCents,
+  stageLabel,
+  temperatureLabel,
   type CrmDeal,
   type CrmDealCard,
   type CrmStage,
 } from "./crm-types";
-import { CrmInputError, addEvent, cleanText, iso, type CrmActor } from "./crm-core";
-import { requireOptionId } from "./crm-options";
+import { CrmInputError, addEvent, cleanText, iso, parseTemperature, type CrmActor } from "./crm-core";
+import { optionLabel, requireOptionId } from "./crm-options";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -34,10 +40,24 @@ type DealRow = {
   stage_changed_at: Date;
   closed_at: Date | null;
   created_at: Date;
+  service: string | null;
+  negotiated_cents: string | number | null;
+  own_source: string | null;
+  own_temperature: string | null;
+  contact_source: string;
+  contact_temperature: string | null;
+  won_reason: string | null;
+  won_note: string | null;
 };
 
+// Origin and temperature fall back to the contact's when the opportunity has none of its own.
 const DEAL_COLS = `d.id, d.contact_id, d.title, d.value_cents, d.stage, d.owner_id, u.name AS owner_name, d.expected_close_at,
-  d.lost_reason, d.lost_note, d.stage_changed_at, d.closed_at, d.created_at`;
+  d.lost_reason, d.lost_note, d.stage_changed_at, d.closed_at, d.created_at,
+  d.service, d.negotiated_cents, d.source AS own_source, d.temperature AS own_temperature,
+  cx.source AS contact_source, cx.temperature AS contact_temperature, d.won_reason, d.won_note`;
+const DEAL_FROM = `crm_deals d JOIN crm_contacts cx ON cx.id = d.contact_id LEFT JOIN internal_users u ON u.id = d.owner_id`;
+
+const cents = (v: string | number | null) => (v === null ? null : Number(v));
 
 function mapDeal(r: DealRow): CrmDeal {
   return {
@@ -52,6 +72,12 @@ function mapDeal(r: DealRow): CrmDeal {
     expectedCloseAt: iso(r.expected_close_at),
     lostReason: r.lost_reason,
     lostNote: r.lost_note,
+    service: r.service,
+    negotiatedCents: cents(r.negotiated_cents),
+    source: r.own_source ?? r.contact_source ?? "outro",
+    temperature: [r.own_temperature, r.contact_temperature].find(isCrmTemperature) ?? null,
+    wonReason: r.won_reason,
+    wonNote: r.won_note,
     stageChangedAt: iso(r.stage_changed_at)!,
     closedAt: iso(r.closed_at),
     createdAt: iso(r.created_at)!,
@@ -70,7 +96,6 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
       company: string | null;
       phone: string | null;
       email: string | null;
-      source: string;
       referred_by: string | null;
       has_ad_referral: boolean;
       unread_count: number;
@@ -86,14 +111,13 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
     }
   >(
     `SELECT ${DEAL_COLS},
-            c.name AS contact_name, COALESCE(co.name, c.company) AS company, c.phone, c.email, c.source, c.referred_by,
+            c.name AS contact_name, COALESCE(co.name, c.company) AS company, c.phone, c.email, c.referred_by,
             c.ad_referral IS NOT NULL AS has_ad_referral, c.unread_count, c.last_inbound_at, c.last_message_at, c.last_message_preview,
             nt.id AS task_id, nt.kind AS task_kind, nt.title AS task_title, nt.due_at AS task_due_at, nt.all_day AS task_all_day,
             ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids
-     FROM crm_deals d
+     FROM ${DEAL_FROM}
      JOIN crm_contacts c ON c.id = d.contact_id
      LEFT JOIN crm_companies co ON co.id = c.company_id
-     LEFT JOIN internal_users u ON u.id = d.owner_id
      LEFT JOIN LATERAL (
        SELECT t.id, t.kind, t.title, t.due_at, t.all_day FROM crm_tasks t
        WHERE t.done_at IS NULL AND t.canceled_at IS NULL
@@ -113,7 +137,6 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
     company: r.company,
     phone: r.phone,
     email: r.email,
-    source: r.source,
     referredBy: r.referred_by,
     hasAdReferral: r.has_ad_referral,
     unreadCount: r.unread_count,
@@ -131,10 +154,22 @@ export async function listBoardDeals(visibleTo: string | null = null): Promise<C
 /** A contact's opportunities: open ones first, then closed, newest first. */
 export async function listContactDeals(db: Db, contactId: string): Promise<CrmDeal[]> {
   const { rows } = await db.query<DealRow>(
-    `SELECT ${DEAL_COLS} FROM crm_deals d LEFT JOIN internal_users u ON u.id = d.owner_id
+    `SELECT ${DEAL_COLS} FROM ${DEAL_FROM}
      WHERE d.contact_id = $1
      ORDER BY (d.stage IN ('ganho', 'perdido')) ASC, d.updated_at DESC`,
     [contactId]
+  );
+  return rows.map(mapDeal);
+}
+
+/** Opportunities of several contacts at once (a company's): open ones first, then closed, newest first. */
+export async function listDealsForContacts(db: Db, contactIds: string[]): Promise<CrmDeal[]> {
+  if (contactIds.length === 0) return [];
+  const { rows } = await db.query<DealRow>(
+    `SELECT ${DEAL_COLS} FROM ${DEAL_FROM}
+     WHERE d.contact_id = ANY($1)
+     ORDER BY (d.stage IN ('ganho', 'perdido')) ASC, d.created_at DESC`,
+    [contactIds]
   );
   return rows.map(mapDeal);
 }
@@ -152,11 +187,11 @@ export async function syncContactStage(client: Db, contactId: string): Promise<v
   );
 }
 
-function parseValue(value: unknown): number | null {
+function parseValue(value: unknown, what = "Valor"): number | null {
   try {
     return parseMoneyToCents(value);
   } catch {
-    throw new CrmInputError("Valor inválido — use, por exemplo, 2.500 ou 2.500,00.");
+    throw new CrmInputError(`${what} inválido — use, por exemplo, 2.500 ou 2.500,00.`);
   }
 }
 
@@ -174,6 +209,19 @@ async function ownerName(client: Db, ownerId: string | null): Promise<string | n
   return rows[0].name;
 }
 
+const absent = (v: unknown) => v === undefined || v === null || v === "";
+
+/** Refuses a move (or a new opportunity) into a stage whose required fields aren't filled. */
+function requireStageFields(
+  stage: CrmStage,
+  deal: { service: string | null; valueCents: number | null; negotiatedCents: number | null; wonReason: string | null }
+) {
+  const missing = missingForStage(stage, deal);
+  if (missing.length > 0) {
+    throw new CrmInputError(`Para ir a "${stageLabel(stage)}", preencha: ${joinPt(missing.map((m) => STAGE_REQUIREMENT_LABEL[m]))}.`);
+  }
+}
+
 export type NewDealInput = {
   contactId?: unknown;
   title?: unknown;
@@ -181,13 +229,19 @@ export type NewDealInput = {
   ownerId?: unknown;
   stage?: unknown;
   expectedCloseAt?: unknown;
+  service?: unknown;
+  negotiatedValue?: unknown;
+  source?: unknown;
+  temperature?: unknown;
+  wonReason?: unknown;
+  wonNote?: unknown;
 };
 
 /** Creates an opportunity inside a caller's transaction; returns its id. */
 export async function createDealTx(client: PoolClient, input: NewDealInput, actor: CrmActor): Promise<string> {
   const contactId = typeof input.contactId === "string" ? input.contactId : "";
-  const { rows } = await client.query<{ name: string; company: string | null; owner_id: string | null }>(
-    `SELECT c.name, COALESCE(co.name, c.company) AS company, c.owner_id
+  const { rows } = await client.query<{ name: string; company: string | null; owner_id: string | null; source: string; service_interest: string | null }>(
+    `SELECT c.name, COALESCE(co.name, c.company) AS company, c.owner_id, c.source, c.service_interest
      FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id WHERE c.id = $1`,
     [contactId]
   );
@@ -203,11 +257,37 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
   const ownerId = typeof input.ownerId === "string" ? input.ownerId || null : contact.owner_id;
   await ownerName(client, ownerId);
   const valueCents = parseValue(input.value);
+  const negotiatedCents = parseValue(input.negotiatedValue, "Valor negociado");
+  // Serviço starts as the contact's interest; origem as the contact's origin.
+  const service = absent(input.service)
+    ? contact.service_interest
+    : await requireOptionId(client, "service", input.service);
+  const source = absent(input.source) ? contact.source : await requireOptionId(client, "source", input.source);
+  const temperature = parseTemperature(input.temperature);
+  const wonReason = stage === "ganho" && !absent(input.wonReason) ? await requireOptionId(client, "won_reason", input.wonReason) : null;
+  requireStageFields(stage, { service, valueCents, negotiatedCents, wonReason });
   const id = randomUUID();
   await client.query(
-    `INSERT INTO crm_deals (id, contact_id, title, value_cents, stage, owner_id, expected_close_at, closed_at, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [id, contactId, title, valueCents, stage, ownerId, parseCloseDate(input.expectedCloseAt), stage === "ganho" ? new Date() : null, actor?.userId ?? null]
+    `INSERT INTO crm_deals (id, contact_id, title, value_cents, stage, owner_id, expected_close_at, closed_at, created_by,
+                            service, negotiated_cents, source, temperature, won_reason, won_note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    [
+      id,
+      contactId,
+      title,
+      valueCents,
+      stage,
+      ownerId,
+      parseCloseDate(input.expectedCloseAt),
+      stage === "ganho" ? new Date() : null,
+      actor?.userId ?? null,
+      service,
+      negotiatedCents,
+      source,
+      temperature,
+      wonReason,
+      stage === "ganho" ? cleanText(input.wonNote, 500) : null,
+    ]
   );
   await addEvent(client, contactId, "deal", { action: "created", dealId: id, title, valueCents, stage }, actor);
   await syncContactStage(client, contactId);
@@ -226,12 +306,22 @@ export type DealPatch = {
   expectedCloseAt?: unknown;
   lostReason?: unknown;
   lostNote?: unknown;
+  service?: unknown;
+  negotiatedValue?: unknown;
+  source?: unknown;
+  temperature?: unknown;
+  wonReason?: unknown;
+  wonNote?: unknown;
 };
 
 /**
  * Applies whatever is present. Moving to "Perdido" requires a loss reason;
- * entering won/lost stamps closed_at and reopening clears it (and the loss
- * reason). null = no such opportunity.
+ * "Proposta enviada" and "Ganho" require the fields in STAGE_REQUIREMENTS
+ * (moves the system makes on its own are exempt — they only go to "Em
+ * conversa"); a field an opportunity's stage requires can't be emptied.
+ * Entering won/lost stamps closed_at and reopening clears it (and the
+ * loss/win reason). Every change of value lands in the history. null = no
+ * such opportunity.
  */
 export async function updateDealTx(
   client: PoolClient,
@@ -240,10 +330,7 @@ export async function updateDealTx(
   actor: CrmActor,
   opts: { auto?: boolean } = {}
 ): Promise<{ contactId: string; stage: CrmStage; title: string } | null> {
-  const { rows } = await client.query<DealRow>(
-    `SELECT ${DEAL_COLS} FROM crm_deals d LEFT JOIN internal_users u ON u.id = d.owner_id WHERE d.id = $1 FOR UPDATE OF d`,
-    [id]
-  );
+  const { rows } = await client.query<DealRow>(`SELECT ${DEAL_COLS} FROM ${DEAL_FROM} WHERE d.id = $1 FOR UPDATE OF d`, [id]);
   const current = rows[0];
   if (!current) return null;
   const sets: string[] = [];
@@ -254,6 +341,13 @@ export async function updateDealTx(
   };
   const changes: { field: string; from: string | null; to: string | null }[] = [];
   let title = current.title;
+  // What the opportunity will look like after this patch (for the stage requirements).
+  const next = {
+    service: current.service,
+    valueCents: cents(current.value_cents),
+    negotiatedCents: cents(current.negotiated_cents),
+    wonReason: current.won_reason,
+  };
 
   if (patch.title !== undefined) {
     const t = cleanText(patch.title, 120);
@@ -264,9 +358,40 @@ export async function updateDealTx(
   }
   if (patch.value !== undefined) {
     const v = parseValue(patch.value);
-    const before = current.value_cents === null ? null : Number(current.value_cents);
+    const before = cents(current.value_cents);
     if (v !== before) changes.push({ field: "Valor", from: before === null ? null : String(before), to: v === null ? null : String(v) });
+    next.valueCents = v;
     set("value_cents", v);
+  }
+  if (patch.negotiatedValue !== undefined) {
+    const v = parseValue(patch.negotiatedValue, "Valor negociado");
+    const before = cents(current.negotiated_cents);
+    if (v !== before) changes.push({ field: "Valor negociado", from: before === null ? null : String(before), to: v === null ? null : String(v) });
+    next.negotiatedCents = v;
+    set("negotiated_cents", v);
+  }
+  if (patch.service !== undefined && (patch.service || null) !== current.service) {
+    const v = absent(patch.service) ? null : await requireOptionId(client, "service", patch.service, current.service);
+    changes.push({
+      field: "Serviço",
+      from: current.service ? await optionLabel(client, "service", current.service) : null,
+      to: v ? await optionLabel(client, "service", v) : null,
+    });
+    next.service = v;
+    set("service", v);
+  }
+  if (patch.source !== undefined && !absent(patch.source) && patch.source !== (current.own_source ?? current.contact_source)) {
+    const before = current.own_source ?? current.contact_source;
+    const v = await requireOptionId(client, "source", patch.source, before);
+    changes.push({ field: "Origem", from: await optionLabel(client, "source", before), to: await optionLabel(client, "source", v) });
+    set("source", v);
+  }
+  if (patch.temperature !== undefined) {
+    const v = parseTemperature(patch.temperature);
+    if (v !== current.own_temperature) {
+      changes.push({ field: "Temperatura", from: temperatureLabel(current.own_temperature) || null, to: temperatureLabel(v) || null });
+      set("temperature", v);
+    }
   }
   if (patch.expectedCloseAt !== undefined) {
     const d = parseCloseDate(patch.expectedCloseAt);
@@ -302,6 +427,31 @@ export async function updateDealTx(
     set("lost_reason", null);
     set("lost_note", null);
   }
+  // Win reason: part of what "Ganho" requires; cleared when the opportunity leaves it.
+  if (stage === "ganho") {
+    if (patch.wonReason !== undefined && (patch.wonReason || null) !== current.won_reason) {
+      next.wonReason = absent(patch.wonReason) ? null : await requireOptionId(client, "won_reason", patch.wonReason, current.won_reason);
+      set("won_reason", next.wonReason);
+    }
+    if (patch.wonNote !== undefined) set("won_note", cleanText(patch.wonNote, 500));
+  } else if (current.stage === "ganho") {
+    set("won_reason", null);
+    set("won_note", null);
+  }
+  // Exigência por etapa: on entering the stage (unless the system moved it),
+  // and whenever a field the current stage requires is being emptied.
+  const entering = stage !== current.stage && !opts.auto;
+  const emptied = missingForStage(stage, next).filter((m) => !missingForStage(stage, {
+    service: current.service,
+    valueCents: cents(current.value_cents),
+    negotiatedCents: cents(current.negotiated_cents),
+    wonReason: current.won_reason,
+  }).includes(m));
+  if (entering) requireStageFields(stage, next);
+  else if (emptied.length > 0) {
+    throw new CrmInputError(`Em "${stageLabel(stage)}" a oportunidade precisa de ${joinPt(emptied.map((m) => STAGE_REQUIREMENT_LABEL[m]))}.`);
+  }
+
   if (stage !== current.stage) {
     await addEvent(
       client,
@@ -314,6 +464,9 @@ export async function updateDealTx(
         dealTitle: title,
         ...(opts.auto ? { auto: true } : {}),
         ...(stage === "perdido" ? { lostReason: patch.lostReason ?? current.lost_reason, lostNote: cleanText(patch.lostNote, 500) } : {}),
+        ...(stage === "ganho"
+          ? { wonReason: next.wonReason, wonNote: patch.wonNote !== undefined ? cleanText(patch.wonNote, 500) : current.won_note, valueCents: next.negotiatedCents }
+          : {}),
       },
       actor
     );

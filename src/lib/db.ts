@@ -28,11 +28,22 @@ function getPool(): Pool {
     throw new DbConfigError();
   }
 
-  pool = new Pool({ connectionString });
+  pool = new Pool({ connectionString: withExplicitSslMode(connectionString) });
   // Lets Vercel's Fluid Compute runtime reuse/drain this pool correctly
   // across invocations instead of leaking connections per cold start.
   attachDatabasePool(pool);
   return pool;
+}
+
+/**
+ * pg treats sslmode=prefer/require/verify-ca as verify-full today and warns
+ * on every cold start that the next major version will switch them to the
+ * weaker libpq meaning. Spelling out verify-full keeps today's behavior
+ * (certificate and host checked) and silences the warning; any other mode
+ * (or none) is left exactly as configured.
+ */
+export function withExplicitSslMode(connectionString: string): string {
+  return connectionString.replace(/([?&]sslmode=)(prefer|require|verify-ca)(?=&|$)/i, "$1verify-full");
 }
 
 // Bump this whenever a new statement is added below. ensureSchema() checks
@@ -42,7 +53,7 @@ function getPool(): Pool {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -704,6 +715,54 @@ async function ensureSchema(): Promise<void> {
     }
 
     await done(9);
+  }
+
+  if (current < 10) {
+    // v10 — Fase 1, entrega 2 (especificação v1.0): the fields the spec adds
+    // to contacts, companies and opportunities. Only columns and one table are
+    // added; every new column is optional, so existing rows stay valid as
+    // they are. The only backfill copies each opportunity's origin from its
+    // contact (that is where the origin lived until now).
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS temperature TEXT`);
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS service_interest TEXT`);
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS return_at DATE`);
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS is_decision_maker BOOLEAN NOT NULL DEFAULT false`);
+
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS legal_name TEXT`);
+    // 14 characters, no punctuation, upper case (the alphanumeric CNPJ from
+    // July 2026 included). One company per CNPJ; companies without one are
+    // still matched by name.
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS cnpj TEXT`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_companies_cnpj_key ON crm_companies (cnpj) WHERE cnpj IS NOT NULL`);
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS state TEXT`);
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS address TEXT`);
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL`);
+    // Situação comercial (prospeccao, negociacao, cliente_ativo, ex_cliente, inativa); null = not set yet.
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS status TEXT`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_company_tags (
+        company_id TEXT NOT NULL REFERENCES crm_companies (id) ON DELETE CASCADE,
+        tag_id TEXT NOT NULL REFERENCES crm_tags (id),
+        applied_via TEXT NOT NULL DEFAULT 'manual',
+        applied_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        applied_by_name TEXT,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (company_id, tag_id)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_company_tags_tag_idx ON crm_company_tags (tag_id)`);
+
+    await db.query(`ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS service TEXT`);
+    await db.query(`ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS negotiated_cents BIGINT`);
+    await db.query(`ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS source TEXT`);
+    await db.query(`ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS temperature TEXT`);
+    await db.query(`ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS won_reason TEXT`);
+    await db.query(`ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS won_note TEXT`);
+    await db.query(
+      `UPDATE crm_deals d SET source = c.source FROM crm_contacts c WHERE c.id = d.contact_id AND d.source IS NULL`
+    );
+
+    await done(10);
   }
 }
 
