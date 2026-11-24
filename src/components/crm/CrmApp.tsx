@@ -42,6 +42,8 @@ import CrmAuditView from "./CrmAuditView";
 import { CrmCatalogProvider, TagChips, useCatalog } from "./crm-catalog-context";
 import type { CrmCatalog } from "@/lib/crm-catalog";
 import CrmAgendaView from "./CrmAgendaView";
+import CrmTaskDialog, { type TaskDialogTarget, type TaskDraft } from "./CrmTaskDialog";
+import CrmReminderBell from "./CrmReminderBell";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -285,6 +287,12 @@ function CrmAppInner({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const isWide = useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  // The task form, over whatever is open (new task, or one being edited).
+  const [taskTarget, setTaskTarget] = useState<TaskDialogTarget | null>(null);
+  const openTask = useCallback((id: string) => setTaskTarget({ id }), []);
+  // Bumped when the task form saves, so an open contact panel shows the change.
+  const [tasksVersion, setTasksVersion] = useState(0);
+  const newTask = useCallback((draft: TaskDraft) => setTaskTarget({ draft }), []);
   const [importOpen, setImportOpen] = useState(false);
   // Bumped after any change so the Agenda/Contatos/Empresas lists refetch.
   const [dataVersion, setDataVersion] = useState(0);
@@ -496,10 +504,13 @@ function CrmAppInner({
               <h1 className="crm-display text-[19px] leading-tight">{section.label}</h1>
               <p className="hidden sm:block text-[12.5px] text-crm-dim truncate">{section.description}</p>
             </div>
-            <button type="button" onClick={() => setNewOpen(true)} aria-label="Novo contato" className={`${CRM_BTN_PRIMARY} ml-auto shrink-0 gap-1`}>
-              <span aria-hidden="true">+</span>
-              <span className="hidden sm:inline">Novo contato</span>
-            </button>
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              <CrmReminderBell version={dataVersion} onOpenTask={openTask} onShowTasks={() => setView("tasks")} />
+              <button type="button" onClick={() => setNewOpen(true)} aria-label="Novo contato" className={`${CRM_BTN_PRIMARY} shrink-0 gap-1`}>
+                <span aria-hidden="true">+</span>
+                <span className="hidden sm:inline">Novo contato</span>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -673,11 +684,23 @@ function CrmAppInner({
             currentUserId={currentUserId}
             now={now}
             canComplete={caps.editPipeline}
+            version={dataVersion}
             onOpenContact={(id, tab) => openContact(id, tab)}
+            onOpenTask={openTask}
+            onNewTask={newTask}
             onChanged={() => void refresh()}
           />
         ) : view === "agenda" ? (
-          <CrmAgendaView team={team} version={dataVersion} now={now} onOpenContact={(id, tab) => openContact(id, tab)} />
+          <CrmAgendaView
+            team={team}
+            version={dataVersion}
+            now={now}
+            canCreate={caps.editPipeline}
+            onOpenTask={openTask}
+            onNewTask={newTask}
+            onOpenContact={(id, dealId) => openContact(id, "negocio", dealId)}
+            onOpenCompany={(id) => (setSelected(null), setCompanyId(id))}
+          />
         ) : (
           <>
             {deals.length === 0 && (
@@ -771,9 +794,36 @@ function CrmAppInner({
           team={team}
           currentUserId={currentUserId}
           caps={caps}
+          version={dataVersion}
           onClose={() => setCompanyId(null)}
           onOpenContact={(id) => openContact(id)}
+          onOpenTask={openTask}
+          onNewTask={newTask}
           onChanged={() => setDataVersion((v) => v + 1)}
+        />
+      )}
+
+      {taskTarget && (
+        <CrmTaskDialog
+          key={"id" in taskTarget ? taskTarget.id : "new"}
+          target={taskTarget}
+          team={ownerChoices}
+          canEdit={caps.editPipeline}
+          defaultOwnerId={caps.editPipeline ? currentUserId : ""}
+          onClose={() => setTaskTarget(null)}
+          onSaved={() => {
+            setTasksVersion((v) => v + 1);
+            void refresh();
+          }}
+          onOpenContact={(id, dealId) => {
+            setTaskTarget(null);
+            openContact(id, "negocio", dealId);
+          }}
+          onOpenCompany={(id) => {
+            setTaskTarget(null);
+            setSelected(null);
+            setCompanyId(id);
+          }}
         />
       )}
 
@@ -801,6 +851,8 @@ function CrmAppInner({
           onClose={() => setSelected(null)}
           onChanged={() => void refresh()}
           onWon={celebrate}
+          onOpenTask={openTask}
+          tasksVersion={tasksVersion}
         />
       )}
 

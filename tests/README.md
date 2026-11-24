@@ -18,7 +18,7 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 
 | Conjunto | O que confere |
 | --- | --- |
-| `schema` | Banco criado do zero e banco atualizado da v7 ficam idênticos; dados existentes sobrevivem; prévia da Vercel não altera a estrutura |
+| `schema` | Banco criado do zero e bancos atualizados da v7 e da v12 ficam idênticos; dados existentes sobrevivem (tarefas ganham situação a partir do que estava gravado); prévia da Vercel não altera a estrutura |
 | `dashboard-data` | Todos os números do Painel (Fase 4) para outubro/2026, conferidos à mão |
 | `dashboard-e2e` | Painel no navegador: página inicial, filtros, Comercial vê só os seus, todas as seções abrem, tema escuro, celular |
 | `campaigns-api` | Campanhas pela API: perfis, quem fica de fora, variáveis, "SAIR", envios simultâneos sem duplicar, entregue/lida/resposta, limite da Meta, cancelar, envio interrompido |
@@ -31,6 +31,8 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `team-e2e` | Fase 2 no navegador: exceção e cargo no painel da pessoa, nova pessoa com senha temporária, desativar, Departamentos na Personalização, exceção valendo para a pessoa, celular e tema escuro |
 | `access-api` | Fase 2 · entrega 2 pela API: 2FA de Administrador no login, troca de responsável em lote (prévia, seleção, filtro, histórico), transferência de carteira (inclusive de quem foi desativado), atividade por pessoa, Auditoria (filtros), promoção a Administrador encerra sessões, encerrar sessões |
 | `access-e2e` | Fase 2 · entrega 2 no navegador: trocar responsável em lote em Contatos, carteira e atividade no painel da pessoa, Auditoria (filtros, contato abre da linha), celular e tema escuro |
+| `tasks-api` | Fase 3 · entrega 1 pela API: atividade interna e tarefa só de empresa, quem vê cada tarefa, lembretes (escolhas válidas, sino, dispensar, reagendar), janela e filtros da agenda, situação e histórico da tarefa, cancelar/reativar, cores e Prioridades na Personalização |
+| `tasks-e2e` | Fase 3 · entrega 1 no navegador: agenda em dia/semana/mês com cor por tipo e filtro, formulário de tarefa (interna, de contato, de empresa), situação no histórico, filtros e abas de Tarefas, sino de lembretes, cor de tipo e Prioridades na Personalização, celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Dados de teste: `tests/fixtures/seed-base.ts` (usuários `vitor` Gestor,

@@ -67,6 +67,42 @@ export function joinPt(items: string[]): string {
   return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} e ${items[items.length - 1]}`;
 }
 
+/** Situação de uma tarefa (fixed list; done_at / canceled_at keep when and who). */
+export const CRM_TASK_STATUSES = [
+  { id: "pendente", label: "Pendente" },
+  { id: "em_andamento", label: "Em andamento" },
+  { id: "concluida", label: "Concluída" },
+  { id: "cancelada", label: "Cancelada" },
+] as const;
+export type CrmTaskStatus = (typeof CRM_TASK_STATUSES)[number]["id"];
+export function isCrmTaskStatus(value: unknown): value is CrmTaskStatus {
+  return CRM_TASK_STATUSES.some((t) => t.id === value);
+}
+export function taskStatusLabel(id: string): string {
+  return CRM_TASK_STATUSES.find((t) => t.id === id)?.label ?? id;
+}
+
+/**
+ * In-app reminder, in minutes before the task. A task with a time: at the
+ * time, 15 min, 1 h or 1 day before; an all-day task: 08:00 that day or the
+ * day before (Brasília).
+ */
+export const TASK_REMINDERS_TIMED = [
+  { minutes: 0, label: "Na hora" },
+  { minutes: 15, label: "15 minutos antes" },
+  { minutes: 60, label: "1 hora antes" },
+  { minutes: 1440, label: "1 dia antes" },
+] as const;
+export const TASK_REMINDERS_ALL_DAY = [
+  { minutes: 0, label: "No dia, às 8h" },
+  { minutes: 1440, label: "Na véspera, às 8h" },
+] as const;
+export function reminderLabel(minutes: number | null, allDay: boolean): string {
+  if (minutes === null) return "Sem lembrete";
+  const list: readonly { minutes: number; label: string }[] = allDay ? TASK_REMINDERS_ALL_DAY : TASK_REMINDERS_TIMED;
+  return list.find((r) => r.minutes === minutes)?.label ?? `${minutes} min antes`;
+}
+
 /** Temperatura do lead/oportunidade — a field, not a tag (fixed list). */
 export const CRM_TEMPERATURES = [
   { id: "frio", label: "Frio" },
@@ -309,9 +345,18 @@ export type CrmDealCard = CrmDeal & {
 };
 
 export type CrmTask = CrmTaskSummary & {
-  contactId: string;
-  contactName: string;
+  /** null = linked to a company only, or an internal activity. */
+  contactId: string | null;
+  contactName: string | null;
+  /** The task's own company, or its contact's. */
+  companyId: string | null;
   company: string | null;
+  description: string | null;
+  /** A crm_options id of kind "priority". */
+  priority: string;
+  status: CrmTaskStatus;
+  remindMinutes: number | null;
+  remindAt: string | null;
   dealId: string | null;
   dealTitle: string | null;
   ownerId: string | null;
@@ -323,6 +368,12 @@ export type CrmTask = CrmTaskSummary & {
   createdAt: string;
   createdByName: string | null;
 };
+
+/** One line of a task's own history. */
+export type CrmTaskEvent = { id: string; action: string; payload: Record<string, unknown>; userName: string | null; at: string };
+
+/** The reminders bell: reminders that are due, and how many of my tasks are late. */
+export type CrmReminders = { due: CrmTask[]; overdue: number };
 
 export type CrmContactDetail = CrmContactCard & {
   consentSource: string | null;

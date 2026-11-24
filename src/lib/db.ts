@@ -53,7 +53,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -792,6 +792,62 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_events_user_idx ON crm_events (user_id, created_at DESC)`);
 
     await done(12);
+  }
+
+  if (current < 13) {
+    // v13 — Fase 3, entrega 1 (especificação v1.0): tarefas e agenda. Only
+    // additions: existing tasks keep everything they have and get status
+    // from done_at / canceled_at. A task may now have no contact (linked to
+    // a company only, or an internal activity), so contact_id loses NOT NULL.
+    await db.query(`ALTER TABLE crm_options ADD COLUMN IF NOT EXISTS color TEXT`);
+    await db.query(`ALTER TABLE crm_tasks ALTER COLUMN contact_id DROP NOT NULL`);
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS company_id TEXT REFERENCES crm_companies (id) ON DELETE SET NULL`);
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS description TEXT`);
+    // A crm_options id of kind "priority" (Personalização → Prioridades).
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'media'`);
+    // pendente | em_andamento | concluida | cancelada (done_at / canceled_at keep the when and who).
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pendente'`);
+    // In-app reminder: minutes before the task (all-day tasks: before 08:00 that day), the instant, and when its owner dismissed it.
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS remind_minutes INTEGER`);
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE crm_tasks ADD COLUMN IF NOT EXISTS reminder_dismissed_at TIMESTAMPTZ`);
+    await db.query(
+      `UPDATE crm_tasks SET status = CASE WHEN canceled_at IS NOT NULL THEN 'cancelada' ELSE 'concluida' END
+       WHERE status = 'pendente' AND (canceled_at IS NOT NULL OR done_at IS NOT NULL)`
+    );
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_tasks_company_idx ON crm_tasks (company_id) WHERE company_id IS NOT NULL`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_tasks_owner_due_idx ON crm_tasks (owner_id, due_at)`);
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS crm_tasks_remind_idx ON crm_tasks (owner_id, remind_at)
+       WHERE remind_at IS NOT NULL AND reminder_dismissed_at IS NULL AND done_at IS NULL AND canceled_at IS NULL`
+    );
+    // Each task's own history (who created, edited, rescheduled, started, finished it).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_task_events (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES crm_tasks (id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+        user_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        user_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_task_events_task_idx ON crm_task_events (task_id, created_at)`);
+    // The spec's task types and the priorities join the lists (after what is
+    // already there, so the current order stays); every type gets a color.
+    for (const kind of ["task_kind", "priority"] as const) {
+      for (const o of DEFAULT_OPTIONS[kind]) {
+        await db.query(
+          `INSERT INTO crm_options (kind, id, label, locked, color, sort)
+           VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = $1))
+           ON CONFLICT (kind, id) DO UPDATE SET color = COALESCE(crm_options.color, EXCLUDED.color)`,
+          [kind, o.id, o.label, o.locked ?? false, o.color ?? null]
+        );
+      }
+    }
+
+    await done(13);
   }
 }
 

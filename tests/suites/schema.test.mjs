@@ -29,11 +29,11 @@ async function freshDb(name) {
   await admin(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
   await admin(`CREATE DATABASE ${name}`);
 }
-async function query(name, q) {
+async function query(name, q, params = []) {
   const c = new pg.Client({ connectionString: dbUrl(name) });
   await c.connect();
   try {
-    return (await c.query(q)).rows;
+    return (params.length ? await c.query(q, params) : await c.query(q)).rows;
   } finally {
     await c.end();
   }
@@ -54,10 +54,29 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 12;
+const LATEST = 13;
 
-// Back to v7: undo exactly what v12 (índices), v11 (equipe), v10 (campos da entrega 2), v9 (Personalização) and v8 (Campanhas) added.
+// The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
+const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
+
+// Back to v12: undo exactly what v13 (tarefas e agenda) added.
+async function downgradeToV12(name) {
+  await query(
+    name,
+    `DROP TABLE crm_task_events;
+     DROP INDEX crm_tasks_company_idx; DROP INDEX crm_tasks_owner_due_idx; DROP INDEX crm_tasks_remind_idx;
+     ALTER TABLE crm_tasks DROP COLUMN company_id, DROP COLUMN description, DROP COLUMN priority, DROP COLUMN status,
+       DROP COLUMN remind_minutes, DROP COLUMN remind_at, DROP COLUMN reminder_dismissed_at;
+     ALTER TABLE crm_tasks ALTER COLUMN contact_id SET NOT NULL;
+     ALTER TABLE crm_options DROP COLUMN color;
+     DELETE FROM crm_options WHERE kind = 'priority' OR (kind = 'task_kind' AND NOT (id = ANY('{${V9_TASK_KINDS.join(",")}}')));
+     DELETE FROM schema_migrations WHERE version = 13;`
+  );
+}
+
+// Back to v7: undo exactly what v13 (tarefas), v12 (índices), v11 (equipe), v10 (campos da entrega 2), v9 (Personalização) and v8 (Campanhas) added.
 async function downgradeToV7(name) {
+  await downgradeToV12(name);
   await query(
     name,
     `DROP INDEX crm_events_created_idx; DROP INDEX crm_events_user_idx;
@@ -114,6 +133,40 @@ ok((await query(B, `SELECT count(*)::int AS n FROM crm_companies WHERE status IS
 const departments = (await query(B, `SELECT label FROM crm_options WHERE kind = 'department' ORDER BY sort`)).map((r) => r.label).join(",");
 ok(departments === "Comercial,Marketing,Operação,Atendimento,Diretoria", `v11: departments seeded (${departments})`);
 ok((await query(B, `SELECT count(*)::int AS n FROM internal_users WHERE crm_permissions <> '{}'::jsonb`))[0].n === 0, "v11: no one starts with permission exceptions");
+
+// v13 (Fase 3): from a v12 database that already has tasks and a reordered list of types.
+await downgradeToV12(B);
+ok((await query(B, `SELECT max(version) AS v FROM schema_migrations`))[0].v === 12, "back at v12");
+await query(
+  B,
+  `INSERT INTO crm_tasks (id, contact_id, kind, title, due_at, all_day) VALUES ('t-open', 'keep-me', 'ligacao', 'Ligar', now() + interval '1 day', false);
+   INSERT INTO crm_tasks (id, contact_id, kind, title, done_at, result) VALUES ('t-done', 'keep-me', 'email', 'Mandar proposta', now(), 'Enviada');
+   INSERT INTO crm_tasks (id, contact_id, kind, title, canceled_at) VALUES ('t-cancel', 'keep-me', 'reuniao', 'Reunião', now());
+   UPDATE crm_options SET sort = 0 WHERE kind = 'task_kind' AND id = 'tarefa';
+   UPDATE crm_options SET sort = 4 WHERE kind = 'task_kind' AND id = 'ligacao';`
+);
+const kindsBefore = (await query(B, `SELECT id, sort FROM crm_options WHERE kind = 'task_kind' ORDER BY id`)).map((r) => `${r.id}:${r.sort}`).join(",");
+ok(migrate(B, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v12 → v${LATEST}`);
+ok((await structure(B)) === target, "…structure identical to a fresh one");
+const statuses = (await query(B, `SELECT id, status, priority, description, remind_at FROM crm_tasks WHERE id LIKE 't-%' ORDER BY id`));
+ok(
+  statuses.map((r) => `${r.id}=${r.status}`).join(",") === "t-cancel=cancelada,t-done=concluida,t-open=pendente",
+  `v13: status comes from what was recorded (${statuses.map((r) => `${r.id}=${r.status}`).join(",")})`
+);
+ok(statuses.every((r) => r.priority === "media" && r.description === null && r.remind_at === null), "v13: existing tasks get the default priority, no description, no reminder");
+ok((await query(B, `SELECT result FROM crm_tasks WHERE id = 't-done'`))[0].result === "Enviada", "v13: a finished task keeps its result");
+const kindsAfter = (await query(B, `SELECT id, sort FROM crm_options WHERE kind = 'task_kind' AND id = ANY($1) ORDER BY id`, [V9_TASK_KINDS])).map((r) => `${r.id}:${r.sort}`).join(",");
+ok(kindsAfter === kindsBefore, "v13: the team's order of the existing task types is kept");
+const added = await query(B, `SELECT id, label, sort, color FROM crm_options WHERE kind = 'task_kind' AND NOT (id = ANY($1)) ORDER BY sort`, [V9_TASK_KINDS]);
+ok(
+  added.map((r) => r.label).join(",") === "Primeiro contato,Follow-up,Preparação de proposta,Envio de proposta,Retorno comercial,Acompanhamento de cliente,Atividade interna",
+  `v13: the spec's task types join the list (${added.map((r) => r.label).join(",")})`
+);
+ok(added.every((r) => r.sort > 4), "…after the existing ones");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind = 'task_kind' AND color IS NULL`))[0].n === 0, "v13: every task type has a color");
+const priorities = (await query(B, `SELECT id, label, locked, color FROM crm_options WHERE kind = 'priority' ORDER BY sort`)).map((r) => `${r.label}${r.locked ? "*" : ""}:${r.color}`).join(",");
+ok(priorities === "Alta:vermelho,Média*:amarelo,Baixa:cinza", `v13: priorities seeded, Média is the fallback (${priorities})`);
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

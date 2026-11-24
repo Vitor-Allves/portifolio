@@ -8,11 +8,11 @@ import { auditCatalog } from "../audit";
 
 export const runtime = "nodejs";
 
-/** New option: { kind, label, description? }. Administrador only. */
+/** New option: { kind, label, description?, color? }. Administrador only. */
 export async function POST(req: NextRequest) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
-  const body = (await req.json().catch(() => null)) as { kind?: unknown; label?: unknown; description?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { kind?: unknown; label?: unknown; description?: unknown; color?: unknown } | null;
   try {
     requireCap(actor, "customize");
     if (!body || !isOptionKind(body.kind)) throw new CrmInputError("Lista inválida.");

@@ -81,8 +81,9 @@ import { encryptSecret } from "../../src/lib/secret-crypto";
   ];
   for (const [id, contact, owner, due, allDay, done, canceled] of tasks) {
     await db.query(
-      `INSERT INTO crm_tasks (id, contact_id, kind, title, due_at, all_day, owner_id, done_at, canceled_at)
-       VALUES ($1,$2,'tarefa',$1, CASE WHEN $3 = 'TODAY' THEN ((now() AT TIME ZONE 'America/Sao_Paulo')::date + time '12:00') AT TIME ZONE 'America/Sao_Paulo' ELSE $3::timestamptz END, $4, $5, $6, $7)`,
+      `INSERT INTO crm_tasks (id, contact_id, kind, title, due_at, all_day, owner_id, done_at, canceled_at, status)
+       VALUES ($1,$2,'tarefa',$1, CASE WHEN $3 = 'TODAY' THEN ((now() AT TIME ZONE 'America/Sao_Paulo')::date + time '12:00') AT TIME ZONE 'America/Sao_Paulo' ELSE $3::timestamptz END, $4, $5, $6, $7,
+               CASE WHEN $7::timestamptz IS NOT NULL THEN 'cancelada' WHEN $6::timestamptz IS NOT NULL THEN 'concluida' ELSE 'pendente' END)`,
       [id, contact, due, allDay, owner, done, canceled]
     );
   }

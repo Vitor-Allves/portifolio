@@ -14,6 +14,7 @@ import type { Pool, PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
 import { CrmInputError, CrmNotFoundError, addEvent, cleanText, type CrmActor } from "./crm-core";
 import {
+  COLORED_KINDS,
   OPTION_KINDS,
   TAG_CATEGORIES,
   foldLabel,
@@ -31,7 +32,17 @@ import {
 
 type Q = Pick<PoolClient, "query"> | Pool;
 
-type OptionRow = { kind: OptionKind; id: string; label: string; description: string | null; sort: number; locked: boolean; archived_at: Date | null };
+type OptionRow = {
+  kind: OptionKind;
+  id: string;
+  label: string;
+  description: string | null;
+  sort: number;
+  locked: boolean;
+  archived_at: Date | null;
+  color: string | null;
+};
+const OPTION_COLS = "kind, id, label, description, sort, locked, archived_at, color";
 type TagRow = { id: string; category: CrmTag["category"]; label: string; description: string | null; color: CrmTag["color"]; sort: number; archived_at: Date | null };
 
 const mapOption = (r: OptionRow): CrmOption => ({
@@ -42,6 +53,7 @@ const mapOption = (r: OptionRow): CrmOption => ({
   sort: r.sort,
   locked: r.locked,
   archived: r.archived_at !== null,
+  color: COLORED_KINDS.includes(r.kind) ? (isTagColor(r.color) ? r.color : "cinza") : null,
 });
 const mapTag = (r: TagRow): CrmTag => ({
   id: r.id,
@@ -56,7 +68,7 @@ const mapTag = (r: TagRow): CrmTag => ({
 export async function getCatalog(q?: Q): Promise<CrmCatalog> {
   const db = q ?? (await getDb());
   const [options, tags] = await Promise.all([
-    db.query<OptionRow>(`SELECT kind, id, label, description, sort, locked, archived_at FROM crm_options ORDER BY kind, sort, lower(label)`),
+    db.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options ORDER BY kind, sort, lower(label)`),
     db.query<TagRow>(`SELECT id, category, label, description, color, sort, archived_at FROM crm_tags ORDER BY category, sort, lower(label)`),
   ]);
   return { options: options.rows.map(mapOption), tags: tags.rows.map(mapTag) };
@@ -69,6 +81,7 @@ export async function getCatalogUsage(): Promise<CrmCatalogUsage> {
     `SELECT 'source:' || source AS k, count(*) AS n FROM crm_contacts GROUP BY source
      UNION ALL SELECT 'lost_reason:' || lost_reason, count(*) FROM crm_deals WHERE lost_reason IS NOT NULL GROUP BY lost_reason
      UNION ALL SELECT 'task_kind:' || kind, count(*) FROM crm_tasks GROUP BY kind
+     UNION ALL SELECT 'priority:' || priority, count(*) FROM crm_tasks GROUP BY priority
      UNION ALL SELECT 'segment:' || o.id, (SELECT count(*) FROM crm_companies co WHERE co.segment = o.label)
                 + (SELECT count(*) FROM crm_contacts c WHERE c.segment = o.label)
        FROM crm_options o WHERE o.kind = 'segment'
@@ -145,7 +158,15 @@ export function canonicalSegment(catalog: CrmCatalog, text: string | null): stri
 
 // ---------- options (Administrador) ----------
 
-export type OptionInput = { label?: unknown; description?: unknown };
+export type OptionInput = { label?: unknown; description?: unknown; color?: unknown };
+
+/** The color an option of `kind` gets: only colored lists have one; an invalid value is refused. */
+function optionColor(kind: OptionKind, value: unknown, current: string | null): string | null {
+  if (!COLORED_KINDS.includes(kind)) return null;
+  if (value === undefined) return current ?? "cinza";
+  if (!isTagColor(value)) throw new CrmInputError("Cor inválida.");
+  return value;
+}
 
 function cleanLabel(value: unknown): string {
   const label = cleanText(value, 80)?.replace(/\s+/g, " ");
@@ -170,25 +191,23 @@ export async function createOption(kind: OptionKind, input: OptionInput): Promis
     let id = base;
     for (let i = 2; taken.has(id); i++) id = `${base}_${i}`;
     const { rows } = await client.query<OptionRow>(
-      `INSERT INTO crm_options (kind, id, label, description, sort)
-       VALUES ($1, $2, $3, $4, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = $1))
-       RETURNING kind, id, label, description, sort, locked, archived_at`,
-      [kind, id, label, description]
+      `INSERT INTO crm_options (kind, id, label, description, color, sort)
+       VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = $1))
+       RETURNING ${OPTION_COLS}`,
+      [kind, id, label, description, optionColor(kind, input.color, null)]
     );
     return mapOption(rows[0]);
   });
 }
 
-/** Rename / describe. A segment's new name is applied to the companies and contacts that use it. */
-export async function updateOption(kind: OptionKind, id: string, input: OptionInput): Promise<{ before: string; after: CrmOption; renamedRecords: number }> {
+/** Rename / describe / recolor. A segment's new name is applied to the companies and contacts that use it. */
+export async function updateOption(kind: OptionKind, id: string, input: OptionInput): Promise<{ before: string; colorBefore: string | null; after: CrmOption; renamedRecords: number }> {
   return withTransaction(async (client) => {
-    const { rows } = await client.query<OptionRow>(
-      `SELECT kind, id, label, description, sort, locked, archived_at FROM crm_options WHERE kind = $1 AND id = $2 FOR UPDATE`,
-      [kind, id]
-    );
+    const { rows } = await client.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options WHERE kind = $1 AND id = $2 FOR UPDATE`, [kind, id]);
     if (!rows[0]) throw new CrmNotFoundError("Opção não encontrada.");
     const label = input.label === undefined ? rows[0].label : cleanLabel(input.label);
     const description = input.description === undefined ? rows[0].description : cleanText(input.description, 300);
+    const color = optionColor(kind, input.color, rows[0].color);
     if (label !== rows[0].label) await assertUniqueLabel(client, kind, label, id);
     let renamedRecords = 0;
     if (kind === "segment" && label !== rows[0].label) {
@@ -197,22 +216,22 @@ export async function updateOption(kind: OptionKind, id: string, input: OptionIn
       renamedRecords = (a.rowCount ?? 0) + (b.rowCount ?? 0);
     }
     const updated = await client.query<OptionRow>(
-      `UPDATE crm_options SET label = $3, description = $4, updated_at = now() WHERE kind = $1 AND id = $2
-       RETURNING kind, id, label, description, sort, locked, archived_at`,
-      [kind, id, label, description]
+      `UPDATE crm_options SET label = $3, description = $4, color = $5, updated_at = now() WHERE kind = $1 AND id = $2
+       RETURNING ${OPTION_COLS}`,
+      [kind, id, label, description, color]
     );
-    return { before: rows[0].label, after: mapOption(updated.rows[0]), renamedRecords };
+    return { before: rows[0].label, colorBefore: mapOption(rows[0]).color, after: mapOption(updated.rows[0]), renamedRecords };
   });
 }
 
 export async function setOptionArchived(kind: OptionKind, id: string, archived: boolean): Promise<CrmOption> {
   const db = await getDb();
-  const { rows } = await db.query<OptionRow>(`SELECT kind, id, label, description, sort, locked, archived_at FROM crm_options WHERE kind = $1 AND id = $2`, [kind, id]);
+  const { rows } = await db.query<OptionRow>(`SELECT ${OPTION_COLS} FROM crm_options WHERE kind = $1 AND id = $2`, [kind, id]);
   if (!rows[0]) throw new CrmNotFoundError("Opção não encontrada.");
   if (archived && rows[0].locked) throw new CrmInputError(`"${rows[0].label}" é usada quando nenhuma outra se aplica e não pode ser arquivada.`);
   const updated = await db.query<OptionRow>(
     `UPDATE crm_options SET archived_at = ${archived ? "COALESCE(archived_at, now())" : "NULL"}, updated_at = now() WHERE kind = $1 AND id = $2
-     RETURNING kind, id, label, description, sort, locked, archived_at`,
+     RETURNING ${OPTION_COLS}`,
     [kind, id]
   );
   return mapOption(updated.rows[0]);

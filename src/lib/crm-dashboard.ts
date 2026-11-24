@@ -76,8 +76,8 @@ async function metrics(from: string, to: string, ownerId: string | null): Promis
       args
     ),
     db.query(
-      `SELECT count(*) AS n FROM crm_tasks t JOIN crm_contacts c ON c.id = t.contact_id
-       WHERE c.archived_at IS NULL AND t.canceled_at IS NULL AND t.done_at >= $1 AND t.done_at < $2
+      `SELECT count(*) AS n FROM crm_tasks t LEFT JOIN crm_contacts c ON c.id = t.contact_id
+       WHERE (t.contact_id IS NULL OR c.archived_at IS NULL) AND t.canceled_at IS NULL AND t.done_at >= $1 AND t.done_at < $2
          AND ($3::text IS NULL OR t.owner_id = $3)`,
       args
     ),
@@ -147,8 +147,8 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
                 count(*) FILTER (WHERE x.day = x.today AND (x.all_day OR x.due_at >= now())) AS today
          FROM (
            SELECT t.due_at, t.all_day, (t.due_at AT TIME ZONE '${TZ}')::date AS day, (now() AT TIME ZONE '${TZ}')::date AS today
-           FROM crm_tasks t JOIN crm_contacts c ON c.id = t.contact_id
-           WHERE c.archived_at IS NULL AND t.done_at IS NULL AND t.canceled_at IS NULL AND t.due_at IS NOT NULL
+           FROM crm_tasks t LEFT JOIN crm_contacts c ON c.id = t.contact_id
+           WHERE (t.contact_id IS NULL OR c.archived_at IS NULL) AND t.done_at IS NULL AND t.canceled_at IS NULL AND t.due_at IS NOT NULL
              AND ($1::text IS NULL OR t.owner_id = $1)
          ) x`,
         [ownerId]
@@ -209,7 +209,7 @@ export async function getDashboard(from: string, to: string, ownerId: string | n
         `WITH d AS (
            SELECT d.* FROM crm_deals d JOIN crm_contacts c ON c.id = d.contact_id WHERE c.archived_at IS NULL
          ), t AS (
-           SELECT t.* FROM crm_tasks t JOIN crm_contacts c ON c.id = t.contact_id WHERE c.archived_at IS NULL AND t.canceled_at IS NULL
+           SELECT t.* FROM crm_tasks t LEFT JOIN crm_contacts c ON c.id = t.contact_id WHERE (t.contact_id IS NULL OR c.archived_at IS NULL) AND t.canceled_at IS NULL
          ), owners AS (
            SELECT owner_id FROM d UNION SELECT owner_id FROM t
          )

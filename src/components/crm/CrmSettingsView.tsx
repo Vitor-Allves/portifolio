@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  COLORED_KINDS,
   OPTION_KINDS,
   TAG_CATEGORIES,
   TAG_COLORS,
@@ -15,7 +16,7 @@ import {
   type TagColor,
 } from "@/lib/crm-catalog";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, crmSegment } from "./crm-styles";
-import { TagChip, useCatalog } from "./crm-catalog-context";
+import { TAG_DOT, TagChip, useCatalog } from "./crm-catalog-context";
 
 type Tab = OptionKind | "tags";
 
@@ -126,10 +127,12 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
   const all = catalog.options.filter((o) => o.kind === kind).sort((a, b) => a.sort - b.sort);
   const active = all.filter((o) => !o.archived);
   const archived = all.filter((o) => o.archived);
+  const colored = COLORED_KINDS.includes(kind);
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ label: "", description: "" });
+  const [draft, setDraft] = useState<{ label: string; description: string; color: TagColor }>({ label: "", description: "", color: "cinza" });
   const [newLabel, setNewLabel] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [newColor, setNewColor] = useState<TagColor>("azul");
   const [showArchived, setShowArchived] = useState(false);
   const base = "/api/crm/catalog/options/";
 
@@ -156,6 +159,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               maxLength={300}
               className={CRM_INPUT}
             />
+            {colored && <ColorSelect value={draft.color} onChange={(color) => setDraft({ ...draft, color })} label={`Cor de ${o.label}`} />}
             {kind === "segment" && used > 0 && draft.label.trim() !== o.label && (
               <p className="text-[11.5px] text-crm-amber">O novo nome também vai para as {used} empresas/contatos que usam este segmento.</p>
             )}
@@ -164,7 +168,8 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
                 type="button"
                 className={CRM_BTN_PRIMARY}
                 onClick={async () => {
-                  if (await run(() => call(`${base}${kind}/${o.id}/`, "PATCH", draft), "Alteração salva.")) setEditing(null);
+                  const body = colored ? draft : { label: draft.label, description: draft.description };
+                  if (await run(() => call(`${base}${kind}/${o.id}/`, "PATCH", body), "Alteração salva.")) setEditing(null);
                 }}
               >
                 Salvar
@@ -177,6 +182,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
         ) : (
           <div className="flex items-center gap-2">
             {!o.archived && <MoveButtons index={i} count={list.length} onMove={(to) => move(i, to)} label={o.label} />}
+            {colored && o.color && <span className={`h-3 w-3 shrink-0 rounded-full ${TAG_DOT[o.color]}`} title={`Cor: ${TAG_COLORS.find((c) => c.id === o.color)?.label ?? o.color}`} aria-hidden="true" />}
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold break-words">
                 {o.label}
@@ -192,7 +198,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               className={CRM_LINK_BTN}
               onClick={() => {
                 setEditing(o.id);
-                setDraft({ label: o.label, description: o.description ?? "" });
+                setDraft({ label: o.label, description: o.description ?? "", color: o.color ?? "cinza" });
               }}
               aria-label={`Editar ${o.label}`}
             >
@@ -226,10 +232,11 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
           </ul>
         )}
         <form
-          className="border-t border-crm-line px-3.5 py-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+          className={`border-t border-crm-line px-3.5 py-3 grid gap-2 ${colored ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]" : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"}`}
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await run(() => call(base, "POST", { kind, label: newLabel, description: newDescription }), `"${newLabel.trim()}" adicionada.`)) {
+            const body = { kind, label: newLabel, description: newDescription, ...(colored ? { color: newColor } : {}) };
+            if (await run(() => call(base, "POST", body), `"${newLabel.trim()}" adicionada.`)) {
               setNewLabel("");
               setNewDescription("");
             }
@@ -237,6 +244,7 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
         >
           <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={`Novo ${meta.singular}`} aria-label={`Novo ${meta.singular}`} maxLength={80} className={CRM_INPUT} />
           <input value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Descrição (opcional)" aria-label="Descrição" maxLength={300} className={CRM_INPUT} />
+          {colored && <ColorSelect value={newColor} onChange={setNewColor} label={`Cor do novo ${meta.singular}`} />}
           <button type="submit" disabled={!newLabel.trim()} className={CRM_BTN_PRIMARY}>
             Adicionar
           </button>

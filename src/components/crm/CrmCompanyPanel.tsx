@@ -10,6 +10,7 @@ import {
   isClosedStage,
   stageLabel,
   type CrmCompanyDetail,
+  type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
@@ -19,7 +20,8 @@ import { Mascot } from "./crm-brand";
 import { SegmentSelect, TagChips, useCatalog } from "./crm-catalog-context";
 import CrmTagsEditor from "./CrmTagsEditor";
 import { CompanyStatusChip, TemperatureChip } from "./crm-fields";
-import { shortDate } from "./crm-format";
+import { TASK_STATE_TONE, shortDate, taskDueLabel, taskState } from "./crm-format";
+import { TaskKindChip, type TaskDraft } from "./CrmTaskDialog";
 
 type Form = {
   name: string;
@@ -40,16 +42,23 @@ export default function CrmCompanyPanel({
   team,
   currentUserId,
   caps,
+  version,
   onClose,
   onOpenContact,
+  onOpenTask,
+  onNewTask,
   onChanged,
 }: {
   companyId: string;
   team: CrmTeamMember[];
   currentUserId: string;
   caps: CrmCapabilities;
+  /** Bumped after any change (e.g. a task saved in the task form): reload the tasks. */
+  version: number;
   onClose: () => void;
   onOpenContact: (id: string) => void;
+  onOpenTask: (taskId: string) => void;
+  onNewTask: (draft: TaskDraft) => void;
   onChanged: () => void;
 }) {
   const { label } = useCatalog();
@@ -59,6 +68,21 @@ export default function CrmCompanyPanel({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const canEdit = caps.editContacts;
+  const [tasks, setTasks] = useState<CrmTask[] | null>(null);
+
+  // Pending tasks on the company itself and on its contacts.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/crm/tasks/?status=pending&owner=all&companyId=${encodeURIComponent(companyId)}`)
+      .then(async (res) => {
+        const list = res.ok ? ((await res.json()) as { tasks: CrmTask[] }).tasks : [];
+        if (!cancelled) setTasks(list);
+      })
+      .catch(() => !cancelled && setTasks([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, version]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/crm/companies/${companyId}/`);
@@ -326,6 +350,44 @@ export default function CrmCompanyPanel({
                             <span className={`h-2 w-2 rounded-full ${STAGE_DOT[c.stage]}`} aria-hidden="true" />
                             {stageLabel(c.stage)}
                           </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className="space-y-2" aria-label="Tarefas da empresa">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className={CRM_LABEL}>Tarefas</h3>
+                  {caps.editPipeline && (
+                    <button type="button" className={CRM_LINK_BTN} onClick={() => onNewTask({ companyId: company.id, companyName: company.name })}>
+                      + Nova tarefa
+                    </button>
+                  )}
+                </div>
+                {tasks === null ? (
+                  <p className="text-[12.5px] text-crm-dim">Carregando...</p>
+                ) : tasks.length === 0 ? (
+                  <p className="text-[12.5px] text-crm-dim">Nenhuma tarefa pendente.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {tasks.map((t) => (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpenTask(t.id)}
+                          className="w-full text-left flex items-center gap-3 rounded-xl border border-crm-line bg-crm-card px-3 py-2 hover:border-crm-line-strong"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13px] font-semibold truncate">{t.title}</span>
+                            <span className="flex items-center gap-1.5 text-[11.5px] text-crm-dim min-w-0">
+                              <TaskKindChip kind={t.kind} small />
+                              <span className="truncate">{t.contactName ?? "Da empresa"}</span>
+                            </span>
+                          </span>
+                          <span className={`text-[12px] font-medium whitespace-nowrap ${TASK_STATE_TONE[taskState(t.dueAt, t.allDay)]}`}>{taskDueLabel(t.dueAt, t.allDay)}</span>
+                          <OwnerAvatar name={t.ownerName} />
                         </button>
                       </li>
                     ))}

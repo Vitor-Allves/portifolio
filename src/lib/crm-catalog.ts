@@ -1,7 +1,8 @@
 // Personalização do CRM (especificação v1.0, Fase 1): the editable lists and
 // tags, shared by the server and the screens. Pure — no database, no env.
 //
-// The defaults below are the seed of schema v9 (departments: v11). Codes (ids) never change
+// The defaults below are the seed of schema v9 (departments: v11; priorities,
+// the spec's task types and colors: v13). Codes (ids) never change
 // once a record uses them; only labels, order and archiving do.
 
 export const OPTION_KINDS = [
@@ -10,7 +11,8 @@ export const OPTION_KINDS = [
   { id: "service", label: "Serviços", singular: "serviço", hint: "O que a Legado oferece: usado em interesse do contato e nas oportunidades." },
   { id: "lost_reason", label: "Motivos de perda", singular: "motivo de perda", hint: "Perguntado quando uma oportunidade vai para Perdido." },
   { id: "won_reason", label: "Motivos de ganho", singular: "motivo de ganho", hint: "Por que fechamos o negócio." },
-  { id: "task_kind", label: "Tipos de tarefa", singular: "tipo de tarefa", hint: "Tipos de tarefa e atividade da agenda." },
+  { id: "task_kind", label: "Tipos de tarefa", singular: "tipo de tarefa", hint: "Tipos de tarefa e atividade da agenda. A cor aparece na agenda." },
+  { id: "priority", label: "Prioridades", singular: "prioridade", hint: "Prioridade das tarefas, da mais para a menos urgente (a ordem conta nos filtros)." },
   { id: "department", label: "Departamentos", singular: "departamento", hint: "Áreas da equipe, usadas em Usuários e permissões." },
 ] as const;
 
@@ -20,7 +22,7 @@ export function isOptionKind(v: unknown): v is OptionKind {
   return OPTION_KINDS.some((k) => k.id === v);
 }
 
-type Seed = { id: string; label: string; locked?: boolean };
+type Seed = { id: string; label: string; locked?: boolean; color?: TagColor };
 
 export const DEFAULT_OPTIONS: Record<OptionKind, Seed[]> = {
   source: [
@@ -49,12 +51,26 @@ export const DEFAULT_OPTIONS: Record<OptionKind, Seed[]> = {
     { id: "atendimento", label: "Atendimento" },
     { id: "outro", label: "Outro motivo", locked: true },
   ],
+  // The first five are the v9 seed; the rest (and every color) come with v13 (Fase 3).
   task_kind: [
-    { id: "ligacao", label: "Ligação" },
-    { id: "reuniao", label: "Reunião" },
-    { id: "whatsapp", label: "WhatsApp" },
-    { id: "email", label: "E-mail" },
-    { id: "tarefa", label: "Tarefa", locked: true },
+    { id: "ligacao", label: "Ligação", color: "azul" },
+    { id: "reuniao", label: "Reunião", color: "roxo" },
+    { id: "whatsapp", label: "WhatsApp", color: "verde" },
+    { id: "email", label: "E-mail", color: "turquesa" },
+    { id: "tarefa", label: "Tarefa", locked: true, color: "cinza" },
+    { id: "primeiro_contato", label: "Primeiro contato", color: "azul" },
+    { id: "follow_up", label: "Follow-up", color: "turquesa" },
+    { id: "preparacao_proposta", label: "Preparação de proposta", color: "amarelo" },
+    { id: "envio_proposta", label: "Envio de proposta", color: "amarelo" },
+    { id: "retorno_comercial", label: "Retorno comercial", color: "verde" },
+    { id: "acompanhamento_cliente", label: "Acompanhamento de cliente", color: "verde" },
+    { id: "atividade_interna", label: "Atividade interna", color: "cinza" },
+  ],
+  // Seeded by schema v13 (Fase 3). "media" is what a task gets when none is chosen.
+  priority: [
+    { id: "alta", label: "Alta", color: "vermelho" },
+    { id: "media", label: "Média", locked: true, color: "amarelo" },
+    { id: "baixa", label: "Baixa", color: "cinza" },
   ],
   // Seeded by schema v11 (Fase 2); editable like any list.
   department: [
@@ -67,7 +83,10 @@ export const DEFAULT_OPTIONS: Record<OptionKind, Seed[]> = {
 };
 
 /** What a record gets when its own value is missing or no longer valid. */
-export const OPTION_FALLBACK: Partial<Record<OptionKind, string>> = { source: "outro", lost_reason: "outro", won_reason: "outro", task_kind: "tarefa" };
+export const OPTION_FALLBACK: Partial<Record<OptionKind, string>> = { source: "outro", lost_reason: "outro", won_reason: "outro", task_kind: "tarefa", priority: "media" };
+
+/** Lists whose options carry a color (agenda and chips). */
+export const COLORED_KINDS: readonly OptionKind[] = ["task_kind", "priority"];
 
 export const TAG_CATEGORIES = [
   { id: "origem", label: "Origem", hint: "Todos os caminhos por onde o lead chegou (pode ter vários)." },
@@ -124,7 +143,17 @@ export const TAG_VIA = [
 
 export type TagVia = (typeof TAG_VIA)[number]["id"];
 
-export type CrmOption = { kind: OptionKind; id: string; label: string; description: string | null; sort: number; locked: boolean; archived: boolean };
+export type CrmOption = {
+  kind: OptionKind;
+  id: string;
+  label: string;
+  description: string | null;
+  sort: number;
+  locked: boolean;
+  archived: boolean;
+  /** Only for COLORED_KINDS (null elsewhere). */
+  color: TagColor | null;
+};
 export type CrmTag = { id: string; category: TagCategory; label: string; description: string | null; color: TagColor; sort: number; archived: boolean };
 /** Every option and tag, archived ones included (old records still need their labels). */
 export type CrmCatalog = { options: CrmOption[]; tags: CrmTag[] };
@@ -150,7 +179,16 @@ export function slugFromLabel(label: string): string {
 
 export const CATALOG_DEFAULT: CrmCatalog = {
   options: (Object.entries(DEFAULT_OPTIONS) as [OptionKind, Seed[]][]).flatMap(([kind, list]) =>
-    list.map((o, i) => ({ kind, id: o.id, label: o.label, description: null, sort: i, locked: o.locked ?? false, archived: false }))
+    list.map((o, i) => ({
+      kind,
+      id: o.id,
+      label: o.label,
+      description: null,
+      sort: i,
+      locked: o.locked ?? false,
+      archived: false,
+      color: COLORED_KINDS.includes(kind) ? (o.color ?? "cinza") : null,
+    }))
   ),
   tags: DEFAULT_TAGS.map((t, i) => ({ ...t, description: null, sort: i, archived: false })),
 };

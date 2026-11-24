@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatPhone, type CrmContactCard, type CrmTask, type CrmTeamMember } from "@/lib/crm-types";
-import { CRM_FILTER, taskKindIcon } from "./crm-styles";
-import { TASK_STATE_TONE, relativeTime, taskDueLabel, taskState, type TaskState } from "./crm-format";
+import { CRM_BTN_PRIMARY, CRM_FILTER, CRM_SEGMENT_TRACK, crmSegment, taskKindIcon } from "./crm-styles";
+import { TASK_STATE_TONE, dateTime, relativeTime, taskDueLabel, taskState, type TaskState } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
 import { useCatalog } from "./crm-catalog-context";
+import { PriorityChip, type TaskDraft } from "./CrmTaskDialog";
 
 const GROUPS: { id: TaskState; label: string }[] = [
   { id: "overdue", label: "Atrasadas" },
@@ -55,13 +56,19 @@ export function TaskRow({
         </span>
         {showContact && (
           <span className="block pl-[22px] text-[12px] text-crm-dim truncate">
-            {task.contactName}
-            {task.company ? ` · ${task.company}` : ""}
+            {task.contactName ?? task.company ?? "Atividade interna"}
+            {task.contactName && task.company ? ` · ${task.company}` : ""}
             {task.dealTitle && task.dealTitle !== task.company ? ` · ${task.dealTitle}` : ""}
           </span>
         )}
+        <span className="flex flex-wrap items-center gap-1.5 pl-[22px] mt-0.5">
+          {task.priority !== "media" && <PriorityChip priority={task.priority} />}
+          {task.status === "em_andamento" && <span className="text-[10.5px] font-medium text-crm-accent">Em andamento</span>}
+        </span>
       </button>
-      <span className={`shrink-0 text-[12px] font-medium whitespace-nowrap ${TASK_STATE_TONE[state]}`}>{taskDueLabel(task.dueAt, task.allDay, now)}</span>
+      <span className={`shrink-0 text-[12px] font-medium whitespace-nowrap ${task.doneAt ? "text-crm-faint" : TASK_STATE_TONE[state]}`}>
+        {task.doneAt ? `Concluída ${dateTime(task.doneAt)}` : taskDueLabel(task.dueAt, task.allDay, now)}
+      </span>
       <OwnerAvatar name={task.ownerName} />
     </div>
   );
@@ -74,7 +81,10 @@ export default function CrmTasksView({
   currentUserId,
   now,
   canComplete,
+  version,
   onOpenContact,
+  onOpenTask,
+  onNewTask,
   onChanged,
 }: {
   tasks: CrmTask[];
@@ -84,16 +94,42 @@ export default function CrmTasksView({
   now: number;
   /** Profiles that can't touch the funnel (Marketing) see tasks without the "concluir" box. */
   canComplete: boolean;
+  version: number;
   onOpenContact: (contactId: string, tab?: "conversa" | "negocio") => void;
+  onOpenTask: (taskId: string) => void;
+  onNewTask: (draft: TaskDraft) => void;
   onChanged: () => void;
 }) {
+  const { options } = useCatalog();
   const [owner, setOwner] = useState("all");
+  const [kind, setKind] = useState("");
+  const [priority, setPriority] = useState("");
+  const [status, setStatus] = useState<"pending" | "em_andamento" | "done">("pending");
+  const [done, setDone] = useState<{ key: number; tasks: CrmTask[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Finished tasks aren't on the board's list: fetched when that tab opens (the latest 1000).
+  useEffect(() => {
+    if (status !== "done") return;
+    let cancelled = false;
+    fetch("/api/crm/tasks/?status=done&owner=all")
+      .then(async (res) => {
+        const list = res.ok ? ((await res.json()) as { tasks: CrmTask[] }).tasks : [];
+        if (!cancelled) setDone({ key: version, tasks: list });
+      })
+      .catch(() => !cancelled && setDone({ key: version, tasks: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [status, version]);
+
   const mine = (t: CrmTask) =>
     owner === "all" ? true : owner === "mine" ? t.ownerId === currentUserId : owner === "none" ? !t.ownerId : t.ownerId === owner;
-  const visible = tasks.filter(mine);
+  const source = status === "done" ? (done?.tasks ?? []) : tasks;
+  const visible = source.filter(
+    (t) => mine(t) && (!kind || t.kind === kind) && (!priority || t.priority === priority) && (status !== "em_andamento" || t.status === "em_andamento")
+  );
 
   async function complete(t: CrmTask) {
     setBusy(t.id);
@@ -124,11 +160,44 @@ export default function CrmTasksView({
             </option>
           ))}
         </select>
-        <p className="text-[12px] text-crm-dim">Crie tarefas e registre ligações e reuniões no painel do contato, aba Negócio e tarefas.</p>
+        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Tipo de tarefa" className={CRM_FILTER}>
+          <option value="">Todos os tipos</option>
+          {options("task_kind").map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Prioridade" className={CRM_FILTER}>
+          <option value="">Todas as prioridades</option>
+          {options("priority").map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+        {canComplete && (
+          <button type="button" onClick={() => onNewTask({})} className={`${CRM_BTN_PRIMARY} ml-auto`}>
+            + Nova tarefa
+          </button>
+        )}
+      </div>
+      <div className={`${CRM_SEGMENT_TRACK} w-fit`} role="tablist" aria-label="Situação">
+        {(
+          [
+            ["pending", "Pendentes"],
+            ["em_andamento", "Em andamento"],
+            ["done", "Concluídas"],
+          ] as const
+        ).map(([id, text]) => (
+          <button key={id} type="button" role="tab" aria-selected={status === id} onClick={() => setStatus(id)} className={crmSegment(status === id)}>
+            {text}
+          </button>
+        ))}
       </div>
       {error && <p className="text-[12.5px] text-crm-red">{error}</p>}
 
-      {inbox.length > 0 && (
+      {inbox.length > 0 && status === "pending" && (
         <section aria-label="Mensagens sem resposta" className="rounded-2xl border border-crm-accent/30 bg-crm-card shadow-[var(--crm-shadow)] overflow-hidden">
           <header className="px-4 py-2.5 border-b border-crm-line flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-crm-accent" aria-hidden="true" />
@@ -157,11 +226,31 @@ export default function CrmTasksView({
         </section>
       )}
 
-      {visible.length === 0 ? (
+      {status === "done" ? (
+        <section aria-label="Concluídas" className="rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] overflow-hidden">
+          {done?.key !== version ? (
+            <p className="px-4 py-4 text-[12.5px] text-crm-dim">Carregando...</p>
+          ) : visible.length === 0 ? (
+            <p className="px-4 py-4 text-[12.5px] text-crm-faint">Nenhuma tarefa concluída com esses filtros.</p>
+          ) : (
+            <ul className="divide-y divide-crm-line">
+              {visible.map((t) => (
+                <li key={t.id} className="hover:bg-crm-hover transition-colors">
+                  <TaskRow task={t} now={now} onOpen={() => onOpenTask(t.id)} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : visible.length === 0 ? (
         <div className="flex items-end justify-between gap-4 rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] px-6 pt-5 overflow-hidden">
           <div className="pb-6">
             <p className="crm-display text-[17px] mb-1">Tudo em dia</p>
-            <p className="text-[12.5px] text-crm-dim">Nenhuma tarefa pendente{owner === "mine" ? " sua" : ""}. Agende o próximo passo de cada negócio no painel do contato.</p>
+            <p className="text-[12.5px] text-crm-dim">
+              Nenhuma tarefa {status === "em_andamento" ? "em andamento" : "pendente"}
+              {owner === "mine" ? " sua" : ""}
+              {kind || priority ? " com esses filtros" : ""}. Agende o próximo passo de cada negócio no painel do contato ou em + Nova tarefa.
+            </p>
           </div>
           <Mascot name="titanWin" decorative className="h-28 w-auto shrink-0" />
         </div>
@@ -178,7 +267,7 @@ export default function CrmTasksView({
               <ul className="divide-y divide-crm-line">
                 {items.map((t) => (
                   <li key={t.id} className="hover:bg-crm-hover transition-colors">
-                    <TaskRow task={t} now={now} busy={busy === t.id} onDone={canComplete ? () => void complete(t) : undefined} onOpen={() => onOpenContact(t.contactId, "negocio")} />
+                    <TaskRow task={t} now={now} busy={busy === t.id} onDone={canComplete ? () => void complete(t) : undefined} onOpen={() => onOpenTask(t.id)} />
                   </li>
                 ))}
               </ul>

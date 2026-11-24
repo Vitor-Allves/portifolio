@@ -41,9 +41,16 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (`negotiated_cents`, o que vale um negócio ganho), origem própria
   (`source`, começa com a do contato), temperatura própria (vazia = a do
   contato), motivo e detalhe do ganho (`won_reason`, `won_note`).
-- `crm_tasks` — tarefas e atividades: tipo (ligação, reunião, WhatsApp,
-  e-mail, tarefa), título, data/hora (`all_day` = sem horário), responsável,
-  oportunidade, conclusão com resultado, cancelamento.
+- `crm_tasks` — tarefas e atividades: tipo (lista de Personalização), título,
+  data/hora (`all_day` = sem horário), responsável, oportunidade, conclusão
+  com resultado, cancelamento. Desde a v13: descrição, prioridade
+  (`priority`, lista de Personalização), situação (`status`: pendente, em
+  andamento, concluída, cancelada; `done_at`/`canceled_at` guardam quando e
+  quem), lembrete (`remind_minutes` antes, `remind_at`, `reminder_dismissed_at`)
+  e empresa (`company_id`). `contact_id` pode ficar vazio: tarefa só de uma
+  empresa, ou atividade interna (sem contato nem empresa).
+- `crm_task_events` (v13) — o histórico de cada tarefa: criada, editada
+  (quais campos), reagendada, responsável trocado, mudança de situação.
 - `crm_companies` — empresas; `name_key` é o nome normalizado (sem acento,
   caixa, pontuação e sufixos como LTDA/ME/S.A.) e é único, então "Clínica
   Ribeiro" e "clinica ribeiro ltda" são a mesma empresa. Desde a v10: razão
@@ -66,10 +73,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   o motivo), id da mensagem no WhatsApp. `crm_messages.campaign_id` liga a
   mensagem enviada à campanha.
 - `crm_options` — as listas editáveis (Personalização): origens, segmentos,
-  serviços, motivos de perda e de ganho, tipos de tarefa. Chave `(kind, id)`;
+  serviços, motivos de perda e de ganho, tipos de tarefa, departamentos e
+  prioridades. Tipos de tarefa e prioridades têm cor (`color`, v13), usada na
+  agenda e nos selos. Chave `(kind, id)`;
   o código (`id`) nunca muda depois de usado; arquivar (`archived_at`) tira
   dos formulários sem mexer nos registros. `locked` marca a opção que o
-  sistema usa quando nada se aplica ("Outro", "Tarefa"), que não se arquiva.
+  sistema usa quando nada se aplica ("Outro", "Tarefa", "Média"), que não se arquiva.
   Segmentos ficam como texto nos registros; renomear um segmento renomeia
   nas empresas e contatos que o usam.
 - `crm_tags` (categoria Origem/Ação/Classificação, cor, descrição,
@@ -203,6 +212,19 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   histórico.
 - **Horários em Brasília:** tarefas são gravadas no fuso de Brasília (-03:00);
   tarefa "dia todo" fica ao meio-dia para não mudar de dia em nenhum fuso.
+- **Quem vê cada tarefa:** a tarefa segue o registro a que pertence — o
+  responsável do contato; sem contato, o da empresa; atividade interna, o
+  responsável da própria tarefa. O Comercial vê as dos seus registros e as
+  de registros sem responsável; não cria tarefa em empresa da carteira de
+  outra pessoa.
+- **Lembretes:** só dentro do CRM (o sino no topo, que confere a cada minuto
+  com o CRM aberto); nada vai por WhatsApp ou e-mail. Escolhas: na hora,
+  15 min, 1 h ou 1 dia antes; tarefa de dia todo: no dia ou na véspera, às
+  8h. Reagendar faz o lembrete valer de novo; concluir ou cancelar tira do
+  sino. Dispensar o próprio lembrete não exige poder editar o funil.
+- **Situação da tarefa:** cancelada só volta reativada (pendente); concluir
+  pede o resultado (opcional). Tudo entra no histórico da tarefa e, quando
+  há contato, no histórico do contato.
 
 ## Backups e recuperação
 
@@ -226,6 +248,33 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 3, entrega 1: tarefas e agenda (schema v13)
+
+- **Tarefa completa:** título, descrição, tipo, prioridade, situação
+  (pendente, em andamento, concluída, cancelada), data e horário, lembrete,
+  responsável, contato *ou* empresa *ou* atividade interna, oportunidade e
+  histórico próprio. Um só formulário abre de Agenda, Tarefas, do painel da
+  empresa e (em "Detalhes") do painel do contato, com atalho para o registro.
+- **Agenda em dia, semana e mês**, filtro por pessoa e por tipo, cada tarefa
+  na cor do tipo; "+" em cada dia para criar ali.
+- **Tarefas:** filtros por tipo e prioridade, abas Pendentes / Em andamento /
+  Concluídas, "+ Nova tarefa".
+- **Lembretes no sino** do topo do CRM (só dentro do CRM) e contagem das
+  tarefas atrasadas.
+- **Personalização:** os tipos de tarefa da especificação (primeiro contato,
+  follow-up, preparação e envio de proposta, retorno comercial,
+  acompanhamento de cliente, atividade interna) entram depois dos que já
+  existiam; nova lista **Prioridades** (Alta, Média, Baixa); cor por tipo e
+  por prioridade.
+- Banco v13: só acréscimos (colunas em `crm_tasks` e `crm_options`, tabela
+  `crm_task_events`); `crm_tasks.contact_id` deixa de ser obrigatório. As
+  tarefas existentes ficam como estão, com a situação tirada do que já estava
+  gravado (concluída/cancelada/pendente) e prioridade Média.
+- Painel: tarefas sem contato (atividades internas, de empresa) entram nas
+  contagens.
+- Testes: `tasks-api` e `tasks-e2e`; `schema` agora também sobe um banco da
+  v12 com tarefas para a v13.
 
 ### Especificação-mestra v1.0 — Fase 2, entrega 2: carteiras, auditoria e acesso (schema v12)
 

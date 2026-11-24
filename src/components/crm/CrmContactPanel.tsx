@@ -48,6 +48,10 @@ type CrmContactPanelProps = {
   embedded?: boolean;
   /** What the viewer's CRM profile allows (the server enforces it too). */
   caps: CrmCapabilities;
+  /** Opens a task in the full task form (description, priority, history...). */
+  onOpenTask?: (taskId: string) => void;
+  /** Bumped when a task was saved in the task form: reload this contact. */
+  tasksVersion?: number;
 };
 
 const PANEL_REFRESH_MS = 5_000;
@@ -300,6 +304,8 @@ export default function CrmContactPanel({
   currentUserId,
   embedded = false,
   caps,
+  onOpenTask,
+  tasksVersion = 0,
 }: CrmContactPanelProps) {
   const { label, options } = useCatalog();
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
@@ -340,7 +346,7 @@ export default function CrmContactPanel({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [load]);
+  }, [load, tasksVersion]);
 
   // Opening the panel already marked the messages as read server-side.
   useEffect(() => {
@@ -699,6 +705,7 @@ export default function CrmContactPanel({
                 selectedDealId={deal?.id ?? null}
                 onSelectDeal={setDealPick}
                 now={now}
+                onOpenTask={onOpenTask}
                 onReload={async () => {
                   await load();
                   onChanged();
