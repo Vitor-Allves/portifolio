@@ -148,6 +148,25 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 - `crm_diagnostics` (v23) — o diagnóstico comercial do lead: uma linha por
   versão (`version` 1, 2, 3...; nada é sobrescrito), os campos em `data`
   (JSON), a oportunidade a que se refere (opcional), quem fez e quando.
+- `crm_proposals` (v24) — propostas: número (`number`, sequência
+  `crm_proposal_number_seq`), oportunidade/lead/empresa, situação (em
+  elaboração, enviada, visualizada, em negociação, aprovada, recusada,
+  expirada, cancelada), versão atual e versão enviada, totais (mensal, único,
+  total, % de desconto), desconto autorizado (quem, quanto, quando), emissão
+  e validade, link público (`share_token`) e datas de envio, visualização e
+  decisão. O responsável comercial é o da oportunidade.
+- `crm_proposal_versions` (v24) — o conteúdo de cada versão (JSON: textos,
+  serviços, valores, condições, cliente) e a impressão digital (`content_hash`,
+  SHA-256 do conteúdo); motivo e diferenças da versão anterior; `sent_at`
+  marca a versão enviada, que nunca mais muda.
+- `crm_proposal_events` (v24) — a linha do tempo da proposta: criada,
+  alterada, nova versão, enviada (canal), aberta pelo cliente (IP e
+  navegador), link criado/renovado/desativado, PDF, situação.
+- `crm_proposal_approvals` (v24) — aprovações e recusas: versão, nome,
+  e-mail, documento, comentário, impressão digital do conteúdo, se veio do
+  cliente pelo link (IP, navegador) ou foi registrada pela equipe (quem).
+- `crm_proposal_templates` e `crm_settings` (v24) — modelos de proposta e o
+  desconto máximo sem autorização (`proposal_discount_limit`).
 - `crm_files` (v23) — documentos e anexos: o arquivo (`content`, até 4 MB,
   conferido no banco), nome, tipo, tamanho, `sha256`, quem enviou e quando;
   pertence a exatamente um lead, empresa ou cliente ativo (e, no lead,
@@ -491,6 +510,50 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — propostas e orçamentos (schema v24)
+
+- **Proposta dentro da oportunidade** (especificação, item 3.1): em "Negócio
+  e tarefas", "+ Nova proposta" (de um modelo, ou do serviço e valor da
+  oportunidade). Número sequencial, cliente e empresa da oportunidade,
+  responsável comercial, emissão, validade, vencimento, serviços (do catálogo
+  ou personalizados) com descrição, quantidade, valor unitário, desconto em
+  R$ ou %, cobrança mensal ou única, totais, condições de pagamento,
+  periodicidade, prazo de execução e observações.
+- **Modelos e catálogo** (3.2, 3.3): Personalização → Propostas tem os
+  modelos (apresentação, condições, validade e serviços) e o desconto máximo
+  sem autorização (padrão 10%). Acima dele, a proposta só é enviada depois que
+  um Gestor autoriza (a do próprio Gestor já sai autorizada).
+- **Envio e link** (3.3): o vendedor registra como enviou (link, WhatsApp,
+  e-mail, PDF ou reunião) — o CRM não envia nada sozinho. No primeiro envio
+  nasce o link público `/proposta/<código>` (aleatório; pode ser renovado ou
+  desativado) e a oportunidade passa para "Proposta enviada" se ainda estava
+  antes (o serviço e o valor vêm da proposta quando faltam). PDF com a
+  identidade da Legado, de qualquer versão.
+- **Situações** (3.4): Em elaboração, Enviada, Visualizada, Em negociação,
+  Aprovada, Recusada, Expirada, Cancelada. "Visualizada" só quando a página
+  do link roda num navegador (a própria página avisa o CRM; pré-visualização
+  de link no WhatsApp/e-mail e a equipe logada não contam). Passada a
+  validade, a enviada vira Expirada sozinha. Aprovada e cancelada são finais.
+- **Versões** (3.5): enquanto a versão atual não foi enviada, é um rascunho
+  editado no lugar. Depois de enviada (ou recusada/expirada), qualquer
+  alteração vira a versão seguinte, com o motivo obrigatório e a lista do que
+  mudou (valores antes e depois, serviços incluídos, alterados e retirados,
+  descontos), quem e quando. A anterior fica guardada e tem PDF.
+- **Aprovação digital** (3.6): no link, o cliente aprova (nome, e-mail,
+  documento opcional, "li e aprovo") ou recusa. Fica registrado: versão,
+  impressão digital do conteúdo aprovado, data, IP e navegador; a página
+  mostra a aprovação depois. Se a proposta mudou enquanto ele lia, a resposta
+  é recusada e ele recarrega. A equipe pode registrar uma aprovação ou recusa
+  que veio por outro meio (com a descrição). A aprovação não substitui o
+  contrato. O responsável (e, na aprovação, os Gestores) recebe aviso no sino.
+- **Permissões:** quem vê o lead vê as propostas; criar, alterar, enviar e
+  registrar respostas só quem trabalha na oportunidade (o Comercial nas suas;
+  Marketing não). Tudo vai para o histórico do lead, para a linha do tempo da
+  proposta e para a auditoria (`crm.proposal_*`).
+- Banco v24: `crm_proposals`, `crm_proposal_versions`, `crm_proposal_events`,
+  `crm_proposal_approvals`, `crm_proposal_templates`, `crm_settings`.
+- Testes: `proposals-api` e `proposals-e2e`; o teste de banco confere a v24.
 
 ### Evolução v1.0 — cadastros, duplicidade, diagnóstico e documentos (schema v23)
 

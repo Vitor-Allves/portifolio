@@ -17,6 +17,7 @@ import {
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, taskKindIcon } from "./crm-styles";
 import { closeGroupLabel } from "@/lib/crm-catalog";
 import CrmDiagnosisSection from "./CrmDiagnosis";
+import CrmDealProposals from "./CrmDealProposals";
 import { TASK_STATE_TONE, shortDate, spDate, taskDueLabel, taskState, timeOfDay } from "./crm-format";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { useCatalog } from "./crm-catalog-context";
@@ -368,6 +369,7 @@ export default function CrmDealsTasksTab({
   startNewDeal = false,
   clients,
   canAuthorizeParallel = false,
+  onOpenProposal,
 }: {
   detail: CrmContactDetail;
   /** Profiles that can't touch the funnel (Marketing) see opportunities and tasks without editing them. */
@@ -386,6 +388,8 @@ export default function CrmDealsTasksTab({
   clients?: { canCreate: boolean; onOpen: (clientId: string) => void };
   /** Gestor / Administrador: may authorize a second negotiation with the same lead or company. */
   canAuthorizeParallel?: boolean;
+  /** Opens a proposal (Propostas). */
+  onOpenProposal?: (id: string) => void;
 }) {
   const { label, stageDot } = useCatalog();
   const [error, setError] = useState<string | null>(null);
@@ -538,6 +542,7 @@ export default function CrmDealsTasksTab({
           </div>
         )}
         {selected && !readOnly && <DealEditor key={selected.id} deal={selected} send={send} />}
+        {selected && onOpenProposal && <CrmDealProposals key={`p-${selected.id}`} dealId={selected.id} closed={isClosedStage(selected.stage)} canCreate={!readOnly} onOpen={onOpenProposal} />}
       </section>
 
       <CrmDiagnosisSection contactId={detail.id} deals={detail.deals} canEdit={!readOnly} onSaved={() => void onReload()} />

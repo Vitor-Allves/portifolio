@@ -23,8 +23,9 @@ import {
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, crmSegment } from "./crm-styles";
 import { CRM_CONTRACT_BILLINGS, formatBRL } from "@/lib/crm-types";
 import { TAG_DOT, TagChip, useCatalog } from "./crm-catalog-context";
+import CrmProposalSettings from "./CrmProposalSettings";
 
-type Tab = OptionKind | "tags";
+type Tab = OptionKind | "tags" | "proposals";
 
 async function call(url: string, method: string, body?: unknown): Promise<string | null> {
   const res = await fetch(url, {
@@ -78,7 +79,7 @@ export default function CrmSettingsView() {
     [app]
   );
 
-  const tabs: { id: Tab; label: string }[] = [...OPTION_KINDS.map((k) => ({ id: k.id as Tab, label: k.label })), { id: "tags", label: "Etiquetas" }];
+  const tabs: { id: Tab; label: string }[] = [...OPTION_KINDS.map((k) => ({ id: k.id as Tab, label: k.label })), { id: "tags", label: "Etiquetas" }, { id: "proposals", label: "Propostas" }];
 
   return (
     <section aria-label="Personalização do CRM" className="space-y-4 max-w-4xl">
@@ -101,6 +102,8 @@ export default function CrmSettingsView() {
       )}
       {!data ? (
         !error && <p className="text-[12.5px] text-crm-dim">Carregando...</p>
+      ) : tab === "proposals" ? (
+        <CrmProposalSettings run={run} />
       ) : tab === "tags" ? (
         <TagsPanel catalog={data.catalog} usage={data.usage} run={run} />
       ) : (

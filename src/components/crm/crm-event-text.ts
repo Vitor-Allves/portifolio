@@ -25,6 +25,22 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
       return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}${p.via === "carteira" ? " (carteira)" : p.via === "transferencia" ? " (transferência aprovada)" : ""}`;
     case "diagnosis":
       return `Diagnóstico comercial (versão ${String(p.version ?? "")}): ${String(p.need ?? "")}`;
+    case "proposal": {
+      const n = `Proposta nº ${String(p.number ?? "").padStart(4, "0")}`;
+      const ch = { link: "link", whatsapp: "WhatsApp", email: "e-mail", pdf: "PDF", presencial: "em reunião" }[String(p.channel)] ?? String(p.channel ?? "");
+      if (p.action === "created") return `${n} criada${typeof p.totalCents === "number" && p.totalCents > 0 ? ` (${formatBRL(p.totalCents)})` : ""}`;
+      if (p.action === "version") return `${n}: versão ${String(p.version)} — ${String(p.reason ?? "")}`;
+      if (p.action === "sent") return `${n} enviada (versão ${String(p.version)}, por ${ch})${typeof p.totalCents === "number" ? ` · ${formatBRL(p.totalCents)}` : ""}`;
+      if (p.action === "resent") return `${n} reenviada (versão ${String(p.version)}, por ${ch})`;
+      if (p.action === "viewed") return `${n} visualizada pelo cliente`;
+      if (p.action === "discount") return `${n}: desconto de ${String(p.pct)}% autorizado`;
+      if (p.action === "expired") return `${n} expirou (passou da validade)`;
+      if (p.action === "aprovada" || p.action === "recusada")
+        return `${n} ${String(p.action)}${p.via === "cliente" ? ` pelo cliente${p.name ? ` (${String(p.name)})` : ""}, online` : ` (registrada pela equipe)${p.reason ? `: ${String(p.reason)}` : ""}`}`;
+      if (p.action === "em_negociacao") return `${n} em negociação`;
+      if (p.action === "cancelada") return `${n} cancelada${p.reason ? `: ${String(p.reason)}` : ""}`;
+      return n;
+    }
     case "file":
       return p.action === "archived" ? `Documento arquivado: ${String(p.name ?? "")}` : `Documento anexado: ${String(p.name ?? "")}`;
     case "transfer": {

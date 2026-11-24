@@ -78,6 +78,15 @@ regras que valem para todas as fases. Atualizar a cada fase.
   Enviar dados de leads e clientes para a Anthropic é tratamento de dados
   pessoais por um fornecedor: avalie e registre isso na política de
   privacidade antes de ligar a IA.
+- Link público de proposta (evolução v1.0): `/proposta/<código>` com 24
+  bytes aleatórios, fora do login (é para o cliente). Mostra só a versão
+  enviada daquela proposta, não é indexado (`noindex`) e não repassa o
+  endereço (`no-referrer`); o vendedor pode renovar (o antigo para de
+  funcionar) ou desativar. As rotas públicas têm limite de tentativas por IP;
+  quem está logado como equipe não marca "visualizada" nem responde pelo
+  cliente. A aprovação guarda nome, e-mail, documento, IP, navegador, versão
+  e a impressão digital (SHA-256) do conteúdo — evidência de aceite, não
+  assinatura eletrônica qualificada.
 - Documentos e anexos (evolução v1.0): até 4 MB, guardados no banco (com
   `sha256`); só PDF, Office, imagens JPEG/PNG/WebP, texto e CSV, com o tipo
   conferido pelos primeiros bytes do arquivo (um executável renomeado para

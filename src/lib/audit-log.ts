@@ -48,7 +48,13 @@ export type AuditAction =
   | "crm.intelligence_link"
   | "crm.ai_request"
   | "crm.transfer_request"
-  | "crm.transfer_decision";
+  | "crm.transfer_decision"
+  | "crm.proposal_change"
+  | "crm.proposal_send"
+  | "crm.proposal_status"
+  | "crm.proposal_discount"
+  | "crm.proposal_link"
+  | "crm.proposal_settings";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

@@ -108,7 +108,15 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   só com autorização do Gestor (fica no histórico); diagnóstico comercial
   em versões; documentos e anexos (lead, empresa, cliente ativo); catálogo
   de serviços com escopo, valor de referência, cobrança, prazo e condições.
-- [ ] 5. Propostas
+- [x] 5. Propostas — número sequencial, ligada à oportunidade (lead,
+  empresa, responsável), serviços do catálogo ou personalizados com
+  quantidade, valor e desconto (R$ ou %), totais mensal/único, condições,
+  validade e vencimento; modelos na Personalização; desconto acima do limite
+  só com autorização do Gestor; registro de envio (link, WhatsApp, e-mail,
+  PDF, reunião); PDF com a identidade da Legado; link público com
+  visualização confirmada pela página e aprovação/recusa online com
+  evidências; versão enviada congelada (alterar cria a próxima, com motivo e
+  diferenças); 8 situações, expiração automática; tela Propostas.
 - [ ] 6. Contratos e operação
 - [ ] 7. Financeiro e comissões
 - [ ] 8. Automações, agendamento, indicadores

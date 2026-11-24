@@ -45,6 +45,8 @@ export type CrmPdfInput = {
   orientation?: "portrait" | "landscape";
   /** Footer note; default "Documento interno". */
   footerNote?: string;
+  /** Under "Legado Enterprise" at the top right; default "CRM". */
+  headerLabel?: string;
 };
 
 async function readDataUrl(rel: string): Promise<string | null> {
@@ -108,7 +110,7 @@ export async function buildCrmPdf(input: CrmPdfInput): Promise<Uint8Array> {
     doc.setFont(body, "normal");
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text("CRM", W - MX, 15.5, { align: "right" });
+    doc.text(input.headerLabel ?? "CRM", W - MX, 15.5, { align: "right" });
     doc.setDrawColor(...BORDER);
     doc.setLineWidth(0.3);
     doc.line(MX, 22, W - MX, 22);

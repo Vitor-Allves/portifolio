@@ -10,6 +10,7 @@ export type CrmView =
   | "dashboard"
   | "board"
   | "conversations"
+  | "proposals"
   | "tasks"
   | "agenda"
   | "contacts"
@@ -72,6 +73,15 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
     hint: "Oportunidades por etapa",
     description: "Cada card é uma oportunidade de negócio. Arraste entre as colunas para avançar; o topo de cada coluna mostra a quantidade e o valor.",
     tip: "Arraste o card para mudar a etapa. Para encerrar, o CRM pede a tabulação: o resultado ou o motivo, e uma observação; reabrir pede a justificativa.",
+    mascot: "titanWelcome",
+  },
+  {
+    group: "comercial",
+    id: "proposals",
+    label: "Propostas",
+    hint: "Orçamentos e aprovação",
+    description: "As propostas de cada oportunidade: versões, envio, link para o cliente aprovar online, PDF e a situação de cada uma (enviada, visualizada, aprovada...).",
+    tip: "Faça a proposta dentro da oportunidade (Negócio e tarefas). Depois de enviada, alterar cria uma versão nova; a anterior fica guardada.",
     mascot: "titanWelcome",
   },
   {
@@ -202,6 +212,7 @@ const ICONS: Record<CrmView, React.ReactNode> = {
   ),
   board: <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />,
   transfers: <path d="M7 4 2.5 8.5 7 13v-3h9V7H7V4Zm10 7v3H8v3h9v3l4.5-4.5L17 11Z" />,
+  proposals: <path d="M6 2h9l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm8 1.5V8h4.5L14 3.5ZM8 11v2h8v-2H8Zm0 4v2h5v-2H8Zm7.2 1.4 1.4-1.4 1.4 1.4 2.8-2.8 1.4 1.4-4.2 4.2-2.8-2.8Z" />,
   reports: <path d="M6 2h9l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm8 1.5V8h4.5L14 3.5ZM8 12v6h2v-6H8Zm3.5 2v4h2v-4h-2Zm3.5-3v7h2v-7h-2Z" />,
   conversations: (
     <path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v10.5A1.5 1.5 0 0 1 20 17H9.2l-4.4 3.7A.5.5 0 0 1 4 20.3V17a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5Zm3 4.5v1.8h10V8H7Zm0 3.8v1.8h7v-1.8H7Z" />

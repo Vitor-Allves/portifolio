@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 23;
+const LATEST = 24;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,19 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v22: undo exactly what v23 (cadastros, diagnóstico, documentos) added.
+// Back to v23: undo exactly what v24 (propostas) added.
+async function downgradeToV23(name) {
+  await query(
+    name,
+    `DROP TABLE crm_proposal_approvals; DROP TABLE crm_proposal_events; DROP TABLE crm_proposal_versions; DROP TABLE crm_proposals;
+     DROP TABLE crm_proposal_templates; DROP TABLE crm_settings; DROP SEQUENCE crm_proposal_number_seq;
+     DELETE FROM schema_migrations WHERE version = 24;`
+  );
+}
+
+// Back to v22: undo exactly what v24 and v23 (cadastros, diagnóstico, documentos) added.
 async function downgradeToV22(name) {
+  await downgradeToV23(name);
   await query(
     name,
     `DROP TABLE crm_files; DROP TABLE crm_diagnostics;
@@ -338,6 +349,17 @@ try {
   refusedBig = true;
 }
 ok(refusedBig, "v23: files over 4 MB are refused by the database too");
+// v24: proposals start empty, numbered from 1; a status outside the list is refused.
+ok((await query(B, `SELECT (SELECT count(*) FROM crm_proposals) + (SELECT count(*) FROM crm_proposal_templates) + (SELECT count(*) FROM crm_settings) AS n`))[0].n === "0", "v24: no proposals, templates or settings yet");
+await query(B, `INSERT INTO crm_proposals (id, deal_id, contact_id, title, issue_date, valid_until) VALUES ('pr1', 'keep-deal', 'keep-me', 'Teste', now()::date, now()::date + 10)`);
+ok((await query(B, `SELECT number FROM crm_proposals WHERE id = 'pr1'`))[0].number === 1 && (await query(B, `SELECT status FROM crm_proposals WHERE id = 'pr1'`))[0].status === "em_elaboracao", "v24: the first proposal is number 1, em elaboração");
+let refusedStatus = false;
+try {
+  await query(B, `UPDATE crm_proposals SET status = 'fechada' WHERE id = 'pr1'`);
+} catch {
+  refusedStatus = true;
+}
+ok(refusedStatus, "v24: only the eight proposal statuses");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

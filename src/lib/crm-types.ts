@@ -361,7 +361,8 @@ export type CrmEventKind =
   /** Diagnóstico comercial saved (evolução v1.0): payload { version, diagnosisId, dealId, need }. */
   | "diagnosis"
   /** A document attached or archived (evolução v1.0): payload { action: attached|archived, fileId, name }. */
-  | "file";
+  | "file"
+  | "proposal";
 
 export type CrmEvent = {
   id: string;

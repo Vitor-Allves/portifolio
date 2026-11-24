@@ -49,6 +49,8 @@ import CrmFollowUpView from "./CrmFollowUpView";
 import CrmGoalsView from "./CrmGoalsView";
 import CrmReportsView from "./CrmReportsView";
 import CrmTransfersView from "./CrmTransfers";
+import CrmProposalsView from "./CrmProposalsView";
+import CrmProposalPanel from "./CrmProposalPanel";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -298,6 +300,7 @@ function CrmAppInner({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const isWide = useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [proposalId, setProposalId] = useState<string | null>(null);
   // Clientes ativos: the client panel (shown when no contact or company panel is on top of it).
   const [clientId, setClientId] = useState<{ id: string; tab?: ClientTab; month?: string } | null>(null);
   // The task form, over whatever is open (new task, or one being edited).
@@ -494,6 +497,7 @@ function CrmAppInner({
         sections={[
           "dashboard",
           "board",
+          "proposals",
           "conversations",
           "tasks",
           "agenda",
@@ -703,6 +707,7 @@ function CrmAppInner({
                   onNewTask={newTask}
                   tasksVersion={tasksVersion}
                   onOpenClient={openClient}
+                  onOpenProposal={setProposalId}
                 />
               ) : null
             }
@@ -739,6 +744,8 @@ function CrmAppInner({
             version={dataVersion}
             now={now}
           />
+        ) : view === "proposals" ? (
+          <CrmProposalsView team={team} seeAll={caps.seeAllLeads} version={dataVersion} onOpen={setProposalId} />
         ) : view === "transfers" ? (
           <CrmTransfersView
             currentUserId={currentUserId}
@@ -975,6 +982,24 @@ function CrmAppInner({
           onNewTask={newTask}
           tasksVersion={tasksVersion}
           onOpenClient={openClient}
+          onOpenProposal={setProposalId}
+        />
+      )}
+
+      {proposalId && (
+        <CrmProposalPanel
+          proposalId={proposalId}
+          currentUserId={currentUserId}
+          caps={caps}
+          onClose={() => setProposalId(null)}
+          onChanged={() => {
+            setDataVersion((v) => v + 1);
+            void refresh();
+          }}
+          onOpenContact={(id) => {
+            setProposalId(null);
+            openContact(id, "negocio");
+          }}
         />
       )}
 

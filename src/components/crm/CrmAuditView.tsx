@@ -47,6 +47,12 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.ai_request": "Pediu análise à IA",
   "crm.transfer_request": "Pediu transferência de lead",
   "crm.transfer_decision": "Decidiu transferência de lead",
+  "crm.proposal_change": "Criou ou mudou proposta",
+  "crm.proposal_send": "Registrou envio de proposta",
+  "crm.proposal_status": "Mudou a situação de proposta",
+  "crm.proposal_discount": "Autorizou desconto de proposta",
+  "crm.proposal_link": "Mudou o link de proposta",
+  "crm.proposal_settings": "Mudou modelos de proposta",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
@@ -215,7 +221,7 @@ export default function CrmAuditView({ team, onOpenContact }: { team: CrmTeamMem
           ))}
         </select>
         {tab === "admin" ? (
-          <select value={action} onChange={(e) => reset(setAction)(e.target.value)} aria-label="Ação" className={CRM_FILTER}>
+          <select value={action} onChange={(e) => reset(setAction)(e.target.value)} aria-label="Ação" className={`${CRM_FILTER} max-w-full`}>
             <option value="">Todas as ações</option>
             {Object.entries(ACTION_LABEL).map(([id, text]) => (
               <option key={id} value={id}>

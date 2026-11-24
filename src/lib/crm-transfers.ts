@@ -65,7 +65,7 @@ function map(r: Row): CrmTransferRequest {
 }
 
 /** Active people who approve transfers (may give any lead to anyone). */
-async function approvers(q: Pick<PoolClient, "query">): Promise<{ id: string; name: string }[]> {
+export async function approvers(q: Pick<PoolClient, "query">): Promise<{ id: string; name: string }[]> {
   const { rows } = await q.query<{ id: string; name: string; role: StaffRole }>(`SELECT id, name, role FROM internal_users WHERE revoked_at IS NULL`);
   const out: { id: string; name: string }[] = [];
   for (const r of rows) {

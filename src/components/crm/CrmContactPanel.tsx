@@ -53,6 +53,8 @@ type CrmContactPanelProps = {
   embedded?: boolean;
   /** What the viewer's CRM profile allows (the server enforces it too). */
   caps: CrmCapabilities;
+  /** Opens a proposal (Propostas). */
+  onOpenProposal?: (id: string) => void;
   /** Opens a task in the full task form (description, priority, history...). */
   onOpenTask?: (taskId: string) => void;
   /** Opens the task form for a new task (the conversation's "+ Tarefa"). */
@@ -320,6 +322,7 @@ export default function CrmContactPanel({
   onNewTask,
   tasksVersion = 0,
   onOpenClient,
+  onOpenProposal,
 }: CrmContactPanelProps) {
   const { label, options, tag: tagById, tagGroups, stages, stageDot } = useCatalog();
   const [newDealFromChat, setNewDealFromChat] = useState(false);
@@ -793,6 +796,7 @@ export default function CrmContactPanel({
                 onOpenTask={onOpenTask}
                 startNewDeal={newDealFromChat}
                 canAuthorizeParallel={caps.assignAnyOwner}
+                onOpenProposal={onOpenProposal}
                 clients={onOpenClient && caps.viewClients ? { canCreate: caps.editClients, onOpen: onOpenClient } : undefined}
                 onReload={async () => {
                   await load();

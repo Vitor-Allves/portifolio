@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1241,6 +1241,131 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_files_company_idx ON crm_files (company_id, created_at DESC)`);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_files_client_idx ON crm_files (client_id, created_at DESC)`);
     await done(23);
+  }
+
+  if (current < 24) {
+    // v24 — Evolução v1.0 (propostas, item 3): proposals with a sequential
+    // number, their versions (a sent version is never changed: editing makes
+    // the next one), the timeline (sent, viewed, link, PDF, status), the
+    // client's approvals / refusals with their evidence, templates, and a
+    // small settings table (the discount limit). All new and empty.
+    await db.query(`CREATE SEQUENCE IF NOT EXISTS crm_proposal_number_seq`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_settings (
+        key TEXT PRIMARY KEY,
+        value JSONB NOT NULL,
+        updated_by_name TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        intro TEXT,
+        payment_terms TEXT,
+        billing_period TEXT NOT NULL DEFAULT 'mensal' CHECK (billing_period IN ('mensal', 'trimestral', 'semestral', 'anual')),
+        execution_term TEXT,
+        notes TEXT,
+        valid_days INTEGER NOT NULL DEFAULT 15 CHECK (valid_days BETWEEN 1 AND 365),
+        service_ids TEXT[] NOT NULL DEFAULT '{}',
+        archived_at TIMESTAMPTZ,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposals (
+        id TEXT PRIMARY KEY,
+        number INTEGER NOT NULL UNIQUE DEFAULT nextval('crm_proposal_number_seq'),
+        deal_id TEXT NOT NULL REFERENCES crm_deals (id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        company_id TEXT REFERENCES crm_companies (id) ON DELETE SET NULL,
+        template_id TEXT REFERENCES crm_proposal_templates (id) ON DELETE SET NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'em_elaboracao'
+          CHECK (status IN ('em_elaboracao', 'enviada', 'visualizada', 'em_negociacao', 'aprovada', 'recusada', 'expirada', 'cancelada')),
+        version INTEGER NOT NULL DEFAULT 1,
+        sent_version INTEGER,
+        total_cents BIGINT NOT NULL DEFAULT 0,
+        monthly_cents BIGINT NOT NULL DEFAULT 0,
+        one_time_cents BIGINT NOT NULL DEFAULT 0,
+        discount_pct NUMERIC(5, 1) NOT NULL DEFAULT 0,
+        discount_authorized_pct NUMERIC(5, 1),
+        discount_authorized_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        discount_authorized_by_name TEXT,
+        discount_authorized_at TIMESTAMPTZ,
+        issue_date DATE NOT NULL,
+        valid_until DATE NOT NULL,
+        share_token TEXT UNIQUE,
+        share_token_at TIMESTAMPTZ,
+        sent_at TIMESTAMPTZ,
+        viewed_at TIMESTAMPTZ,
+        decided_at TIMESTAMPTZ,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposals_deal_idx ON crm_proposals (deal_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposals_contact_idx ON crm_proposals (contact_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposals_status_idx ON crm_proposals (status, valid_until)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_versions (
+        id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL REFERENCES crm_proposals (id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        content JSONB NOT NULL,
+        -- sha256 of the content (canonical JSON): what an approval refers to
+        content_hash TEXT NOT NULL,
+        reason TEXT,
+        changes JSONB NOT NULL DEFAULT '[]',
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        sent_at TIMESTAMPTZ,
+        UNIQUE (proposal_id, version)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_events (
+        id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL REFERENCES crm_proposals (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        version INTEGER,
+        payload JSONB NOT NULL DEFAULT '{}',
+        actor_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        actor_name TEXT,
+        ip TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposal_events_idx ON crm_proposal_events (proposal_id, created_at DESC)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_approvals (
+        id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL REFERENCES crm_proposals (id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('aprovada', 'recusada')),
+        name TEXT NOT NULL,
+        email TEXT,
+        document TEXT,
+        comment TEXT,
+        content_hash TEXT NOT NULL,
+        -- cliente = online, through the link; equipe = recorded in the CRM
+        via TEXT NOT NULL CHECK (via IN ('cliente', 'equipe')),
+        recorded_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        recorded_by_name TEXT,
+        ip TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposal_approvals_idx ON crm_proposal_approvals (proposal_id, created_at DESC)`);
+    await done(24);
   }
 }
 
