@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 21;
+const LATEST = 22;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,14 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v20: undo exactly what v21 (funil configurável e tabulação) added.
+// Back to v21: undo exactly what v22 (solicitações de transferência) added.
+async function downgradeToV21(name) {
+  await query(name, `DROP TABLE crm_transfer_requests; DELETE FROM schema_migrations WHERE version = 22;`);
+}
+
+// Back to v20: undo exactly what v22 and v21 (funil configurável e tabulação) added.
 async function downgradeToV20(name) {
+  await downgradeToV21(name);
   await query(
     name,
     `DROP INDEX crm_deals_close_idx;
@@ -290,6 +296,9 @@ const closedV21 = Object.fromEntries((await query(B, `SELECT id, stage, close_gr
 ok(closedV21["d-won"].close_group === "positivo" && closedV21["d-silent"].close_group === "sem_conversao" && closedV21["d-custom"].close_group === "negativo", "v21: closed opportunities get the group of their reason");
 ok(Object.values(closedV21).every((r) => r.probability === null && r.closed_by === null && r.won_result === null), "v21: nothing invented (probability from the stage, no closer, no result)");
 ok(closedV21["keep-deal"].stage === "proposta" && closedV21["keep-deal"].close_group === null, "v21: an open opportunity keeps its stage and has no tabulação");
+// v22: no transfer requests until someone asks; owners unchanged.
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_transfer_requests`))[0].n === 0, "v22: no transfer requests yet");
+ok((await query(B, `SELECT owner_id FROM crm_contacts WHERE id = 'keep-me'`))[0].owner_id === null, "v22: nobody's lead changes hands by itself");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

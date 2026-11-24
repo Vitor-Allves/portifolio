@@ -21,6 +21,7 @@ import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
+import { CrmTransferBox } from "./CrmTransfers";
 import { WON_RESULTS, closeGroupLabel } from "@/lib/crm-catalog";
 import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
 import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
@@ -309,7 +310,7 @@ export default function CrmContactPanel({
   initialTab = "conversa",
   currentUserId,
   embedded = false,
-  caps,
+  caps: baseCaps,
   onOpenTask,
   onNewTask,
   tasksVersion = 0,
@@ -320,6 +321,11 @@ export default function CrmContactPanel({
   const [busyAttendance, setBusyAttendance] = useState(false);
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Evolução v1.0: someone else's lead is read-only for who can't act on other people's leads (a Comercial).
+  const mayAct = !detail || baseCaps.actOnAllLeads || !detail.ownerId || detail.ownerId === currentUserId;
+  const caps: CrmCapabilities = mayAct
+    ? baseCaps
+    : { ...baseCaps, editPipeline: false, sendWhatsApp: false, editContacts: false, archiveContacts: false, editClients: false, useAi: false };
   const [actionError, setActionError] = useState<string | null>(null);
   const [tab, setTab] = useState<"conversa" | "negocio" | "detalhes">(initialTab);
   const [dealPick, setDealPick] = useState<string | null>(initialDealId);
@@ -576,6 +582,7 @@ export default function CrmContactPanel({
                     )}
                   </div>
                 </div>
+                {mayAct && (
                 <button
                   type="button"
                   onClick={() => setAnalysisOpen(true)}
@@ -585,11 +592,23 @@ export default function CrmContactPanel({
                 >
                   Resumo
                 </button>
+                )}
                 <button type="button" onClick={onClose} aria-label="Fechar painel" className="text-crm-dim hover:text-crm-text text-[20px] leading-none px-1">
                   ×
                 </button>
               </div>
               {analysisOpen && <CrmAnalysisDialog request={{ kind: "lead", contactId }} onClose={() => setAnalysisOpen(false)} />}
+              <CrmTransferBox
+                detail={detail}
+                currentUserId={currentUserId}
+                caps={baseCaps}
+                mayAct={mayAct}
+                team={team}
+                onChanged={() => {
+                  void load();
+                  onChanged();
+                }}
+              />
               {deal ? (
                 <div className="rounded-xl border border-crm-line bg-crm-sunken p-2.5 space-y-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -771,6 +790,13 @@ export default function CrmContactPanel({
                   onChanged();
                 }}
               />
+            ) : tab === "conversa" && detail.conversationHidden ? (
+              <section aria-label="Conversa" className="flex-1 flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+                <Mascot name="legacyDoubt" decorative className="h-24 w-auto" />
+                <p className="text-[13px] text-crm-dim max-w-sm">
+                  A conversa de WhatsApp deste lead é de {detail.ownerName ?? "outra pessoa"} e fica fechada para você. Os dados, as oportunidades e o histórico comercial estão nas outras abas.
+                </p>
+              </section>
             ) : tab === "conversa" ? (
               <>
                 <section aria-label="Atendimento" className="border-b border-crm-line px-5 py-2 space-y-1.5 text-[12px]">
@@ -950,7 +976,8 @@ export default function CrmContactPanel({
                   }}
                 />
                 {fields && (
-                  <section className="space-y-2">
+                  // Without "editar contatos" (or on someone else's lead, for a Comercial) the data is shown, not editable.
+                  <fieldset disabled={!caps.editContacts} aria-label="Dados do contato" className="space-y-2 min-w-0 border-0 p-0 m-0 disabled:[&_input]:opacity-75 disabled:[&_select]:opacity-75">
                     <h3 className={CRM_LABEL}>Dados do contato</h3>
                     <input value={fields.name} onChange={(e) => edit({ name: e.target.value })} aria-label="Nome" placeholder="Nome" className={CRM_INPUT} />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1001,11 +1028,11 @@ export default function CrmContactPanel({
                     >
                       Salvar dados
                     </button>
-                  </section>
+                  </fieldset>
                 )}
 
                 {fields && (
-                  <section className="space-y-2">
+                  <fieldset disabled={!caps.editContacts} aria-label="Consentimento e situação" className="space-y-2 min-w-0 border-0 p-0 m-0">
                     <h3 className={CRM_LABEL}>Consentimento e situação</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <select
@@ -1062,7 +1089,7 @@ export default function CrmContactPanel({
                         </button>
                       )}
                     </div>
-                  </section>
+                  </fieldset>
                 )}
 
                 {detail.adReferral && (

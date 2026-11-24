@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { requireCap, requireOwnerChange, visibleTo } from "@/lib/crm-access";
+import { maskConversations, requireCap, requireOwnerChange, visibleTo } from "@/lib/crm-access";
 import { companyOwner, getCompanyDetail, updateCompany, type CompanyInput } from "@/lib/crm-companies";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const company = await getCompanyDetail(id, visibleTo(actor));
     if (!company) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
-    return NextResponse.json({ company });
+    return NextResponse.json({ company: { ...company, contacts: await maskConversations(actor, company.contacts) } });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/companies/[id] GET");
   }

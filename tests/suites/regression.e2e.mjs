@@ -78,10 +78,11 @@ await go(g, "Empresas");
 await g.getByRole("heading", { level: 1, name: "Empresas" }).waitFor();
 ok(true, "Tarefas, Agenda, Contatos and Empresas open");
 
-// Fase 3: Comercial sees only his + unowned; Equipe is admin-only
+// Evolução v1.0: the Comercial sees everyone's opportunities but moves only his; Equipe is admin-only
 const { api: japi } = await open("joao");
 const jd = (await (await japi.get(`${BASE}/api/crm/deals/`)).json()).deals;
-ok(jd.length > 0 && !jd.some((d) => d.ownerId === "u-vitor"), "Comercial doesn't see Vitor's opportunities");
+const vitorDeal = jd.find((d) => d.ownerId === "u-vitor");
+ok(vitorDeal && (await japi.patch(`${BASE}/api/crm/deals/${vitorDeal.id}/`, { data: { stage: "conversa" } })).status() === 403, "Comercial sees Vitor's opportunities but can't move them");
 ok((await japi.get(`${BASE}/api/crm/team/`)).status() === 403, "Comercial can't open Equipe");
 const { page: a } = await open("admin");
 await go(a, "Usuários e permissões");

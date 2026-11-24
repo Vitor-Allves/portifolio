@@ -97,7 +97,10 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   quem encerrou, data e tarefa de retomada da oportunidade futura),
   reabertura com justificativa, Relatórios → Tabulação comercial (tela,
   planilha e PDF).
-- [ ] 3. Visibilidade e transferências
+- [x] 3. Visibilidade e transferências — Comercial vê tudo e trabalha no
+  que é seu (servidor recusa o resto; conversas de outros fechadas), três
+  permissões novas, pedido de transferência com aprovação do Gestor,
+  Painel/metas/relatórios por pessoa só para quem gerencia.
 - [ ] 4. Cadastros, duplicidade, diagnóstico, anexos, catálogo
 - [ ] 5. Propostas
 - [ ] 6. Contratos e operação

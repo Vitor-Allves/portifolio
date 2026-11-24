@@ -74,9 +74,9 @@ ok((await sql(`SELECT count(*) FROM crm_events WHERE contact_id = 'c1' AND kind 
 
 // ---- who sees what ----
 let ids = (await list(joao, "status=any")).map((t) => t.id);
-ok(!ids.includes(internal) && !ids.includes(companyTask) && !ids.includes(meeting), "Comercial doesn't see Vitor's internal activity, his company's task or his lead's task");
-ok(ids.includes(joaoCompanyTask), "…sees his own");
-ok((await joao.get(`${BASE}/api/crm/tasks/${internal}/`)).status() === 404, "…and someone else's internal activity reads as not found");
+ok([internal, companyTask, meeting, joaoCompanyTask].every((id) => ids.includes(id)), "evolução v1.0: the Comercial sees the team's tasks too");
+ok((await joao.get(`${BASE}/api/crm/tasks/${internal}/`)).status() === 200, "…and opens them");
+ok((await json(await joao.patch(`${BASE}/api/crm/tasks/${meeting}/`, { data: { status: "concluida" } }))).status === 403, "…but can't finish someone else's task on someone else's lead");
 ids = (await list(admin, "status=any")).map((t) => t.id);
 ok([internal, companyTask, meeting, joaoCompanyTask].every((id) => ids.includes(id)), "Administrador sees all of them");
 const unowned = (await json(await create(vitor, { title: "Arrumar o material de apresentação", ownerId: "" }))).body.id;

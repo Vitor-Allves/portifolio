@@ -69,7 +69,8 @@ export default function CrmClientPanel({
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [note, setNote] = useState("");
-  const canEdit = caps.editClients;
+  // Evolução v1.0: someone else's client is read-only for who works only on their own (a Comercial).
+  const canEdit = caps.editClients && (caps.actOnAllLeads || !client?.ownerId || client.ownerId === currentUserId);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/crm/clients/${clientId}/`);

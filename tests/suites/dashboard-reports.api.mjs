@@ -69,7 +69,10 @@ let r = await records(vitor, "recurring");
 ok(r.kind === "client" && r.rows[0].id === rib && r.rows[0].valueCents === 350000, "…its list opens the client");
 d = await dash(maria);
 ok(d.recurring.clients === 1 && d.recurring.monthlyCents === null && (await records(maria, "recurring")).rows[0].valueCents === null, "Marketing sees the client, not the values");
-ok((await dash(joao)).recurring.clients === 0, "João: none of his clients");
+ok((await dash(joao)).recurring.clients === 1, "João sees the team's general numbers (evolução v1.0)");
+ok((await dash(joao, "&owner=u-joao")).recurring.clients === 0, "…and his own: none of his clients");
+const jt = (await dash(joao, "&owner=u-vitor")).team;
+ok(jt.length === 1 && jt[0].ownerId === "u-joao", "…never another person's numbers, and only his own line per person");
 
 // ---- campanhas ----
 await sql(`INSERT INTO crm_campaigns (id, name, status, started_at) VALUES ('k-dash', 'Novembro', 'concluida', now())`);

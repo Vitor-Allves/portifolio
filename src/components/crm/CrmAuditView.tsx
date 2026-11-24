@@ -45,6 +45,8 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.goals_change": "Mudou as metas",
   "crm.intelligence_link": "Ligou cliente ao Intelligence",
   "crm.ai_request": "Pediu análise à IA",
+  "crm.transfer_request": "Pediu transferência de lead",
+  "crm.transfer_decision": "Decidiu transferência de lead",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
@@ -117,6 +119,10 @@ function details(r: AdminRow): string {
           .map((v) => `${n(v.ok, "ação feita", "ações feitas")}${v.failed ? `, ${n(v.failed, "falha", "falhas")}` : ""}`)
           .join(" · ") || "nada ativo para rodar"
       );
+    case "crm.transfer_request":
+      return `${String(m.contact ?? "")}: ${String(m.from ?? "sem responsável")} → ${String(m.to ?? "")} · ${String(m.reason ?? "")}`;
+    case "crm.transfer_decision":
+      return `${String(m.contact ?? "")}: ${m.status === "aprovada" ? "aprovada" : m.status === "recusada" ? "recusada" : String(m.status ?? "")} (${String(m.from ?? "sem responsável")} → ${String(m.to ?? "")}, pedida por ${String(m.requestedBy ?? "")})${m.note ? ` · ${String(m.note)}` : ""}`;
     case "crm.report_export":
       return `${String(m.what ?? "")} · ${String(m.from ?? "")} a ${String(m.to ?? "")}${m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""}`;
     case "crm.ai_request":

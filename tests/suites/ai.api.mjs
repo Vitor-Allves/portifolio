@@ -47,7 +47,7 @@ r = await analysis(joao, { kind: "dashboard", from: "2026-10-01", to: "2026-10-3
 ok(r.body.analysis.aiStatus === "ok", "…unless given the permission");
 const jp = sent().at(-1).body.messages[0].content;
 ok(jp.includes("João") && !jp.includes("Vitor"), "a Comercial's executive summary only carries his own numbers");
-ok((await analysis(joao, { kind: "lead", contactId: "c1", generate: true })).status === 404 && sent().length === 2, "…and he can't send someone else's lead to the AI");
+ok((await analysis(joao, { kind: "lead", contactId: "c1", generate: true })).status === 403 && sent().length === 2, "…and he can't send someone else's lead to the AI");
 
 // Client report: money only with "ver valores".
 await sql(`INSERT INTO crm_options (kind, id, label, sort) VALUES ('service', 'trafego', 'Gestão de tráfego', 1)`);

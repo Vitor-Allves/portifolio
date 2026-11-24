@@ -39,7 +39,7 @@ ok((await report(vitor, rib, { month })).status === 400, "an empty acompanhament
 ok((await report(vitor, rib, { month: next, results: "x" })).status === 400, "a month that hasn't started is refused");
 ok((await report(vitor, rib, { month: "2026-13", results: "x" })).status === 400, "invalid month refused");
 ok((await report(maria, rib, { month, results: "x" })).status === 403, "Marketing can't register it");
-ok((await report(joao, rib, { month, results: "x" })).status === 404, "a Comercial can't touch someone else's client");
+ok((await report(joao, rib, { month, results: "x" })).status === 403, "a Comercial can't touch someone else's client (he sees it)");
 ok((await report(vitor, rib, { month, services: ["nope"], results: "x" })).status === 400, "only services from Personalização");
 r = await report(vitor, rib, {
   month,
@@ -72,7 +72,7 @@ ok((await report(joao, souza, { month, ownerId: "u-vitor", results: "x" })).stat
 let f = await followup(vitor, month);
 ok(f.month === month && f.rows.map((x) => x.companyName).join() === "Souza Pet,Ribeiro Odonto", "pending first: Souza Pet, then Ribeiro Odonto");
 ok(f.rows[0].report === null && f.rows[1].report.updatedByName === "Vitor" && f.rows[1].report.attention === "Orçamento acaba dia 20", "…with who updated it and the points of attention");
-ok((await followup(joao, month)).rows.map((x) => x.companyName).join() === "Souza Pet", "a Comercial sees only theirs");
+ok((await followup(joao, month)).rows.map((x) => x.companyName).join() === "Souza Pet,Ribeiro Odonto", "a Comercial sees the team's clients too (evolução v1.0)");
 f = await followup(vitor, prev);
 ok(f.rows.map((x) => x.companyName).join() === "Ribeiro Odonto", "last month: only who was already a client then");
 ok((await followup(vitor, "lixo")).month === month, "an invalid month falls back to this one");

@@ -48,6 +48,7 @@ import CrmClientPanel, { type ClientTab } from "./CrmClientPanel";
 import CrmFollowUpView from "./CrmFollowUpView";
 import CrmGoalsView from "./CrmGoalsView";
 import CrmReportsView from "./CrmReportsView";
+import CrmTransfersView from "./CrmTransfers";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -400,10 +401,12 @@ function CrmAppInner({
   const dueCount = useMemo(
     () =>
       tasks.filter((t) => {
+        // Who works only on their own leads counts only their own tasks.
+        if (!caps.actOnAllLeads && t.ownerId !== currentUserId) return false;
         const s = taskState(t.dueAt, t.allDay, now);
         return s === "overdue" || s === "today";
       }).length,
-    [tasks, now]
+    [tasks, now, caps.actOnAllLeads, currentUserId]
   );
   const unread = inbox.reduce((sum, c) => sum + c.unreadCount, 0);
 
@@ -499,6 +502,7 @@ function CrmAppInner({
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
           ...(caps.viewClients ? (["clients", "followup"] as const) : []),
           "goals",
+          ...(caps.editPipeline || caps.assignAnyOwner ? (["transfers"] as const) : []),
           "reports",
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
@@ -661,7 +665,7 @@ function CrmAppInner({
           <CrmDashboardView
             team={team}
             currentUserId={currentUserId}
-            seeAll={caps.seeAllLeads}
+            seeAll={caps.seeTeamProductivity}
             version={dataVersion}
             now={now}
             canExport={caps.exportReports}
@@ -729,17 +733,28 @@ function CrmAppInner({
         ) : view === "goals" ? (
           <CrmGoalsView
             currentUserId={currentUserId}
-            seeAll={caps.seeAllLeads}
+            seeAll={caps.seeTeamProductivity}
             canEdit={caps.manageGoals}
             canExport={caps.exportReports}
             version={dataVersion}
             now={now}
           />
+        ) : view === "transfers" ? (
+          <CrmTransfersView
+            currentUserId={currentUserId}
+            canDecide={caps.assignAnyOwner}
+            version={dataVersion}
+            onOpenContact={(id) => openContact(id)}
+            onChanged={() => {
+              setDataVersion((v) => v + 1);
+              void refresh();
+            }}
+          />
         ) : view === "reports" ? (
           <CrmReportsView
             team={team}
             currentUserId={currentUserId}
-            seeAll={caps.seeAllLeads}
+            seeAll={caps.seeTeamProductivity}
             canExport={caps.exportReports}
             version={dataVersion}
             now={now}
@@ -763,6 +778,7 @@ function CrmAppInner({
             currentUserId={currentUserId}
             now={now}
             canComplete={caps.editPipeline}
+            onlyOwn={!caps.actOnAllLeads}
             version={dataVersion}
             onOpenContact={(id, tab) => openContact(id, tab)}
             onOpenTask={openTask}
@@ -854,7 +870,7 @@ function CrmAppInner({
                           key={d.id}
                           deal={d}
                           selected={selected?.contactId === d.contactId && (!selected.dealId || selected.dealId === d.id)}
-                          canDrag={caps.editPipeline}
+                          canDrag={caps.editPipeline && (caps.actOnAllLeads || !d.ownerId || d.ownerId === currentUserId)}
                           now={now}
                           onOpen={(deal) => openContact(deal.contactId, undefined, deal.id)}
                         />

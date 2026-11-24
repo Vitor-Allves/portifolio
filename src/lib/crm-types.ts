@@ -335,7 +335,9 @@ export type CrmEventKind =
   /** Written by an automation (Fase 3): payload { automation, text }. */
   | "automation"
   /** Atendimento of the conversation (Fase 4): payload { action: assumed|takeover|transferred|ended, from, to }. */
-  | "attendance";
+  | "attendance"
+  /** Solicitação de transferência (evolução v1.0): payload { action: requested|aprovada|recusada|cancelada, from, to, reason, note, requestedBy }. */
+  | "transfer";
 
 export type CrmEvent = {
   id: string;
@@ -450,6 +452,30 @@ export type CrmContactDetail = CrmContactCard & {
   tasks: CrmTask[];
   /** How each tag got here (manual, importação, campanha, automação), by whom and when. */
   tagLinks: { tagId: string; via: "manual" | "importacao" | "campanha" | "automacao"; byName: string | null; at: string }[];
+  /** Evolução v1.0: true when the viewer may see the lead but not its WhatsApp conversation (someone else's lead). */
+  conversationHidden?: boolean;
+  /** The open transfer request on this lead, if any. */
+  pendingTransfer?: CrmTransferInfo | null;
+};
+
+/** A transfer request as the screens show it (see crm-transfers.ts). */
+export type CrmTransferInfo = {
+  id: string;
+  contactId: string;
+  contactName: string;
+  company: string | null;
+  fromOwnerId: string | null;
+  fromOwnerName: string | null;
+  toOwnerId: string | null;
+  toOwnerName: string;
+  reason: string;
+  status: "pendente" | "aprovada" | "recusada" | "cancelada";
+  requestedById: string | null;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
 };
 
 /** "R$ 1.500,50" / "1500.5" / 1500.5 → centavos. Empty → null. Throws a pt-BR message on garbage. */

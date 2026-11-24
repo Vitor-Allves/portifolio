@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   try {
-    await requireTask(actor, id);
+    await requireTask(actor, id, "view");
     const found = await getTask(id);
     if (!found) return NextResponse.json({ error: "Tarefa não encontrada." }, { status: 404 });
     return NextResponse.json(found);

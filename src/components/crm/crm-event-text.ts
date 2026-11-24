@@ -22,7 +22,14 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
         p.wonReason ? ` · motivo: ${label("won_reason", String(p.wonReason))}${p.wonNote ? ` (${String(p.wonNote)})` : ""}` : ""
       }${p.to === "ganho" && typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
     case "owner":
-      return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}${p.via === "carteira" ? " (carteira)" : ""}`;
+      return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}${p.via === "carteira" ? " (carteira)" : p.via === "transferencia" ? " (transferência aprovada)" : ""}`;
+    case "transfer": {
+      const who = `${p.from ? String(p.from) : "sem responsável"} → ${String(p.to ?? "")}`;
+      if (p.action === "requested") return `Transferência pedida por ${String(p.requestedBy ?? "")} (${who}): ${String(p.reason ?? "")}`;
+      if (p.action === "aprovada") return `Transferência aprovada (${who})${p.note ? `: ${String(p.note)}` : ""}`;
+      if (p.action === "recusada") return `Transferência recusada (${who})${p.note ? `: ${String(p.note)}` : ""}`;
+      return `Pedido de transferência cancelado (${who})`;
+    }
     case "next_action":
       return p.text || p.at ? `Próxima ação: ${p.text ?? "sem descrição"}${p.at ? ` · ${shortDate(String(p.at))}` : ""}` : "Próxima ação removida";
     case "note":

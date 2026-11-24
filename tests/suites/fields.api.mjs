@@ -162,11 +162,12 @@ ok((await companyList("state=SP")).join() === "Clínica Sorriso", "filter by UF"
 ok((await companyList(`tag=${tagId}`)).join() === "Clínica Sorriso", "filter by tag");
 ok((await companyList("q=11.222.333")).join() === "Clínica Sorriso" && (await companyList("q=Odontologia LTDA")).join() === "Clínica Sorriso", "search by CNPJ or razão social");
 ok((await json(await gestor.delete(`${companies}${sorriso}/tags/?tagId=${tagId}`))).body.removed === true, "company tag removed");
-// Comercial sees only their own (and unowned) contacts' opportunities in a company.
+// Evolução v1.0: the Comercial sees every contact and opportunity in a company (and works only on theirs).
 await json(await gestor.patch(contactUrl("c2"), { data: { company: "Clínica Sorriso" } }));
 await json(await gestor.patch(contactUrl(lia), { data: { ownerId: "u-vitor" } }));
 const coJoao = (await json(await comercial.get(`${companies}${sorriso}/`))).body.company;
-ok(coJoao.contacts.map((x) => x.name).join() === "Bruno Souza" && coJoao.deals.every((d) => d.contactName === "Bruno Souza"), "Comercial sees only their own contacts' opportunities in the company");
+ok(coJoao.contacts.map((x) => x.name).sort().join() === "Bruno Souza,Lia Quente", `Comercial sees every contact of the company (${coJoao.contacts.map((x) => x.name).join()})`);
+ok((await json(await comercial.patch(contactUrl(lia), { data: { jobTitle: "Diretora" } }))).status === 403, "…but can't edit someone else's");
 
 // ---- import with CNPJ ----
 const rows = [

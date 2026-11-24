@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { requireCap, requireContact, requireOwnerChange, visibleTo } from "@/lib/crm-access";
+import { maskConversations, requireCap, requireContact, requireOwnerChange, visibleTo } from "@/lib/crm-access";
 import { createDeal, listBoardDeals, type NewDealInput } from "@/lib/crm-deals";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
   try {
-    return NextResponse.json({ deals: await listBoardDeals(visibleTo(actor)) });
+    return NextResponse.json({ deals: await maskConversations(actor, await listBoardDeals(visibleTo(actor))) });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/deals GET");
   }

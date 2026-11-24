@@ -44,8 +44,16 @@ regras que valem para todas as fases. Atualizar a cada fase.
 - Logins só do CRM (Analista sem empresas no Intelligence) são criados,
   redefinidos e desativados no CRM pelo Administrador, sempre confirmando a
   própria senha; os demais continuam com o administrador geral.
-  Registro de outra pessoa, para o Comercial, responde como "não encontrado"
-  (alterar o id na URL não expõe nada).
+  Desde a evolução v1.0, o Comercial **vê** todos os leads, oportunidades,
+  clientes e históricos, mas só **mexe** nos seus e nos sem responsável:
+  toda checagem de registro no servidor (`requireContact`, `requireDeal`,
+  `requireTask` em `src/lib/crm-access.ts`) é "interagir" por padrão e só as
+  leituras declaram "ver" — uma rota nova que esquecer de dizer fica
+  fechada, nunca aberta. Interagir num lead de outra pessoa responde 403
+  (com a orientação de pedir transferência). As mensagens de WhatsApp de
+  leads de outros não saem do servidor para o Comercial (nem na lista, nem no
+  painel, nem a mídia). Quem tiver a exceção "ver todos os leads" retirada
+  volta a receber "não encontrado" para registros de outros.
 - Logins de clientes (Intelligence) nunca entram no CRM.
 
 ## Proteção técnica

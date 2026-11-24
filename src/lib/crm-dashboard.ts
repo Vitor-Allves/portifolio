@@ -640,11 +640,11 @@ export async function listDashboardRecords(
 
 // ---------- request parameters (shared by the Painel routes) ----------
 
-type ParamSession = { userId: string; caps: { seeAllLeads: boolean; viewClients: boolean; seeContractValues: boolean; editCampaigns: boolean } };
+type ParamSession = { userId: string; caps: { seeAllLeads: boolean; seeTeamProductivity: boolean; viewClients: boolean; seeContractValues: boolean; editCampaigns: boolean } };
 
 /**
  * ?from&to (Brasília, inclusive, up to a year)&owner=all|<id>&source&segment&stage.
- * A Comercial always gets only their own numbers. Returns an error message
+ * A Comercial gets the team's numbers or their own (any other person reads as their own). Returns an error message
  * instead when the period is invalid.
  */
 export function dashboardParams(
@@ -656,7 +656,8 @@ export function dashboardParams(
   if (!isDay(from) || !isDay(to) || from > to) return { error: "Período inválido." };
   if (Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`) > 366 * DAY) return { error: "Escolha um período de até um ano." };
   const asked = p.get("owner");
-  const ownerId = !s.caps.seeAllLeads ? s.userId : asked && asked !== "all" ? asked : null;
+  // Without "ver a produtividade da equipe" (Comercial): the team's general numbers or their own, never another person's.
+  const ownerId = !s.caps.seeAllLeads ? s.userId : asked && asked !== "all" ? (s.caps.seeTeamProductivity ? asked : s.userId) : null;
   const clean = (v: string | null) => (v && v !== "all" ? v.slice(0, 200) : null);
   return {
     from,

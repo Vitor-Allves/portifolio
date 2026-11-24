@@ -53,13 +53,13 @@ const actualOf = (m: OwnerMetrics): Record<CrmGoalMetric, number> => ({
 
 // ---------- metas ----------
 
-/** The month's goals and what each line achieved. A Comercial gets only their own line (no team line). */
+/** The month's goals and what each line achieved. Without "ver a produtividade da equipe" (Comercial): only their own line (no team line). */
 export async function getGoals(s: Viewer, month: string): Promise<CrmGoalsMonth> {
   if (!isMonth(month)) throw new CrmInputError("Mês inválido.");
   const [first, last] = monthRange(month);
   const today = todayBr();
   const elapsed = today < first ? 0 : today > last ? 1 : Number(today.slice(8, 10)) / Number(last.slice(8, 10));
-  const seeAll = s.caps.seeAllLeads;
+  const seeAll = s.caps.seeTeamProductivity;
   const only = seeAll ? null : s.userId;
   const db = await getDb();
   const [team, goals, by] = await Promise.all([
@@ -206,7 +206,7 @@ export function productivityPeriod(from: unknown, to: unknown): [string, string]
  * are left out, as on the Painel.
  */
 export async function getProductivity(s: Viewer, from: string, to: string): Promise<CrmProductivity> {
-  const seeAll = s.caps.seeAllLeads;
+  const seeAll = s.caps.seeTeamProductivity;
   const only = seeAll ? null : s.userId;
   const start = new Date(`${from}T00:00:00-03:00`);
   const end = new Date(`${shiftDay(to, 1)}T00:00:00-03:00`);

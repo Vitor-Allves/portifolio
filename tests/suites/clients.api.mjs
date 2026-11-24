@@ -50,7 +50,7 @@ await sql(`UPDATE internal_users SET crm_permissions = '{}'::jsonb WHERE id = 'u
 r = await create(vitor, { dealId: "d4" });
 ok(r.status === 400 && /Vincule Davi Lima a uma empresa/.test(r.body.error), "an opportunity without a company can't become a client");
 ok((await create(vitor, { dealId: "d3" })).status === 400, "only a won opportunity");
-ok((await create(joao, { dealId: "d1" })).status === 404, "a Comercial can't use someone else's opportunity");
+ok((await create(joao, { dealId: "d1" })).status === 403, "a Comercial can't use someone else's opportunity");
 r = await create(vitor, { dealId: "d1" });
 ok(r.status === 201 && r.body.created === true, "Vitor turns Ana's won opportunity into a client");
 const rib = r.body.id;
@@ -78,17 +78,18 @@ ok((await get(vitor, sol)).body.client.companyName === "Clínica Sol", "…the o
 ok((await create(vitor, { companyId: "co-sol" })).status === 409, "a company that is already a client is refused");
 ok((await sql(`SELECT count(*) FROM crm_clients WHERE company_id = 'co-sol'`)) === "1", "…only one record");
 
-// ---- Comercial: only theirs ----
+// ---- Comercial: sees every client, works only on theirs ----
 r = await list(joao);
-ok(r.body.clients.length === 0, "João doesn't see Vitor's clients");
-ok((await get(joao, rib)).status === 404, "…nor open them");
+ok(r.body.clients.some((c) => c.id === rib), "João sees Vitor's clients (evolução v1.0)");
+ok((await get(joao, rib)).status === 200, "…and opens them");
+ok((await json(await joao.patch(`${BASE}/api/crm/clients/${rib}/`, { data: { notes: "x" } }))).status === 403, "…but can't change them");
 ok((await create(joao, { companyId: "co-souza", ownerId: "u-vitor" })).status === 403, "João can't give a client to someone else");
 r = await create(joao, { companyId: "co-souza", status: "ativo", startedOn: "2026-11-01" });
 ok(r.status === 201, "João makes his company a client");
 const souza = r.body.id;
 c = (await get(joao, souza)).body.client;
 ok(c.ownerName === "João" && c.status === "ativo" && c.startedOn === "2026-11-01", "…his, Ativo, since 01/11");
-ok((await list(joao)).body.clients.map((x) => x.companyName).join() === "Souza Pet", "João lists only his");
+ok((await list(joao)).body.clients.map((x) => x.companyName).sort().join() === "Clínica Sol,Ribeiro Odonto,Souza Pet", "João lists every client (his and the team’s)");
 ok((await patch(joao, souza, { ownerId: "u-vitor" })).status === 403, "…and can't hand it to someone else");
 ok((await create(joao, { companyId: "co-souza", status: "encerrado" })).status === 409, "already a client");
 

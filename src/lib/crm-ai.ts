@@ -170,8 +170,11 @@ async function dashboardAnalysis(s: CrmSession, p: Record<string, unknown>): Pro
   for (const k of ["from", "to", "owner", "source", "segment", "stage"]) if (typeof p[k] === "string") params.set(k, p[k] as string);
   const q = dashboardParams(params, s);
   if ("error" in q) throw new CrmInputError(q.error);
-  const [team, catalog] = await Promise.all([listTeam(), getCatalog()]);
-  const d = await getDashboard(q.from, q.to, q.filters, team, q.viewer);
+  const [allTeam, catalog] = await Promise.all([listTeam(), getCatalog()]);
+  // Per person: everyone only with "ver a produtividade da equipe" (as on the Painel).
+  const team = allTeam.filter((m) => s.caps.seeTeamProductivity || m.id === s.userId);
+  const full = await getDashboard(q.from, q.to, q.filters, team, q.viewer);
+  const d = s.caps.seeTeamProductivity ? full : { ...full, team: full.team.filter((r) => r.ownerId === s.userId) };
   const label = (kind: string, id: string) => catalog.options.find((o) => o.kind === kind && o.id === id)?.label ?? id;
   const c = d.current;
   const b = d.previous;

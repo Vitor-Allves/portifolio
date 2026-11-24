@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { requireCap, requireOwnerChange, visibleTo } from "@/lib/crm-access";
+import { maskConversations, requireCap, requireOwnerChange, visibleTo } from "@/lib/crm-access";
 import {
   contactFiltersFromSearch,
   createContact,
@@ -22,9 +22,10 @@ export async function GET(req: NextRequest) {
   if (actor instanceof NextResponse) return actor;
   const params = req.nextUrl.searchParams;
   try {
-    if (!params.has("page")) return NextResponse.json({ contacts: await listContacts(visibleTo(actor)) });
+    if (!params.has("page")) return NextResponse.json({ contacts: await maskConversations(actor, await listContacts(visibleTo(actor))) });
     const { page, pageSize, sort } = pageFromSearch(params);
-    return NextResponse.json(await listContactsPage({ ...contactFiltersFromSearch(params, actor.userId), visibleTo: visibleTo(actor) }, page, pageSize, sort));
+    const result = await listContactsPage({ ...contactFiltersFromSearch(params, actor.userId), visibleTo: visibleTo(actor) }, page, pageSize, sort);
+    return NextResponse.json({ ...result, rows: await maskConversations(actor, result.rows) });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/contacts GET");
   }

@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 22;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1159,6 +1159,36 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_deals_close_idx ON crm_deals (close_group, closed_at)`);
 
     await done(21);
+  }
+
+  if (current < 22) {
+    // v22 — Evolução v1.0 (responsabilidades): a Comercial sees every lead but
+    // works only on their own; taking someone else's lead (or handing one's
+    // own to a colleague) is a request a Gestor approves or refuses. New
+    // table only: who asked, from whom to whom, why, who decided, when.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_transfer_requests (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        from_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        from_owner_name TEXT,
+        to_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        to_owner_name TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'aprovada', 'recusada', 'cancelada')),
+        requested_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        requested_by_name TEXT NOT NULL,
+        requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        decided_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        decided_by_name TEXT,
+        decided_at TIMESTAMPTZ,
+        decision_note TEXT
+      )
+    `);
+    // One open request per lead at a time.
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_transfer_requests_pending_idx ON crm_transfer_requests (contact_id) WHERE status = 'pendente'`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_transfer_requests_status_idx ON crm_transfer_requests (status, requested_at DESC)`);
+    await done(22);
   }
 }
 

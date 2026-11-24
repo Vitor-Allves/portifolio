@@ -89,10 +89,11 @@ await g.getByRole("button", { name: "Usar tema escuro" }).click();
 await october(g);
 await shot(g, "f4-painel-escuro");
 
-// ---- Comercial (João): only his numbers ----
+// ---- Comercial (João): his numbers or the team's, never another person's ----
 const { page: j, api: japi } = await open("joao");
 await j.getByRole("heading", { level: 1, name: "Painel" }).waitFor();
-ok(await j.getByText("Seus números").isVisible() && (await j.getByLabel("Responsável", { exact: true }).count()) === 0, "Comercial has no owner picker");
+const picker = j.getByLabel("Responsável", { exact: true });
+ok((await picker.inputValue()) === "u-joao" && (await picker.locator("option").allTextContents()).join() === "Seus números,Toda a equipe", "Comercial picks his numbers (default) or the team's");
 const forced = await (await japi.get(`${BASE}/api/crm/dashboard/?from=2026-10-01&to=2026-10-31&owner=u-vitor`)).json();
 ok(forced.dashboard.current.newLeads === 2 && forced.dashboard.team.length === 1 && forced.dashboard.team[0].name === "João", "asking for Vitor's numbers still returns João's");
 await october(j);

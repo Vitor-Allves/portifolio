@@ -56,8 +56,8 @@ ok(notices.some((n) => n.title === "Conversa transferida para você: Eva Prado" 
 ok((await att(joao, "c5", { action: "end" })).status === 200 && (await attendant("c5")) === "none", "João ends it");
 ok((await history("c5")) === "assumed,takeover,transferred,ended", `history: ${await history("c5")}`);
 await inbound("5515990000001", "Bom dia!", "Ana");
-ok((await att(vitor, "c1", { action: "transfer", toUserId: "u-joao" })).status === 400, "can't give João a conversation of a lead he can't see (Vitor's Ana)");
-ok((await att(joao, "c1", { action: "assume" })).status === 404, "a Comercial can't touch a lead he can't see");
+ok((await att(vitor, "c1", { action: "transfer", toUserId: "u-joao" })).status === 400, "can't give João a conversation of a lead he doesn't work on (Vitor's Ana)");
+ok((await att(joao, "c1", { action: "assume" })).status === 403, "a Comercial can't touch someone else's lead");
 ok((await att(vitor, "c1", { action: "assume" })).status === 200 && (await attendant("c1")) === "u-vitor", "Assumir");
 ok((await att(admin, "c1", { action: "end" })).status === 200, "an Administrador ends anyone's attendance");
 ok((await att(vitor, "c1", { action: "dance" })).status === 400, "unknown action refused");

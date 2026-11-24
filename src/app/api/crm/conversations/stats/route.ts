@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { visibleTo } from "@/lib/crm-access";
+import { conversationsOf } from "@/lib/crm-access";
 import { responseStats } from "@/lib/crm-conversations";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
   try {
-    return NextResponse.json(await responseStats(Number(req.nextUrl.searchParams.get("days")) || 7, visibleTo(actor)));
+    return NextResponse.json(await responseStats(Number(req.nextUrl.searchParams.get("days")) || 7, conversationsOf(actor)));
   } catch (err) {
     return crmErrorResponse(err, "api/crm/conversations/stats GET");
   }

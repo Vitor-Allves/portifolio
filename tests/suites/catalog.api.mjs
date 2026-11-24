@@ -89,7 +89,7 @@ ok((await json(await gestor.post(tags, { data: { category: "acao", label: "X", c
 const ctag = (api, contact, tagId) => api.post(`${BASE}/api/crm/contacts/${contact}/tags/`, { data: { tagId } });
 // João (Comercial) owns c2 (Bruno); c1 (Ana) is Vitor's.
 ok((await ctag(comercial, "c2", vipId)).status() === 200, "Comercial tags their own lead");
-ok((await ctag(comercial, "c1", vipId)).status() === 404, "Comercial can't tag someone else's lead");
+ok((await ctag(comercial, "c1", vipId)).status() === 403, "Comercial can't tag someone else's lead (sees it, doesn't work on it)");
 ok((await ctag(mkt, "c1", "origem-bni")).status() === 200, "Marketing tags any lead");
 ok((await ctag(mkt, "c1", "origem-bni")).status() === 200 && (await sql(`SELECT count(*) FROM crm_contact_tags WHERE contact_id = 'c1'`)) === "1", "applying twice keeps one");
 ok((await sql(`SELECT applied_via || '/' || applied_by_name FROM crm_contact_tags WHERE contact_id = 'c2'`)) === "manual/João", "who/how applied is recorded");

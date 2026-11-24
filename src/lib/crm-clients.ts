@@ -161,6 +161,9 @@ export async function listClients(s: CrmSession, f: ClientFilters): Promise<{ cl
 }
 
 const canSee = (s: ClientActor, ownerId: string | null) => s.caps.seeAllLeads || ownerId === null || ownerId === s.userId;
+/** Changing a client (or creating one from an opportunity): someone else's only with "interagir em leads de outras pessoas". */
+const canAct = (s: ClientActor, ownerId: string | null) => canSee(s, ownerId) && (s.caps.actOnAllLeads || ownerId === null || ownerId === s.userId);
+const NOT_YOURS = "Este cliente é de outra pessoa: você pode consultar, mas só o responsável (ou um Gestor) altera. Peça a transferência.";
 
 type ContractDbRow = {
   id: string;
@@ -472,6 +475,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
       );
       deal = rows[0] ?? null;
       if (!deal || !canSee(s, deal.contact_owner)) throw new CrmNotFoundError("Oportunidade não encontrada.");
+      if (!canAct(s, deal.owner_id ?? deal.contact_owner)) throw new CrmForbiddenError("Esta oportunidade é de outra pessoa: só o responsável (ou um Gestor) a torna cliente.");
       if (deal.client_id) return { id: deal.client_id, created: false, companyName: null as string | null };
       if (deal.stage !== "ganho") throw new CrmInputError("Só uma oportunidade ganha vira cliente.");
       if (!deal.company_id) throw new CrmInputError(`Vincule ${deal.contact_name} a uma empresa antes: o cliente é sempre uma empresa.`);
@@ -488,6 +492,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
     );
     const company = co.rows[0];
     if (!company || (!deal && !canSee(s, company.owner_id))) throw new CrmNotFoundError("Empresa não encontrada.");
+    if (!deal && !canAct(s, company.owner_id)) throw new CrmForbiddenError(`${company.name} está na carteira de outra pessoa.`);
     if (company.archived) throw new CrmInputError(`${company.name} está arquivada.`);
 
     const dealValues = (base: ContractValues): ContractValues =>
@@ -505,7 +510,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
     if (existing.rows[0]) {
       const cl = existing.rows[0];
       if (!deal) throw new CrmConflictError(`${company.name} já é cliente.`);
-      if (!canSee(s, cl.owner_id)) throw new CrmForbiddenError(`${company.name} já é cliente, na carteira de outra pessoa.`);
+      if (!canAct(s, cl.owner_id)) throw new CrmForbiddenError(`${company.name} já é cliente, na carteira de outra pessoa.`);
       const base = dealValues({ services: [], startsOn: todayBr(), endsOn: null, valueCents: null, billing: "mensal", status: "vigente", notes: null });
       const k = await readContract(q, s, { ...(input.contract ?? {}), value: undefined }, base);
       if (k.status === "vigente" && cl.status === "encerrado") throw new CrmInputError(`${company.name} está encerrado como cliente. Reative-o antes de registrar um contrato vigente.`);
@@ -571,6 +576,7 @@ async function lockClient(q: Q, s: CrmSession, id: string): Promise<ClientLock> 
   );
   const r = rows[0];
   if (!r || !canSee(s, r.owner_id)) throw new CrmNotFoundError("Cliente não encontrado.");
+  if (!canAct(s, r.owner_id)) throw new CrmForbiddenError(NOT_YOURS);
   return r;
 }
 

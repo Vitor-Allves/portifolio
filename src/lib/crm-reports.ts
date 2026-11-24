@@ -181,6 +181,8 @@ export function tabulationParams(
 ): { from: string; to: string; filters: TabulationFilters } | { error: string } {
   const q = dashboardParams(p, s);
   if ("error" in q) return q;
+  // Reports by seller are a manager's view: without "ver a produtividade da equipe", only their own closings.
+  if (!s.caps.seeTeamProductivity) q.filters.ownerId = s.userId;
   const clean = (v: string | null) => (v && v !== "all" ? v.slice(0, 200) : null);
   const group = clean(p.get("group"));
   return {

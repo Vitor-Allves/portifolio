@@ -152,9 +152,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
   | | Administrador | Gestor | Comercial | Marketing |
   |---|---|---|---|---|
-  | O que vê | tudo | tudo | só os próprios leads e os sem responsável | tudo |
+  | O que vê | tudo | tudo | tudo (desde a evolução v1.0), menos as conversas de WhatsApp de leads de outros | tudo |
+  | Interagir em leads de outras pessoas | sim | sim | não: pede a transferência | sim (dentro do que o perfil faz) |
   | Funil, oportunidades e tarefas | edita | edita | edita os seus | só vê |
   | WhatsApp e respostas rápidas | envia | envia | envia (nos seus) | só vê |
+  | Aprovar transferências | sim | sim | não | não |
+  | Produtividade, metas e relatórios por pessoa | todos | todos | só os seus (e os números gerais da equipe) | todos |
   | Trocar responsável | qualquer um | qualquer um | só assumir sem dono / soltar o seu | não |
   | Contatos, empresas, notas, consentimento, arquivar | sim | sim | nos seus | sim |
   | Importar / desfazer importação | sim | sim | não | sim |
@@ -171,7 +174,9 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Trocar responsável em lote (Contatos) | sim | sim | não | não |
   | Transferir a carteira de uma pessoa, encerrar sessões, Auditoria | sim | não | não | não |
 
-  Lead de outra pessoa, para o Comercial, responde como "não encontrado".
+  Lead de outra pessoa, para o Comercial, abre em modo consulta (dados,
+  oportunidades, histórico; sem a conversa); qualquer alteração responde 403
+  e o painel oferece "Pedir transferência para mim".
   O Administrador geral do Intelligence é sempre Administrador do CRM; ninguém
   muda o próprio perfil. Quem nunca teve perfil definido segue o do
   Intelligence (administrador geral/administrador → Administrador, gestor →
@@ -470,6 +475,34 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — visibilidade compartilhada e transferências (schema v22)
+
+- **O Comercial vê tudo e trabalha no que é seu** (especificação, item 6):
+  contatos, empresas, oportunidades, clientes, tarefas e históricos de toda a
+  equipe ficam visíveis; mexer num lead de outra pessoa (mover, editar,
+  notas, tarefas, etiquetas, mensagens, clientes) é recusado no servidor. As
+  conversas de WhatsApp de leads de outros continuam fechadas.
+- **Permissões novas** (Usuários e permissões, com exceção por pessoa):
+  "Interagir em leads de outras pessoas", "Ver as conversas de WhatsApp de
+  leads de outras pessoas" e "Ver a produtividade, as metas e os resultados de
+  cada pessoa". Administrador, Gestor e Marketing têm as três; o Comercial,
+  nenhuma (e passa a ter "ver todos os leads").
+- **Solicitação de transferência:** no painel do lead, "Pedir transferência
+  para mim" (lead de outra pessoa) ou "Passar este lead para outra pessoa"
+  (lead seu), sempre com o motivo; Gestor e Administrador são avisados no
+  sino, aprovam ou recusam (recusa com motivo) no próprio lead ou em Gestão →
+  Transferências. Aprovar passa o lead, as oportunidades abertas e as tarefas
+  pendentes; nada é aplicado se o lead mudou de mãos depois do pedido. Quem
+  pediu, de quem para quem, por quê, quem decidiu e quando ficam no
+  histórico do lead e na auditoria (`crm.transfer_request`,
+  `crm.transfer_decision`).
+- **Painel do Comercial:** escolhe entre os seus números e os da equipe
+  (nunca os de outra pessoa); a tabela por pessoa, as metas, a produtividade e
+  o relatório de tabulação mostram só a linha dele.
+- Banco v22: `crm_transfer_requests` (um pedido pendente por lead).
+- Testes: `transfers-api` e `transfers-e2e`; os testes de acesso existentes
+  passaram a conferir "vê, mas não mexe".
 
 ### Evolução v1.0 — funil configurável, tabulação e relatório de tabulação (schema v21)
 

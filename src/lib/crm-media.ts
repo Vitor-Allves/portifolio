@@ -19,7 +19,7 @@ import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
 import { writeAudit } from "./audit-log";
 import { CrmConflictError, CrmForbiddenError, CrmInputError, CrmNotFoundError, iso } from "./crm-core";
-import { requireCap, visibleTo, type CrmSession } from "./crm-access";
+import { canAct, requireCap, visibleTo, type CrmSession } from "./crm-access";
 import { getDashboardData } from "./meta-ads";
 import { costPerConversation, cpc, cpm, ctr, sumTotals } from "./metrics";
 import { shiftDay } from "./crm-dashboard";
@@ -112,7 +112,7 @@ export async function getClientMedia(s: CrmSession, clientId: string, month: str
     month,
     link: linked ? { clientAccessId: c.client_access_id!, label: c.label ?? "", accountCount: linkAccounts.length } : null,
     canLink: s.caps.linkIntelligence,
-    canSync: s.caps.editClients && linked && covers(s, linkAccounts) && month <= todayBr().slice(0, 7),
+    canSync: s.caps.editClients && canAct(s, c.owner_id) && linked && covers(s, linkAccounts) && month <= todayBr().slice(0, 7),
     blocked,
     latest: readable[0] ? mapSync(readable[0], money) : null,
     history: readable.map((r) => ({
@@ -203,6 +203,7 @@ export async function syncClientMedia(s: CrmSession, clientId: string, month: un
   const today = todayBr();
   if (month > today.slice(0, 7)) throw new CrmInputError("Esse mês ainda não começou.");
   const c = await loadClient(s, clientId);
+  if (!canAct(s, c.owner_id)) throw new CrmForbiddenError("Este cliente é de outra pessoa: só o responsável (ou um Gestor) sincroniza.");
   if (!c.client_access_id || c.revoked_at) throw new CrmInputError("Ligue o cliente a um cliente do Legado Intelligence antes de sincronizar.");
   const accountIds = c.account_ids ?? [];
   if (accountIds.length === 0) throw new CrmInputError("Esse cliente do Intelligence não tem contas de anúncio.");

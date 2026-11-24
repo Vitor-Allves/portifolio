@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
 import { getContactDetail, markRead, updateContact } from "@/lib/crm";
-import { requireCap, requireContact, requireOwnerChange } from "@/lib/crm-access";
+import { pendingTransferFor } from "@/lib/crm-transfers";
+import { canSeeConversation, requireCap, requireContact, requireOwnerChange } from "@/lib/crm-access";
 
 // Fields of the old contact-level funnel API that now drive the opportunity.
 const PIPELINE_FIELDS = ["stage", "nextAction", "nextActionAt"];
@@ -9,17 +10,23 @@ const PIPELINE_FIELDS = ["stage", "nextAction", "nextActionAt"];
 export const runtime = "nodejs";
 
 // Opening a contact's panel = reading its conversation, so this also clears
-// the unread counter (the panel polls this same route while open).
+// the unread counter (the panel polls this same route while open). Someone
+// who may see the lead but not its conversation (someone else's lead, for a
+// Comercial) gets everything else, without the messages — and doesn't clear
+// the counter.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   try {
-    await requireContact(actor, id);
-    await markRead(id);
+    const { ownerId } = await requireContact(actor, id, "view");
+    const conversation = canSeeConversation(actor, ownerId);
+    if (conversation) await markRead(id);
     const contact = await getContactDetail(id);
     if (!contact) return NextResponse.json({ error: "Contato não encontrado." }, { status: 404 });
-    return NextResponse.json({ contact });
+    const pendingTransfer = await pendingTransferFor(id);
+    if (!conversation) return NextResponse.json({ contact: { ...contact, messages: [], lastMessagePreview: null, conversationHidden: true, pendingTransfer } });
+    return NextResponse.json({ contact: { ...contact, pendingTransfer } });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/contacts/[id] GET");
   }

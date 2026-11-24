@@ -367,7 +367,7 @@ export default function CrmDashboardView({
   const today = spDate(now);
   const [preset, setPreset] = useState<Preset>("mes");
   const [custom, setCustom] = useState<[string, string]>(() => presetRange("mes", today));
-  const [owner, setOwner] = useState("all");
+  const [owner, setOwner] = useState(seeAll ? "all" : currentUserId);
   const [result, setResult] = useState<{ key: string; data: CrmDashboard | null; error: string | null } | null>(null);
 
   const [from, to] = preset === "custom" ? custom : presetRange(preset, today);
@@ -426,7 +426,11 @@ export default function CrmDashboardView({
             ))}
           </select>
         ) : (
-          <span className="text-[12px] px-3 py-1.5 rounded-full border border-crm-line text-crm-dim">Seus números</span>
+          // Evolução v1.0: the team's general numbers or one's own (never another person's).
+          <select value={owner === "all" ? "all" : currentUserId} onChange={(e) => setOwner(e.target.value)} aria-label="Responsável" className={CRM_FILTER}>
+            <option value={currentUserId}>Seus números</option>
+            <option value="all">Toda a equipe</option>
+          </select>
         )}
         <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Origem" className={CRM_FILTER}>
           <option value="all">Todas as origens</option>
