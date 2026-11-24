@@ -32,6 +32,8 @@ import {
   type CampaignStatus,
   type CampaignSummary,
   type SkipReason,
+  type AudienceMember,
+  type SavedAudience,
   CAMPAIGN_REPLY_WINDOW,
 } from "./crm-campaign-rules";
 import { WhatsAppConfigError, isRateLimited, sendTemplate, WhatsAppApiError } from "./whatsapp";
@@ -50,8 +52,28 @@ const SKIP_SQL = `CASE
   WHEN c.phone IS NULL OR c.phone = '' THEN 'sem_telefone'
 END`;
 
-function audienceFilters(a: CampaignAudience) {
-  return contactWhere({ stage: a.stage, owner: a.owner, source: a.source, segment: a.segment, city: a.city, companyId: a.companyId, tag: a.tag });
+/**
+ * The audience as SQL: the contact filters, the sign-up period (Brasília
+ * days, inclusive) and — unless `exclude: false` — the contacts taken out
+ * by hand. `q` searches name / company / phone (the "Quem vai receber" list).
+ */
+function audienceFilters(a: CampaignAudience, opts: { exclude?: boolean; q?: string; visibleTo?: string | null } = {}) {
+  const base = contactWhere({ stage: a.stage, owner: a.owner, source: a.source, segment: a.segment, city: a.city, companyId: a.companyId, tag: a.tag, q: opts.q, visibleTo: opts.visibleTo });
+  const values = [...base.values];
+  const extra: string[] = [];
+  if (a.createdFrom) {
+    values.push(a.createdFrom);
+    extra.push(`c.created_at >= ($${values.length}::date)::timestamp AT TIME ZONE 'America/Sao_Paulo'`);
+  }
+  if (a.createdTo) {
+    values.push(a.createdTo);
+    extra.push(`c.created_at < ($${values.length}::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo'`);
+  }
+  if (opts.exclude !== false && a.exclude?.length) {
+    values.push(a.exclude);
+    extra.push(`NOT (c.id = ANY($${values.length}))`);
+  }
+  return { sql: extra.length ? `${base.sql} AND ${extra.join(" AND ")}` : base.sql, values };
 }
 
 // ---------- drafts ----------
@@ -135,8 +157,9 @@ export async function previewAudience(audienceRaw: unknown, paramsRaw: unknown, 
   const params = cleanParams(paramsRaw);
   const body = typeof templateBody === "string" ? templateBody : null;
   const { sql, values } = audienceFilters(audience);
+  const all = audienceFilters(audience, { exclude: false });
   const db = await getDb();
-  const [counts, sample] = await Promise.all([
+  const [counts, sample, byHand] = await Promise.all([
     db.query<{ reason: string | null; n: string }>(
       `SELECT ${SKIP_SQL} AS reason, count(*) AS n FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id ${sql} GROUP BY 1`,
       values
@@ -147,6 +170,13 @@ export async function previewAudience(audienceRaw: unknown, paramsRaw: unknown, 
        ${sql} AND (${SKIP_SQL}) IS NULL ORDER BY lower(c.name), c.id LIMIT 3`,
       values
     ),
+    audience.exclude?.length
+      ? db.query<{ n: string }>(
+          `SELECT count(*) AS n FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id
+           ${all.sql} AND (${SKIP_SQL}) IS NULL AND c.id = ANY($${all.values.length + 1})`,
+          [...all.values, audience.exclude]
+        )
+      : Promise.resolve({ rows: [{ n: "0" }] }),
   ]);
   let matched = 0;
   let eligible = 0;
@@ -161,12 +191,87 @@ export async function previewAudience(audienceRaw: unknown, paramsRaw: unknown, 
   return {
     matched,
     eligible,
+    excludedByHand: Number(byHand.rows[0].n),
     excluded,
     sample: sample.rows.map((s) => ({
       name: s.name,
       message: body ? fillTemplate(body, resolveParams(params, { name: s.name, company: s.company, ownerName: s.owner_name })) : null,
     })),
   };
+}
+
+/**
+ * Everyone the filters would send to (eligible only), with whether they were
+ * taken out by hand — 50 per page, searchable. For "Quem vai receber".
+ * `visibleTo` lists only the leads that person sees (a profile without
+ * "ver todos os leads" that was given the campaigns screen).
+ */
+export async function listAudienceMembers(
+  audienceRaw: unknown,
+  q: unknown,
+  page: number,
+  visibleTo: string | null
+): Promise<{ rows: AudienceMember[]; total: number; page: number; pageSize: number }> {
+  const audience = cleanAudience(audienceRaw);
+  const search = typeof q === "string" ? q.trim().slice(0, 100) : "";
+  const { sql, values } = audienceFilters(audience, { exclude: false, q: search || undefined, visibleTo });
+  const pageSize = 50;
+  const p = Math.max(1, Math.floor(page) || 1);
+  const ex = values.length + 1;
+  const db = await getDb();
+  const [rows, total] = await Promise.all([
+    db.query<{ id: string; name: string; company: string | null; owner_name: string | null; excluded: boolean }>(
+      `SELECT c.id, c.name, COALESCE(co.name, c.company) AS company, u.name AS owner_name, (c.id = ANY($${ex})) AS excluded
+       FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id LEFT JOIN internal_users u ON u.id = c.owner_id
+       ${sql} AND (${SKIP_SQL}) IS NULL
+       ORDER BY lower(c.name), c.id LIMIT ${pageSize} OFFSET ${(p - 1) * pageSize}`,
+      [...values, audience.exclude ?? []]
+    ),
+    db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts c LEFT JOIN crm_companies co ON co.id = c.company_id ${sql} AND (${SKIP_SQL}) IS NULL`, values),
+  ]);
+  return {
+    rows: rows.rows.map((r) => ({ id: r.id, name: r.name, company: r.company, ownerName: r.owner_name, excluded: r.excluded })),
+    total: Number(total.rows[0].n),
+    page: p,
+    pageSize,
+  };
+}
+
+// ---------- saved audiences ----------
+
+const audienceKey = (name: string) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+export async function listSavedAudiences(): Promise<SavedAudience[]> {
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; name: string; audience: CampaignAudience; created_by_name: string | null; created_at: Date }>(
+    `SELECT id, name, audience, created_by_name, created_at FROM crm_campaign_audiences ORDER BY lower(name)`
+  );
+  return rows.map((r) => ({ id: r.id, name: r.name, audience: cleanAudience(r.audience), createdByName: r.created_by_name, createdAt: iso(r.created_at)! }));
+}
+
+/** Saves the filters under a name (the same name again replaces them). Exclusions by hand are not part of it. */
+export async function saveAudience(nameRaw: unknown, audienceRaw: unknown, actor: NonNullable<CrmActor>): Promise<SavedAudience> {
+  const name = cleanText(nameRaw, 80);
+  if (!name) throw new CrmInputError("Dê um nome para o público.");
+  const { exclude: _drop, ...filters } = cleanAudience(audienceRaw);
+  void _drop;
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; name: string; audience: CampaignAudience; created_by_name: string | null; created_at: Date }>(
+    `INSERT INTO crm_campaign_audiences (id, name, name_key, audience, created_by, created_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (name_key) DO UPDATE SET name = EXCLUDED.name, audience = EXCLUDED.audience, updated_at = now()
+     RETURNING id, name, audience, created_by_name, created_at`,
+    [randomUUID(), name, audienceKey(name), JSON.stringify(filters), actor.userId, actor.userName]
+  );
+  const r = rows[0];
+  return { id: r.id, name: r.name, audience: cleanAudience(r.audience), createdByName: r.created_by_name, createdAt: iso(r.created_at)! };
+}
+
+export async function deleteSavedAudience(id: string): Promise<string> {
+  const db = await getDb();
+  const { rows } = await db.query<{ name: string }>(`DELETE FROM crm_campaign_audiences WHERE id = $1 RETURNING name`, [id]);
+  if (!rows[0]) throw new CrmNotFoundError("Público não encontrado.");
+  return rows[0].name;
 }
 
 // ---------- sending ----------
@@ -402,7 +507,22 @@ type SummaryRow = {
   replied: string;
   opted_out: string;
   new_deals: string;
+  interested: string;
 };
+
+/** The recipient replied within the window. */
+const REPLIED_SQL = `(r.sent_at IS NOT NULL AND EXISTS (
+  SELECT 1 FROM crm_messages i WHERE i.contact_id = r.contact_id AND i.direction = 'in'
+    AND i.created_at >= date_trunc('second', r.sent_at) AND i.created_at <= r.sent_at + interval '${REPLY_WINDOW}'))`;
+
+/**
+ * Interessado: the automation "Resposta de campanha" flagged the reply, or
+ * the contact replied and is "quente" — never someone who then asked to leave.
+ */
+const INTERESTED_SQL = `(r.sent_at IS NOT NULL AND (c.opted_out_at IS NULL OR c.opted_out_at < r.sent_at) AND (
+  EXISTS (SELECT 1 FROM crm_automation_runs ar WHERE ar.automation_id = 'resposta_campanha' AND ar.status = 'ok'
+            AND ar.dedupe_key = 'campanha:' || r.campaign_id || ':contato:' || r.contact_id)
+  OR (c.temperature = 'quente' AND ${REPLIED_SQL})))`;
 
 // One pass over the recipients; replies, unsubscribes and new opportunities
 // count only what happened after that person received the campaign. WhatsApp
@@ -423,7 +543,8 @@ const SUMMARY_SQL = `
          count(*) FILTER (WHERE r.sent_at IS NOT NULL AND c.opted_out_at >= r.sent_at) AS opted_out,
          count(*) FILTER (WHERE r.sent_at IS NOT NULL AND EXISTS (
            SELECT 1 FROM crm_deals d WHERE d.contact_id = r.contact_id
-             AND d.created_at > r.sent_at AND d.created_at <= r.sent_at + interval '${DEAL_WINDOW}')) AS new_deals
+             AND d.created_at > r.sent_at AND d.created_at <= r.sent_at + interval '${DEAL_WINDOW}')) AS new_deals,
+         count(*) FILTER (WHERE ${INTERESTED_SQL}) AS interested
   FROM crm_campaigns k
   LEFT JOIN crm_campaign_recipients r ON r.campaign_id = k.id
   LEFT JOIN crm_contacts c ON c.id = r.contact_id
@@ -453,6 +574,7 @@ function mapSummary(r: SummaryRow): CampaignSummary {
       replied: n(r.replied),
       optedOut: n(r.opted_out),
       newDeals: n(r.new_deals),
+      interested: n(r.interested),
     },
   };
 }
@@ -481,11 +603,10 @@ export async function getCampaign(id: string): Promise<CampaignDetail> {
       message_error: string | null;
       sent_at: Date | null;
       replied: boolean;
+      interested: boolean;
     }>(
       `SELECT r.contact_id, c.name, c.phone, r.status, r.skip_reason, r.error, m.status AS message_status, m.error AS message_error, r.sent_at,
-              (r.sent_at IS NOT NULL AND EXISTS (
-                SELECT 1 FROM crm_messages i WHERE i.contact_id = r.contact_id AND i.direction = 'in'
-                  AND i.created_at >= date_trunc('second', r.sent_at) AND i.created_at <= r.sent_at + interval '${REPLY_WINDOW}')) AS replied
+              ${REPLIED_SQL} AS replied, ${INTERESTED_SQL} AS interested
        FROM crm_campaign_recipients r JOIN crm_contacts c ON c.id = r.contact_id
        LEFT JOIN crm_messages m ON m.wa_message_id = r.wa_message_id
        WHERE r.campaign_id = $1
@@ -514,6 +635,7 @@ export async function getCampaign(id: string): Promise<CampaignDetail> {
           : r.error ?? r.message_error ?? null,
       sentAt: iso(r.sent_at),
       replied: r.replied,
+      interested: r.interested,
     })),
   };
 }

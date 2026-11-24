@@ -110,19 +110,47 @@ export type CampaignAudience = {
   companyId?: string;
   /** Only contacts with this tag. */
   tag?: string;
+  /** Contacts that entered the CRM from / until this day (YYYY-MM-DD, Brasília), inclusive. */
+  createdFrom?: string;
+  createdTo?: string;
+  /** Contacts taken out of this campaign by hand (Fase 4). */
+  exclude?: string[];
 };
 
 export const AUDIENCE_KEYS = ["stage", "owner", "source", "segment", "city", "companyId", "tag"] as const;
 
+/** Most contacts that can be taken out of one campaign by hand. */
+export const MAX_EXCLUDED = 5000;
+
+/** A real calendar day, YYYY-MM-DD (so 2026-02-31 is refused before it reaches the database). */
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+
 export function cleanAudience(raw: unknown): CampaignAudience {
   const out: CampaignAudience = {};
   if (!raw || typeof raw !== "object") return out;
+  const r = raw as Record<string, unknown>;
   for (const k of AUDIENCE_KEYS) {
-    const v = (raw as Record<string, unknown>)[k];
+    const v = r[k];
     if (typeof v === "string" && v.trim() && v !== "all") out[k] = v.trim().slice(0, 200);
+  }
+  if (isDay(r.createdFrom)) out.createdFrom = r.createdFrom;
+  if (isDay(r.createdTo)) out.createdTo = r.createdTo;
+  if (Array.isArray(r.exclude)) {
+    const ids = [...new Set(r.exclude.filter((x): x is string => typeof x === "string" && x.length > 0 && x.length <= 100))].slice(0, MAX_EXCLUDED);
+    if (ids.length > 0) out.exclude = ids;
   }
   return out;
 }
+
+/** A saved, reusable audience: the filters only (exclusions belong to each campaign). */
+export type SavedAudience = { id: string; name: string; audience: CampaignAudience; createdByName: string | null; createdAt: string };
+
+/** One person the filters would send to, for the "Quem vai receber" list. */
+export type AudienceMember = { id: string; name: string; company: string | null; ownerName: string | null; excluded: boolean };
 
 export type CampaignCounts = {
   /** Everyone the filters matched when sending started. */
@@ -140,6 +168,8 @@ export type CampaignCounts = {
   optedOut: number;
   /** Opportunities opened within 30 days of receiving it. */
   newDeals: number;
+  /** Answered and showed interest: the automation "Resposta de campanha" flagged it, or the contact is "quente". */
+  interested: number;
 };
 
 export type CampaignSummary = {
@@ -166,6 +196,7 @@ export type CampaignRecipient = {
   detail: string | null;
   sentAt: string | null;
   replied: boolean;
+  interested: boolean;
 };
 
 export type CampaignDetail = CampaignSummary & {
@@ -179,6 +210,8 @@ export type CampaignDetail = CampaignSummary & {
 export type AudiencePreview = {
   matched: number;
   eligible: number;
+  /** Would receive it, but were taken out by hand. */
+  excludedByHand: number;
   excluded: { reason: SkipReason; label: string; count: number }[];
   sample: { name: string; message: string | null }[];
 };
