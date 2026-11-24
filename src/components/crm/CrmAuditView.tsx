@@ -38,6 +38,9 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.catalog_change": "Mudou a Personalização",
   "crm.automation_change": "Mudou uma automação",
   "crm.automation_run": "Rodou a verificação diária",
+  "crm.client_create": "Cadastrou cliente ativo",
+  "crm.client_update": "Mudou cliente ativo",
+  "crm.contract_change": "Mudou contrato de cliente",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
@@ -110,6 +113,12 @@ function details(r: AdminRow): string {
           .map((v) => `${n(v.ok, "ação feita", "ações feitas")}${v.failed ? `, ${n(v.failed, "falha", "falhas")}` : ""}`)
           .join(" · ") || "nada ativo para rodar"
       );
+    case "crm.client_create":
+      return m.via === "oportunidade" ? "a partir de uma oportunidade ganha" : "a partir da empresa";
+    case "crm.client_update":
+      return [m.status ? `situação: ${String(m.status)}${m.reason ? ` (${String(m.reason)})` : ""}` : "", m.owner ? `responsável: ${String(m.owner)}` : ""].filter(Boolean).join(" · ") || "—";
+    case "crm.contract_change":
+      return m.action === "criado" ? `novo contrato · ${String(m.period ?? "")}` : `contrato editado: ${Array.isArray(m.fields) ? (m.fields as string[]).join(", ").toLowerCase() : ""}`;
     default: {
       const parts = Object.entries(m)
         .filter(([, v]) => ["string", "number", "boolean"].includes(typeof v))

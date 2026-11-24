@@ -60,13 +60,19 @@ export type CrmCapabilities = {
   customize: boolean;
   /** Automações: turn on, pause, adjust, run now, see the run history (Administrador). */
   manageAutomations: boolean;
+  /** Clientes ativos (Fase 5): see the clients — all of them with seeAllLeads, else the ones they're responsible for (and the unassigned). */
+  viewClients: boolean;
+  /** Create clients, edit them, add and edit contracts, write in their history. Needs viewClients. */
+  editClients: boolean;
+  /** See contract values (hidden by the server otherwise). Needs viewClients. */
+  seeContractValues: boolean;
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false },
 };
 
 export type CrmCap = keyof CrmCapabilities;
@@ -115,6 +121,15 @@ export const CRM_PERMISSION_MODULES: {
     ],
   },
   {
+    id: "clientes",
+    label: "Clientes ativos",
+    items: [
+      { cap: "viewClients", action: "Visualizar", label: "Ver os clientes ativos (sem \"ver todos os leads\": só os seus e os sem responsável)" },
+      { cap: "editClients", action: "Criar e editar", label: "Cadastrar clientes, editar, registrar contratos e histórico" },
+      { cap: "seeContractValues", action: "Visualizar", label: "Ver os valores dos contratos" },
+    ],
+  },
+  {
     id: "administracao",
     label: "Administração",
     items: [
@@ -148,11 +163,16 @@ export function sanitizeOverrides(raw: unknown, role: CrmRole): CrmPermissionOve
 /**
  * What a person may do: the profile, then their exceptions. Capabilities
  * that only make sense together are kept consistent (dispatching campaigns
- * needs the campaigns screen; archiving and importing need contact editing).
+ * needs the campaigns screen; archiving and importing need contact editing;
+ * editing clients and seeing contract values need the clients screen).
  */
 export function effectiveCapabilities(role: CrmRole, overrides: unknown): CrmCapabilities {
   const caps: CrmCapabilities = { ...CAPS[role], ...sanitizeOverrides(overrides, role) };
   if (!caps.editCampaigns) caps.sendCampaigns = false;
+  if (!caps.viewClients) {
+    caps.editClients = false;
+    caps.seeContractValues = false;
+  }
   if (!caps.editContacts) {
     caps.archiveContacts = false;
     caps.importContacts = false;

@@ -55,6 +55,8 @@ type CrmContactPanelProps = {
   onNewTask?: (draft: TaskDraft) => void;
   /** Bumped when a task was saved in the task form: reload this contact. */
   tasksVersion?: number;
+  /** Opens a client of Clientes ativos (from a won opportunity). */
+  onOpenClient?: (clientId: string) => void;
 };
 
 const PANEL_REFRESH_MS = 5_000;
@@ -310,6 +312,7 @@ export default function CrmContactPanel({
   onOpenTask,
   onNewTask,
   tasksVersion = 0,
+  onOpenClient,
 }: CrmContactPanelProps) {
   const { label, options, tag: tagById, tagGroups } = useCatalog();
   const [newDealFromChat, setNewDealFromChat] = useState(false);
@@ -745,6 +748,7 @@ export default function CrmContactPanel({
                 now={now}
                 onOpenTask={onOpenTask}
                 startNewDeal={newDealFromChat}
+                clients={onOpenClient && caps.viewClients ? { canCreate: caps.editClients, onOpen: onOpenClient } : undefined}
                 onReload={async () => {
                   await load();
                   onChanged();

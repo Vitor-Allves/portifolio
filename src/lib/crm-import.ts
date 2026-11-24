@@ -524,7 +524,9 @@ export async function undoImport(importId: string, actor: NonNullable<CrmActor>)
     const kept = await client.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts WHERE import_id = $1`, [importId]);
     await client.query(
       `DELETE FROM crm_companies co
-       WHERE co.import_id = $1 AND NOT EXISTS (SELECT 1 FROM crm_contacts c WHERE c.company_id = co.id)`,
+       WHERE co.import_id = $1 AND NOT EXISTS (SELECT 1 FROM crm_contacts c WHERE c.company_id = co.id)
+         -- a company that became a client (Clientes ativos) was worked on: it stays
+         AND NOT EXISTS (SELECT 1 FROM crm_clients cl WHERE cl.company_id = co.id)`,
       [importId]
     );
     await client.query(`UPDATE crm_imports SET undone_at = now(), undone_by_name = $2 WHERE id = $1`, [importId, actor.userName]);

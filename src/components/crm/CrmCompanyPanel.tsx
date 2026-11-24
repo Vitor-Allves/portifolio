@@ -48,6 +48,7 @@ export default function CrmCompanyPanel({
   onOpenTask,
   onNewTask,
   onChanged,
+  onOpenClient,
 }: {
   companyId: string;
   team: CrmTeamMember[];
@@ -60,6 +61,8 @@ export default function CrmCompanyPanel({
   onOpenTask: (taskId: string) => void;
   onNewTask: (draft: TaskDraft) => void;
   onChanged: () => void;
+  /** Opens its record in Clientes ativos. */
+  onOpenClient?: (clientId: string) => void;
 }) {
   const { label } = useCatalog();
   const [company, setCompany] = useState<CrmCompanyDetail | null>(null);
@@ -212,6 +215,38 @@ export default function CrmCompanyPanel({
               </button>
             </header>
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+              {onOpenClient && caps.viewClients && (company.clientId || caps.editClients) && (
+                <section aria-label="Cliente ativo" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-crm-line bg-crm-card px-3 py-2 text-[12.5px]">
+                  {company.clientId ? (
+                    <>
+                      <span className="text-crm-dim min-w-0 flex-1">Cliente ativo da Legado: contratos, serviços e histórico no cadastro do cliente.</span>
+                      <button type="button" onClick={() => onOpenClient(company.clientId!)} className={CRM_LINK_BTN}>
+                        Abrir cliente
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-crm-dim min-w-0 flex-1 basis-56">Fechou contrato? Cadastre a empresa em Clientes ativos.</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await fetch("/api/crm/clients/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: company.id }) });
+                          const body = (await res.json().catch(() => null)) as { id?: string; error?: string } | null;
+                          if (!res.ok || !body?.id) {
+                            setError(body?.error ?? "Não foi possível cadastrar o cliente.");
+                            return;
+                          }
+                          onChanged();
+                          onOpenClient(body.id);
+                        }}
+                        className={CRM_LINK_BTN}
+                      >
+                        Tornar cliente
+                      </button>
+                    </>
+                  )}
+                </section>
+              )}
               <section className="space-y-2">
                 <h3 className={CRM_LABEL}>Dados da empresa</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

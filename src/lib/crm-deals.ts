@@ -49,13 +49,15 @@ type DealRow = {
   contact_temperature: string | null;
   won_reason: string | null;
   won_note: string | null;
+  client_id: string | null;
 };
 
 // Origin and temperature fall back to the contact's when the opportunity has none of its own.
 const DEAL_COLS = `d.id, d.contact_id, d.title, d.value_cents, d.stage, d.owner_id, u.name AS owner_name, d.expected_close_at,
   d.lost_reason, d.lost_note, d.stage_changed_at, d.closed_at, d.created_at,
   d.service, d.negotiated_cents, d.source AS own_source, d.temperature AS own_temperature,
-  cx.source AS contact_source, cx.temperature AS contact_temperature, d.won_reason, d.won_note`;
+  cx.source AS contact_source, cx.temperature AS contact_temperature, d.won_reason, d.won_note,
+  (SELECT k.client_id FROM crm_contracts k WHERE k.deal_id = d.id) AS client_id`;
 const DEAL_FROM = `crm_deals d JOIN crm_contacts cx ON cx.id = d.contact_id LEFT JOIN internal_users u ON u.id = d.owner_id`;
 
 const cents = (v: string | number | null) => (v === null ? null : Number(v));
@@ -82,6 +84,7 @@ function mapDeal(r: DealRow): CrmDeal {
     stageChangedAt: iso(r.stage_changed_at)!,
     closedAt: iso(r.closed_at),
     createdAt: iso(r.created_at)!,
+    clientId: r.client_id ?? null,
   };
 }
 

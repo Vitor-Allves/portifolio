@@ -15,6 +15,7 @@ export type CrmView =
   | "contacts"
   | "companies"
   | "campaigns"
+  | "clients"
   | "settings"
   | "automations"
   | "team"
@@ -89,6 +90,15 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
   },
   {
     group: "operacao",
+    id: "clients",
+    label: "Clientes ativos",
+    hint: "Contratos e serviços",
+    description: "As empresas que contrataram a Legado: responsável, serviços, contratos com vigência e valor, e o histórico do relacionamento.",
+    tip: "Uma oportunidade ganha vira cliente pelo botão Tornar cliente. Use o filtro de contrato para ver o que vence nos próximos 30 ou 60 dias.",
+    mascot: "legacyWin",
+  },
+  {
+    group: "operacao",
     id: "tasks",
     label: "Tarefas",
     hint: "O que fazer hoje",
@@ -156,6 +166,9 @@ const ICONS: Record<CrmView, React.ReactNode> = {
     <path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2ZM5 9v10h14V9H5Zm2 2h3v3H7v-3Z" />
   ),
   contacts: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-8 1.66-8 5v1h16v-1c0-3.34-4.7-5-8-5Z" />,
+  clients: (
+    <path d="M9 3h6a2 2 0 0 1 2 2v1h3a2 2 0 0 1 2 2v4.5h-8.5V11h-3v1.5H2V8a2 2 0 0 1 2-2h3V5a2 2 0 0 1 2-2Zm0 3h6V5H9v1ZM2 14h8.5v1.5h3V14H22v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5Z" />
+  ),
   campaigns: <path d="M18 4.5v15l-6.5-3.6H8.6l1.2 4.6H7.3L6 15.9H5a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h6.5L18 4.5ZM20 9.5a2.5 2.5 0 0 1 0 5v-5Z" />,
   settings: (
     <path d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.7c.1.6.1 1.3 0 1.9l2 1.7-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.7a5.6 5.6 0 0 1 0-1.9l-2-1.7 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9L10.3 2ZM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />

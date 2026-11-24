@@ -87,6 +87,17 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   foi tirado à mão daquela campanha (`exclude`, até 5.000 contatos).
   `crm_campaign_audiences` — públicos salvos: só os filtros, com nome (o
   mesmo nome, sem diferença de maiúsculas e acentos, substitui os filtros).
+- `crm_clients` (v17) — clientes ativos: uma linha por empresa
+  (`company_id` único), responsável, situação (onboarding, ativo, pausado,
+  encerrado, com data e motivo do encerramento), cliente desde,
+  observações e a oportunidade ganha de origem. `crm_contracts` — contratos
+  do cliente: serviços (ids da lista Serviços), início, fim (vazio = sem
+  prazo), valor em centavos, cobrança (mensal ou valor único), situação
+  (vigente, encerrado, cancelado) e a oportunidade de origem (uma
+  oportunidade vira no máximo um contrato: índice único em `deal_id`).
+  `crm_client_events` — histórico de relacionamento do cliente (criação,
+  situação, edições, contratos, anotações). Contratos e clientes nunca são
+  apagados: encerre ou cancele.
 - `crm_options` — as listas editáveis (Personalização): origens, segmentos,
   serviços, motivos de perda e de ganho, tipos de tarefa, departamentos e
   prioridades. Tipos de tarefa e prioridades têm cor (`color`, v13), usada na
@@ -148,7 +159,15 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   com antes → depois). "Usuários e permissões" nunca vira exceção: só o
   perfil Administrador dá esse poder. Ninguém muda as próprias permissões; o
   Administrador geral tem todas. Dependências: disparar campanhas exige ver
-  campanhas; arquivar e importar exigem editar contatos.
+  campanhas; arquivar e importar exigem editar contatos; editar clientes e
+  ver valores de contrato exigem ver os clientes ativos.
+
+  **Clientes ativos (Fase 5):** ver — Administrador, Gestor, Marketing e
+  Comercial (este só os clientes de que é responsável e os sem
+  responsável); criar e editar — Administrador, Gestor e Comercial (nos
+  seus); ver valores dos contratos — todos menos Marketing. Sem essa
+  permissão o servidor não manda os valores (nem na lista, nem no
+  histórico).
 
   **Logins só do CRM:** o Administrador do CRM cria o acesso de quem só usa o
   CRM (perfil "Analista" no Intelligence, sem nenhuma empresa: lá não vê
@@ -213,6 +232,16 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (queda da função) é marcado como "falhou — confira na conversa", nunca
   reenviado às cegas. Se a Meta limitar o número, a campanha pausa sozinha.
   Quem foi tirado à mão não entra na campanha (nem como "ficou de fora").
+- **Clientes ativos:** nada vira cliente sozinho — só pelo botão Tornar
+  cliente (na oportunidade ganha, na empresa ou em "Prontos para virar
+  cliente"). Uma empresa tem no máximo um cliente, e uma oportunidade vira
+  no máximo um contrato, mesmo com dois cliques ao mesmo tempo. De uma
+  oportunidade ganha vêm a empresa, o responsável, a data, o serviço e o
+  valor negociado (primeiro contrato); se a empresa já é cliente, vira um
+  contrato novo dela. Virar cliente põe a empresa em "Cliente ativo";
+  encerrar pede o motivo, encerra os contratos vigentes e põe a empresa em
+  "Ex-cliente"; reativar volta para "Cliente ativo". "Vence em" conta dias
+  de Brasília até o fim do contrato vigente.
   **Interessado** = respondeu e a automação "Resposta de campanha" registrou
   a resposta, ou respondeu e está "quente"; quem pediu para sair depois de
   receber nunca conta.
@@ -300,6 +329,28 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 5, entrega 1: clientes ativos (schema v17)
+
+- **Clientes ativos** (nova seção em Operação): lista com situação,
+  responsável, serviços, valor mensal dos contratos vigentes e o próximo
+  vencimento; filtros por situação, responsável, serviço e vencimento
+  (até 30 / 60 dias, vencido); busca.
+- **Prontos para virar cliente:** oportunidades ganhas sem contrato (últimos
+  180 dias) e empresas marcadas "Cliente ativo" sem cadastro, com um botão.
+- **Painel do cliente:** situação (Onboarding, Ativo, Pausado, Encerrado com
+  motivo), responsável, cliente desde, observações, contatos decisores,
+  etiquetas da empresa, contratos (serviços, vigência, valor, cobrança,
+  situação, observações) e o histórico de relacionamento com "Registrar no
+  histórico".
+- **Tornar cliente** também na oportunidade ganha (aba Negócio e tarefas) e no
+  painel da empresa; "Ver cliente" / "Abrir cliente" quando já é.
+- **Permissões:** novo módulo "Clientes ativos" (ver, criar e editar, ver
+  valores), com exceções individuais. Auditoria: cliente criado, situação
+  e responsável, contratos criados e editados.
+- Banco v17: só acréscimos (`crm_clients`, `crm_contracts`,
+  `crm_client_events`), vazios — nenhum cliente é criado na migração.
+- Testes: `clients-api` (inclui dois cliques ao mesmo tempo) e `clients-e2e`.
 
 ### Especificação-mestra v1.0 — Fase 4, entrega 2: campanhas (schema v16)
 

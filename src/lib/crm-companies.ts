@@ -42,6 +42,7 @@ type CompanyRow = {
   won_count: string;
   last_activity_at: Date | null;
   created_at: Date;
+  client_id: string | null;
 };
 
 const COMPANY_SELECT = `
@@ -53,7 +54,8 @@ const COMPANY_SELECT = `
          count(c.id) FILTER (WHERE c.archived_at IS NULL) AS contact_count,
          count(c.id) FILTER (WHERE c.archived_at IS NULL AND c.stage NOT IN ('ganho', 'perdido')) AS open_count,
          count(c.id) FILTER (WHERE c.archived_at IS NULL AND c.stage = 'ganho') AS won_count,
-         max(COALESCE(c.last_message_at, c.updated_at)) AS last_activity_at
+         max(COALESCE(c.last_message_at, c.updated_at)) AS last_activity_at,
+         (SELECT cl.id FROM crm_clients cl WHERE cl.company_id = co.id) AS client_id
   FROM crm_companies co
   LEFT JOIN internal_users ou ON ou.id = co.owner_id
   LEFT JOIN crm_contacts c ON c.company_id = co.id`;
@@ -81,6 +83,7 @@ function mapCompany(r: CompanyRow): CrmCompanyRow {
     wonCount: Number(r.won_count),
     lastActivityAt: iso(r.last_activity_at),
     createdAt: iso(r.created_at)!,
+    clientId: r.client_id ?? null,
   };
 }
 
