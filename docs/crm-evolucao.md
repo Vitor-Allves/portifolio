@@ -158,4 +158,149 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   Já existiam: 2FA de Administrador, perfis e exceções, restrição por
   responsável, auditoria (alterações, transferências, propostas, contratos,
   exportações), encerrar sessões, arquivamento em vez de exclusão.
-- [ ] 10. Documentação e testes finais
+- [x] 10. Documentação e testes finais — seções 5 a 9 abaixo.
+
+## 5. Funcionalidades implementadas
+
+Por item da especificação. "Onde" é a tela do CRM; o funcionamento
+detalhado de cada uma está em `docs/crm.md` (Registro de alterações,
+"Evolução v1.0").
+
+| Item | O que foi entregue | Onde |
+| --- | --- | --- |
+| 2.1 Cadastros | Lead com outro telefone, potencial comercial e necessidade; empresa com telefone e e-mail; documentos e anexos no lead, na empresa e no cliente (tipo conferido pelo conteúdo, até 4 MB, arquivar sem apagar) | Contatos, Empresas, Clientes ativos |
+| 2.2 Duplicidade | WhatsApp, e-mail, nome e CNPJ: aviso no formulário com responsável e situação, recusa ao salvar; segunda negociação com o mesmo lead ou empresa só com autorização do Gestor | Novo contato, painel do contato |
+| 2.3 Diagnóstico | Ficha de diagnóstico comercial em versões, ligada à oportunidade | Painel do contato → Negócio |
+| 3 Propostas | Número, itens do catálogo ou personalizados, descontos com limite e autorização, condições, validade, modelos, PDF, link público com visualização e aprovação/recusa online com evidências, versões congeladas com motivo e diferenças, 8 situações, expiração automática | Propostas, oportunidade |
+| 3 Catálogo | Serviços com escopo, valor de referência, cobrança, prazo e condições | Personalização |
+| 4 Funil | 10 etapas configuráveis (nome, cor, ordem, probabilidade), probabilidade por oportunidade, valor ponderado | Funil de vendas, Personalização |
+| 5 Tabulação | Encerramento obrigatório em 4 grupos com motivo, observação, quem encerrou e data; oportunidade futura com tarefa de retomada; reabertura com justificativa; relatório | Funil, Relatórios |
+| 6 Visibilidade | Comercial vê todos os contatos, oportunidades, clientes e histórico, interage só nos seus; conversas de outros fechadas; pedido de transferência com aprovação do Gestor | Todo o CRM, Transferências |
+| 7 Automações | 16 regras configuráveis (prazos, responsáveis, ações), nenhuma envia mensagem; as 9 pedidas pela especificação cobertas | Automações |
+| 8 Contratos | Contrato numerado com proposta de origem, condições, vencimento, vigência, renovação, cancelamento, responsáveis, documento assinado, PDF; "Formalizar contrato" a partir da proposta aprovada | Clientes ativos, Propostas |
+| 9 Operação | Onboarding em 8 itens, entregáveis com prazo, satisfação (0 a 10) | Cliente → Operação |
+| 10 Financeiro | Vendido, receitas, recorrente, contratado 12 meses, previsto ponderado, descontos, cancelamentos, perdas, parcelas, comissões por regras | Financeiro |
+| 11 Comunicação | Mensagens de WhatsApp agendadas (texto ou modelo), com as regras de envio conferidas no horário; o resto já existia (histórico, modelos, campanhas, consentimento, descadastro, indicadores de entrega e resposta) | Conversas |
+| 12 Produtividade | Leads trabalhados, contatos finalizados, propostas aprovadas, por serviço; por pessoa: atribuídos, follow-ups, aprovadas, perdas, ticket médio | Painel, Metas e produtividade |
+| 13 Segurança | 2FA de uso único; exportar e anonimizar dados do titular (LGPD); auditoria de propostas, contratos, transferências, comissões e exportações (com o formato) | Painel do contato, Auditoria |
+| 14 Relatórios | 15 relatórios com filtros, totais, planilha e PDF, nas regras de acesso do CRM | Relatórios |
+| 15 Intelligence | Resultados por origem e por anúncio (o anúncio que o WhatsApp informa), além da ligação cliente ↔ Intelligence já existente | Relatórios, Clientes ativos |
+
+## 6. Documentação técnica
+
+- **Pilha:** sem mudança (Next.js 16 App Router, React 19, TypeScript,
+  PostgreSQL/Neon via `pg`, Vercel). Nenhuma dependência nova.
+- **Banco:** 8 migrações, todas só acréscimos e executadas por
+  `ensureSchema` (`src/lib/db.ts`), cada uma conferida pelo teste de banco
+  (banco novo e banco atualizado ficam idênticos; dados existentes
+  preservados):
+  - v21 — funil configurável e tabulação;
+  - v22 — solicitações de transferência;
+  - v23 — cadastros, diagnóstico e documentos;
+  - v24 — propostas, versões, aceites, modelos e configurações;
+  - v25 — contratos ampliados, onboarding, entregáveis e satisfação;
+  - v26 — regras de comissão e data de saída do contrato;
+  - v27 — automações 11–16 e mensagens agendadas;
+  - v28 — passo do 2FA e anonimização LGPD.
+- **Regras no servidor:** toda rota `/api/crm` confere o perfil e as
+  exceções da pessoa (`crm-access.ts`: `requireCap`, `requireContact`,
+  `requireDeal`, `canSee`/`canAct`/`canSeeConversation`) — as telas só
+  escondem o que o servidor já recusa.
+- **Módulos novos** (`src/lib`): `crm-proposals*`, `crm-operations*`,
+  `crm-finance*`, `crm-transfers`, `crm-diagnostics`, `crm-files`,
+  `crm-scheduled-messages`, `crm-report-catalog*`, `crm-lgpd`, e as regras
+  novas em `crm-automations`. Página pública: `src/app/proposta/[token]`.
+- **Execução fora de uma ação de alguém:** `GET /api/cron/automations`
+  (verificação diária) e `GET /api/cron/scheduled-messages`, ambos só com
+  `Authorization: Bearer <CRON_SECRET>`; mensagens agendadas também saem
+  pela consulta do sino de quem está com o CRM aberto (`after()`).
+- **PDFs:** propostas, contratos, financeiro e relatórios pelo mesmo gerador
+  (`crm-pdf.ts`, jsPDF), com a identidade da Legado.
+- **Testes:** `tests/` (ver `tests/README.md`), rodados pelo CI em cada
+  envio: tipos, lint, build e todas as suítes contra um Postgres de teste e
+  uma API falsa da Meta/WhatsApp/Anthropic — nada sai para fora.
+
+## 7. Relatório de testes
+
+**Regressão final (24/11/2026, 20:22–20:30 UTC):** build de produção
+(`next build` + `next start`, como no CI), banco de teste zerado e dados de
+exemplo recarregados em cada suíte. **53 de 53 suítes passaram, 1.921
+verificações**, nenhuma falha. Comando: `npm test` (ver `tests/README.md`).
+
+| Grupo | Suítes | Situação |
+| --- | --- | --- |
+| Base anterior ao projeto (Fases 0–7: Painel, campanhas, personalização, campos, equipe e permissões, tarefas, automações 1–10, conversas, clientes, acompanhamento, relatórios do Painel, metas, mídia, IA, regressão geral) | 34 | Todas passaram — nada do que existia quebrou |
+| Evolução v1.0 (funil e tabulação, transferências, cadastros, propostas, operação, financeiro, automações 11–16, mensagens agendadas, relatórios, segurança/LGPD) | 19 | Todas passaram |
+
+- Cada módulo tem uma suíte de API (regras, permissões, validações, erros,
+  auditoria) e uma de navegador (telas, celular, tema escuro, sem erro na
+  página). Os números do Painel e dos relatórios são conferidos à mão
+  contra os dados de exemplo (`dashboard-data`, `reports-api`).
+- O teste de banco cria um banco do zero e atualiza bancos antigos versão a
+  versão (v7 → v28) com dados dentro: a estrutura final é idêntica e nenhum
+  dado se perde; cada migração da evolução tem sua conferência.
+- Nenhum teste fala com serviços reais: WhatsApp, Meta e Anthropic são
+  simulados; nenhuma mensagem real foi enviada.
+- O CI do GitHub roda tipos, lint, build e todas as suítes a cada envio (o
+  do commit dos indicadores passou; um envio anterior, do financeiro, teve
+  uma falha que não se repetiu em nenhuma rodada seguinte, local ou no CI).
+- Observado durante o desenvolvimento (não em produção): no modo de
+  desenvolvimento, a primeira compilação de uma página às vezes passa do
+  tempo limite de uma suíte de navegador; repetida, passa. No modo de
+  produção isso não ocorre.
+
+## 8. Critérios de aceite (item 17)
+
+| # | Critério | Como foi conferido |
+| --- | --- | --- |
+| 1 | Módulos acessíveis e funcionais | Uma suíte de API e uma de navegador por módulo (`tests/README.md`); telas no celular e no tema escuro |
+| 2 | Cadastros e relacionamentos | `cadastro-api/e2e`, `clients-api`, `operations-api` |
+| 3 | Propostas em PDF | `proposals-api` (PDF da equipe e do cliente) |
+| 4 | Aprovação online com evidências | `proposals-api/e2e` (nome, e-mail, documento, versão, IP, navegador, hash do conteúdo) |
+| 5 | Versionamento preserva anteriores | `proposals-api` (versão enviada congelada; nova versão com motivo e diferenças) |
+| 6 | Tabulação alimenta relatórios | `funnel-api`, `reports-api` (motivos de perda, funil) |
+| 7 | Transferências exigem autorização | `transfers-api/e2e` |
+| 8 | Vendedores veem todos, interagem nos seus | `transfers-api` (403 com explicação), `scheduled-messages-api`, `reports-api` |
+| 9 | Gestores com controle global | `transfers-api`, `finance-api`, `reports-api` |
+| 10 | Duplicidades identificadas | `cadastro-api/e2e` |
+| 11 | Automações conforme configuração | `automations-api`, `automations-ev-api`, `client-followup-api` |
+| 12 | Contratos e clientes integrados | `operations-api/e2e`, `finance-api` |
+| 13 | Relatórios consistentes | `reports-api` (outubro igual ao Painel), `dashboard-data` (conferido à mão), `goals-api` (totais = Painel) |
+| 14 | Auditoria | Exportações, propostas, contratos, transferências, comissões, automações e LGPD auditados (conferidos nas suítes de cada módulo) |
+| 15 | Segurança e permissões testadas | `team-api`, `access-api`, `security-api` e as checagens de perfil de cada suíte |
+| 16 | Dados existentes preservados | `schema` (atualização de cada versão com dados, sem perdas) |
+| 17 | Regressão confirma o que existia | Todas as suítes anteriores ao projeto passam (seção 7) |
+
+## 9. Limitações e pendências
+
+**Dependem de decisões de infraestrutura (do responsável pelo projeto):**
+
+- `CRON_SECRET` e o agendamento na Vercel: sem eles, as automações diárias
+  rodam no "Rodar agora" e as mensagens agendadas saem quando alguém está
+  com o CRM aberto (com ninguém, saem quando alguém abrir).
+- Plano da Vercel (o Hobby é para uso não comercial e limita o agendamento
+  a uma vez por dia).
+- Backups e testes de recuperação: dependem do plano do Neon e de uma rotina
+  própria (item 13 da especificação).
+- Envio de e-mail (Resend + DNS do domínio): hoje a proposta "por e-mail" é
+  registrada, mas o CRM não envia e-mails.
+- Banco separado para as prévias da Vercel.
+- Chave da Anthropic e política de privacidade para o assistente de IA
+  (desligado sem a chave).
+- Validação jurídica da LGPD (bases legais, retenção, registro das
+  operações) e revisão de segurança independente.
+
+**Do próprio sistema:**
+
+- Financeiro e comissões são gerenciais: o CRM calcula, não fatura nem paga.
+- Contrato assinado é um documento anexado (sem assinatura eletrônica
+  integrada).
+- Resultados por anúncio não trazem o investimento: ele fica no Legado
+  Intelligence; cruzar pelo ID do anúncio é o próximo passo.
+- Mensagem livre agendada só sai com a janela de 24h aberta no horário
+  (regra do WhatsApp); para depois disso, modelo aprovado.
+- Relatórios mostram e exportam até 1.000 linhas (o resumo conta todas).
+- A anonimização mantém o aceite de proposta (comprova o contrato); se o
+  titular escrever de novo, entra como contato novo.
+- O limite de tentativas de login é por instância do servidor (um limite
+  global pede Redis/Upstash).
