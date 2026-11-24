@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -930,6 +930,28 @@ async function ensureSchema(): Promise<void> {
     }
 
     await done(15);
+  }
+
+  if (current < 16) {
+    // v16 — Fase 4, entrega 2 (especificação v1.0): públicos salvos de
+    // campanha (the filters, under a name). A new table only; the sign-up
+    // period and the contacts taken out by hand live in each campaign's
+    // audience (JSONB), which needs no change.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_campaign_audiences (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        -- accent/case-insensitive name: saving the same name again replaces the filters
+        name_key TEXT NOT NULL UNIQUE,
+        audience JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    await done(16);
   }
 }
 

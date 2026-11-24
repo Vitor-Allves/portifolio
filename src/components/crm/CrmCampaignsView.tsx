@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CRM_STAGES, type CrmFacets, type CrmTeamMember, type CrmTemplate } from "@/lib/crm-types";
 import {
+  MAX_EXCLUDED,
   PARAM_SOURCES,
   campaignStatusLabel,
+  type AudienceMember,
   type AudiencePreview,
   type CampaignAudience,
   type CampaignCounts,
@@ -13,6 +15,7 @@ import {
   type CampaignStatus,
   type CampaignSummary,
   type ParamSource,
+  type SavedAudience,
 } from "@/lib/crm-campaign-rules";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_TD, CRM_TH } from "./crm-styles";
 import { dateTime } from "./crm-format";
@@ -152,6 +155,7 @@ function CampaignList({ canSend, onNew, onOpen }: { canSend: boolean; onNew: () 
                     ) : (
                       <>
                         {k.sent} enviadas · {k.delivered} entregues · {k.read} lidas · {k.replied} responderam
+                        {k.interested > 0 ? ` · ${k.interested} ${k.interested === 1 ? "interessado" : "interessados"}` : ""}
                         {k.failed > 0 ? ` · ${k.failed} falharam` : ""}
                         {k.pending > 0 ? ` · ${k.pending} na fila` : ""}
                       </>
@@ -170,6 +174,17 @@ function CampaignList({ canSend, onNew, onOpen }: { canSend: boolean; onNew: () 
 // ---------------- editor ----------------
 
 const EMPTY_AUDIENCE: CampaignAudience = {};
+
+/** The filters a saved audience holds (everything but the people taken out by hand). */
+type FilterKey = Exclude<keyof CampaignAudience, "exclude">;
+const filtersOf = ({ exclude: _out, ...filters }: CampaignAudience): Omit<CampaignAudience, "exclude"> => {
+  void _out;
+  return filters;
+};
+const sameFilters = (a: CampaignAudience, b: CampaignAudience) => {
+  const norm = (x: CampaignAudience) => JSON.stringify(Object.entries(filtersOf(x)).sort(([k1], [k2]) => k1.localeCompare(k2)));
+  return norm(a) === norm(b);
+};
 
 function placeholdersOf(body: string | null | undefined): number {
   return new Set(body?.match(/\{\{\d+\}\}/g) ?? []).size;
@@ -205,10 +220,15 @@ function CampaignEditor({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [saved, setSaved] = useState<SavedAudience[]>([]);
+  const [savingAs, setSavingAs] = useState<string | null>(null);
+  /** Feedback next to the audience controls (saved audiences, people taken out). */
+  const [audienceMsg, setAudienceMsg] = useState<{ error: boolean; text: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     api<CrmFacets>("/api/crm/facets/").then((f) => !cancelled && setFacets(f)).catch(() => {});
+    api<{ audiences: SavedAudience[] }>("/api/crm/campaigns/audiences/").then((d) => !cancelled && setSaved(d.audiences)).catch(() => {});
     if (templatesConfigured) {
       api<{ templates: CrmTemplate[] }>("/api/crm/templates/")
         .then((d) => !cancelled && setTemplates(d.templates))
@@ -262,13 +282,67 @@ function CampaignEditor({
     setParams((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   }
 
-  function setFilter(key: keyof CampaignAudience, value: string) {
+  function setFilter(key: FilterKey, value: string) {
     setAudience((prev) => {
       const next = { ...prev };
       if (value && value !== "all") next[key] = value;
       else delete next[key];
       return next;
     });
+  }
+
+  /** Takes people out of this campaign (or brings them back). */
+  function setExcluded(contactIds: string[], out: boolean) {
+    if (out && (audience.exclude?.length ?? 0) + contactIds.length > MAX_EXCLUDED) {
+      setAudienceMsg({ error: true, text: `Dá para tirar até ${MAX_EXCLUDED} pessoas à mão. Use um filtro para deixar de fora um grupo maior.` });
+      return;
+    }
+    setAudienceMsg(null);
+    setAudience((prev) => {
+      const set = new Set(prev.exclude ?? []);
+      for (const id of contactIds) {
+        if (out) set.add(id);
+        else set.delete(id);
+      }
+      const next = { ...prev };
+      if (set.size > 0) next.exclude = [...set];
+      else delete next.exclude;
+      return next;
+    });
+  }
+
+  // ---- públicos salvos ----
+  const savedMatch = saved.find((a) => sameFilters(a.audience, audience)) ?? null;
+  const hasFilters = Object.keys(filtersOf(audience)).length > 0;
+
+  function applySaved(savedId: string) {
+    const a = saved.find((x) => x.id === savedId);
+    if (!a) return;
+    setAudience((prev) => ({ ...a.audience, ...(prev.exclude ? { exclude: prev.exclude } : {}) }));
+  }
+
+  async function saveCurrentAudience() {
+    if (savingAs === null) return;
+    setAudienceMsg(null);
+    try {
+      const { audience: a } = await api<{ audience: SavedAudience }>("/api/crm/campaigns/audiences/", { method: "POST", body: { name: savingAs, audience: filtersOf(audience) } });
+      setSaved((prev) => [...prev.filter((x) => x.id !== a.id), a].sort((x, y) => x.name.localeCompare(y.name, "pt-BR")));
+      setSavingAs(null);
+      setAudienceMsg({ error: false, text: `Público “${a.name}” salvo. Ele aparece em “Público salvo” nas próximas campanhas.` });
+    } catch (e) {
+      setAudienceMsg({ error: true, text: (e as Error).message });
+    }
+  }
+
+  async function deleteSaved(a: SavedAudience) {
+    if (!window.confirm(`Apagar o público salvo “${a.name}”? As campanhas que já usaram continuam como estão.`)) return;
+    try {
+      await api(`/api/crm/campaigns/audiences/${a.id}/`, { method: "DELETE" });
+      setSaved((prev) => prev.filter((x) => x.id !== a.id));
+      setAudienceMsg({ error: false, text: `Público “${a.name}” apagado. Os filtros continuam nesta campanha.` });
+    } catch (e) {
+      setAudienceMsg({ error: true, text: (e as Error).message });
+    }
   }
 
   const missing = useMemo(() => {
@@ -346,6 +420,24 @@ function CampaignEditor({
               <span className={CRM_LABEL}>Nome da campanha</span>
               <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ex.: Condição de novembro · BNI" className={`${CRM_INPUT} mt-1`} />
             </label>
+            <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
+              <label className="block min-w-0 flex-1 basis-56">
+                <span className={CRM_LABEL}>Público salvo</span>
+                <select value={savedMatch?.id ?? ""} onChange={(e) => applySaved(e.target.value)} className={`${CRM_INPUT} mt-1`} aria-label="Público salvo">
+                  <option value="">{saved.length ? (hasFilters ? "Filtros abaixo (não salvos)" : "Nenhum: escolha os filtros") : "Nenhum público salvo ainda"}</option>
+                  {saved.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {savedMatch && (
+                <button type="button" onClick={() => void deleteSaved(savedMatch)} className={`${CRM_LINK_BTN} !text-crm-red pb-2`}>
+                  Apagar público salvo
+                </button>
+              )}
+            </div>
             <p className="mt-3 text-[12px] text-crm-dim">Quem deve receber? Deixe em “Todos” o que não importa.</p>
             <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <FilterSelect label="Etapa do funil" value={audience.stage} onChange={(v) => setFilter("stage", v)} options={CRM_STAGES.map((s) => [s.id, s.label])} />
@@ -364,7 +456,57 @@ function CampaignEditor({
                 onChange={(v) => setFilter("tag", v)}
                 options={tagGroups.flatMap((g) => g.tags.map((t) => [t.id, `${g.label}: ${t.label}`] as [string, string]))}
               />
+              <label className="block min-w-0">
+                <span className={CRM_LABEL}>Cadastrado a partir de</span>
+                <input type="date" value={audience.createdFrom ?? ""} onChange={(e) => setFilter("createdFrom", e.target.value)} className={`${CRM_INPUT} mt-1`} />
+              </label>
+              <label className="block min-w-0">
+                <span className={CRM_LABEL}>Cadastrado até</span>
+                <input type="date" value={audience.createdTo ?? ""} onChange={(e) => setFilter("createdTo", e.target.value)} className={`${CRM_INPUT} mt-1`} />
+              </label>
             </div>
+            {audience.createdFrom && audience.createdTo && audience.createdFrom > audience.createdTo && (
+              <p className="mt-1.5 text-[12px] text-crm-amber">A data “a partir de” é depois da data “até”: ninguém entra nesse período.</p>
+            )}
+            {savingAs === null ? (
+              <button type="button" disabled={!hasFilters} onClick={() => setSavingAs(savedMatch?.name ?? "")} className={`${CRM_LINK_BTN} mt-2`}>
+                {savedMatch ? "Salvar com outro nome" : "Salvar estes filtros como público"}
+              </button>
+            ) : (
+              <form
+                className="mt-2 flex flex-wrap items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void saveCurrentAudience();
+                }}
+              >
+                <input
+                  value={savingAs}
+                  onChange={(e) => setSavingAs(e.target.value)}
+                  maxLength={80}
+                  autoFocus
+                  aria-label="Nome do público"
+                  placeholder="Ex.: Leads do BNI em Sorocaba"
+                  className={`${CRM_INPUT} flex-1 basis-56 min-w-0`}
+                />
+                <button type="submit" disabled={!savingAs.trim()} className={CRM_BTN_PRIMARY}>
+                  Salvar público
+                </button>
+                <button type="button" onClick={() => setSavingAs(null)} className={CRM_BTN_OUTLINE}>
+                  Cancelar
+                </button>
+                <p className="basis-full text-[11.5px] text-crm-faint">Guarda só os filtros. Usar um nome que já existe troca os filtros dele.</p>
+              </form>
+            )}
+            {audienceMsg && (
+              <p
+                role={audienceMsg.error ? "alert" : "status"}
+                className={audienceMsg.error ? `${CRM_ALERT} mt-2` : "mt-2 rounded-lg border border-crm-green/30 bg-crm-green/[0.07] px-3 py-2 text-[12px] text-crm-green"}
+              >
+                {audienceMsg.text}
+              </p>
+            )}
+            <AudienceMembers audience={audience} onExclude={setExcluded} />
           </Step>
 
           {/* 2. Mensagem */}
@@ -447,8 +589,8 @@ function CampaignEditor({
             )}
             {pv && (
               <p className="lg:hidden mb-2 text-[13px]">
-                <strong className="text-[16px]">{pv.eligible}</strong> {pv.eligible === 1 ? "pessoa vai" : "pessoas vão"} receber · {pv.matched - pv.eligible} ficam de fora (detalhes
-                abaixo)
+                <strong className="text-[16px]">{pv.eligible}</strong> {pv.eligible === 1 ? "pessoa vai" : "pessoas vão"} receber · {pv.matched + pv.excludedByHand - pv.eligible}{" "}
+                ficam de fora (detalhes abaixo)
               </p>
             )}
             <p className="text-[12.5px] text-crm-dim leading-relaxed">
@@ -504,14 +646,20 @@ function CampaignEditor({
             </p>
             {pv && (
               <p className="text-[12px] text-crm-dim mt-1">
-                de {pv.matched} {pv.matched === 1 ? "contato" : "contatos"} no filtro
+                de {pv.matched + pv.excludedByHand} {pv.matched + pv.excludedByHand === 1 ? "contato" : "contatos"} no filtro
               </p>
             )}
           </div>
-          {pv && pv.excluded.length > 0 && (
+          {pv && (pv.excluded.length > 0 || pv.excludedByHand > 0) && (
             <div>
               <p className={CRM_LABEL}>Ficam de fora</p>
               <ul className="mt-1 space-y-0.5 text-[12.5px]">
+                {pv.excludedByHand > 0 && (
+                  <li className="flex justify-between gap-2">
+                    <span className="text-crm-dim">Tirados por você</span>
+                    <span className="font-semibold tabular-nums">{pv.excludedByHand}</span>
+                  </li>
+                )}
                 {pv.excluded.map((e) => (
                   <li key={e.reason} className="flex justify-between gap-2">
                     <span className="text-crm-dim">{e.label}</span>
@@ -539,6 +687,119 @@ function CampaignEditor({
         </aside>
       </div>
     </section>
+  );
+}
+
+/**
+ * "Quem vai receber": everyone the filters would send to, searchable, with a
+ * way to take someone out of this campaign (and bring them back). Opens on
+ * demand; the list only reloads when the filters or the search change.
+ */
+function AudienceMembers({ audience, onExclude }: { audience: CampaignAudience; onExclude: (contactIds: string[], out: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [data, setData] = useState<{ key: string; rows: AudienceMember[]; total: number; page: number; pageSize: number } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const excluded = useMemo(() => new Set(audience.exclude ?? []), [audience.exclude]);
+  const key = JSON.stringify({ filters: filtersOf(audience), q: q.trim() });
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const { filters, q: search } = JSON.parse(key) as { filters: CampaignAudience; q: string };
+    const timer = setTimeout(() => {
+      api<{ rows: AudienceMember[]; total: number; page: number; pageSize: number }>("/api/crm/campaigns/preview/list/", { method: "POST", body: { audience: filters, q: search, page: 1 } })
+        .then((d) => {
+          if (cancelled) return;
+          setError(null);
+          setData({ key, ...d });
+        })
+        .catch((e: Error) => !cancelled && setError(e.message));
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, key]);
+
+  async function more() {
+    if (!data) return;
+    setLoadingMore(true);
+    try {
+      const { filters, q: search } = JSON.parse(data.key) as { filters: CampaignAudience; q: string };
+      const d = await api<{ rows: AudienceMember[]; total: number; page: number; pageSize: number }>("/api/crm/campaigns/preview/list/", {
+        method: "POST",
+        body: { audience: filters, q: search, page: data.page + 1 },
+      });
+      setData((prev) => (prev && prev.key === data.key ? { ...prev, rows: [...prev.rows, ...d.rows], page: d.page, total: d.total } : prev));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const stale = data?.key !== key;
+  return (
+    <div className="mt-4 border-t border-crm-line pt-3">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className={CRM_LINK_BTN}>
+        {open ? "Esconder a lista" : "Ver a lista de quem vai receber"}
+        {excluded.size > 0 && ` · ${excluded.size} ${excluded.size === 1 ? "tirado" : "tirados"} por você`}
+      </button>
+      {open && (
+        <div role="region" aria-label="Lista de destinatários" className="mt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome, empresa ou telefone" aria-label="Buscar na lista" className={`${CRM_INPUT} flex-1 basis-56 min-w-0`} />
+            {excluded.size > 0 && (
+              <button type="button" onClick={() => onExclude([...excluded], false)} className={CRM_LINK_BTN}>
+                Incluir todos de volta
+              </button>
+            )}
+          </div>
+          {error && <p className={`${CRM_ALERT} mt-2`}>{error}</p>}
+          {!data && !error && <p className="mt-2 text-[12px] text-crm-dim">Carregando...</p>}
+          {data && (
+            <div className={stale ? "opacity-60" : undefined}>
+              <p className="mt-2 text-[12px] text-crm-dim">
+                {data.total} {data.total === 1 ? "pessoa pode" : "pessoas podem"} receber{q.trim() ? " nesta busca" : ""}. Quem você tirar fica fora só desta campanha.
+              </p>
+              {data.rows.length === 0 ? (
+                <p className="mt-2 text-[12px] text-crm-faint">Ninguém aqui.</p>
+              ) : (
+                <ul className="mt-1 divide-y divide-crm-line max-h-80 overflow-y-auto pr-1">
+                  {data.rows.map((m) => {
+                    const out = excluded.has(m.id);
+                    const sub = [m.company, m.ownerName ? `com ${m.ownerName}` : null].filter(Boolean).join(" · ");
+                    return (
+                      <li key={m.id} className="flex items-center gap-3 py-1.5">
+                        <span className="min-w-0 flex-1">
+                          <span className={`block truncate text-[13px] font-medium ${out ? "line-through text-crm-faint" : ""}`}>{m.name}</span>
+                          {sub && <span className="block truncate text-[11.5px] text-crm-faint">{sub}</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onExclude([m.id], !out)}
+                          aria-label={out ? `Incluir ${m.name} de volta` : `Tirar ${m.name} da campanha`}
+                          className={`${CRM_LINK_BTN} shrink-0 ${out ? "" : "!text-crm-red"}`}
+                        >
+                          {out ? "Incluir de volta" : "Tirar"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {data.rows.length < data.total && (
+                <button type="button" disabled={loadingMore || stale} onClick={() => void more()} className={`${CRM_LINK_BTN} mt-2`}>
+                  {loadingMore ? "Carregando..." : `Mostrar mais (${data.total - data.rows.length})`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -739,16 +1000,22 @@ function CampaignResults({
         {!canSend && campaign.status === "enviando" && !sending && <p className="text-[12px] text-crm-faint">O envio continua quando um Administrador ou Gestor abrir esta campanha.</p>}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" role="region" aria-label="Resultados da campanha">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" role="region" aria-label="Resultados da campanha">
         <Num label="Enviadas" value={k.sent} note={`de ${toSend} que podiam receber`} />
         <Num label="Entregues" value={k.delivered} note={`${pctOf(k.delivered, k.sent)} das enviadas`} />
         <Num label="Lidas" value={k.read} note={`${pctOf(k.read, k.sent)} das enviadas`} />
         <Num label="Responderam" value={k.replied} note="em até 3 dias" />
+        <Num label="Interessados" value={k.interested} note="responderam com interesse" tone={k.interested > 0 ? "text-crm-green" : undefined} />
         <Num label="Viraram oportunidade" value={k.newDeals} note="em até 30 dias" />
         <Num label="Pediram para sair" value={k.optedOut} tone={k.optedOut > 0 ? "text-crm-amber" : undefined} />
         <Num label="Falharam" value={k.failed} tone={k.failed > 0 ? "text-crm-red" : undefined} />
         <Num label="Ficaram de fora" value={k.skipped} note="sem consentimento, descadastrados..." />
       </div>
+      {(campaign.audience.exclude?.length ?? 0) > 0 && (
+        <p className="text-[12px] text-crm-faint -mt-2">
+          Antes do envio, {campaign.audience.exclude!.length} {campaign.audience.exclude!.length === 1 ? "pessoa foi tirada" : "pessoas foram tiradas"} à mão desta campanha.
+        </p>
+      )}
 
       {campaign.templateBody && (
         <div className="rounded-2xl border border-crm-line bg-crm-card shadow-[var(--crm-shadow)] p-4">
@@ -782,7 +1049,15 @@ function CampaignResults({
                   </span>
                 </td>
                 <td className={`${CRM_TD} text-crm-dim text-[12px]`}>{r.detail ?? (r.sentAt ? dateTime(r.sentAt) : "—")}</td>
-                <td className={`${CRM_TD} text-[12px]`}>{r.replied ? <span className="text-crm-green font-semibold">Sim</span> : <span className="text-crm-faint">—</span>}</td>
+                <td className={`${CRM_TD} text-[12px] whitespace-nowrap`}>
+                  {r.interested ? (
+                    <span className="text-crm-green font-semibold">Sim · interessado</span>
+                  ) : r.replied ? (
+                    <span className="text-crm-green font-semibold">Sim</span>
+                  ) : (
+                    <span className="text-crm-faint">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -82,7 +82,11 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   disparou. `crm_campaign_recipients` — uma linha por contato da campanha
   (chave campanha + contato): na fila, enviada, falhou ou ficou de fora (com
   o motivo), id da mensagem no WhatsApp. `crm_messages.campaign_id` liga a
-  mensagem enviada à campanha.
+  mensagem enviada à campanha. Desde a v16, o `audience` também guarda o
+  período de cadastro (`createdFrom`/`createdTo`, dias de Brasília) e quem
+  foi tirado à mão daquela campanha (`exclude`, até 5.000 contatos).
+  `crm_campaign_audiences` — públicos salvos: só os filtros, com nome (o
+  mesmo nome, sem diferença de maiúsculas e acentos, substitui os filtros).
 - `crm_options` — as listas editáveis (Personalização): origens, segmentos,
   serviços, motivos de perda e de ganho, tipos de tarefa, departamentos e
   prioridades. Tipos de tarefa e prioridades têm cor (`color`, v13), usada na
@@ -208,6 +212,10 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   vez, mesmo com dois envios ao mesmo tempo. Um envio interrompido no meio
   (queda da função) é marcado como "falhou — confira na conversa", nunca
   reenviado às cegas. Se a Meta limitar o número, a campanha pausa sozinha.
+  Quem foi tirado à mão não entra na campanha (nem como "ficou de fora").
+  **Interessado** = respondeu e a automação "Resposta de campanha" registrou
+  a resposta, ou respondeu e está "quente"; quem pediu para sair depois de
+  receber nunca conta.
 - **Exigência que cresce com a etapa:** o cadastro inicial continua rápido
   (nada é obrigatório até a proposta). Para ir a *Proposta enviada*, a
   oportunidade precisa de serviço e valor estimado; para *Ganho*, de
@@ -292,6 +300,25 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 4, entrega 2: campanhas (schema v16)
+
+- **Quem vai receber:** a lista de quem o filtro alcança (busca por nome,
+  empresa ou telefone), com **Tirar** e **Incluir de volta** por pessoa; o
+  resumo mostra "Tirados por você". Vale só para aquela campanha e fica
+  salvo no rascunho.
+- **Período de cadastro:** "Cadastrado a partir de" / "até", em dias de
+  Brasília.
+- **Públicos salvos:** salvar os filtros com um nome e reusar em outra
+  campanha; apagar quando não servir mais.
+- **Resultados:** novo número "Interessados" (e "Sim · interessado" por
+  pessoa, "N interessados" na lista de campanhas), além de responderam e
+  viraram oportunidade; aviso de quantos foram tirados à mão.
+- O envio continua com a página aberta (sem fila no servidor) até a decisão
+  sobre infraestrutura (Vercel Pro ou agendador externo). Agendamento,
+  e-mail e fila ficam para depois dessa decisão.
+- Banco v16: só acréscimos (tabela `crm_campaign_audiences`).
+- Testes: `campaign-audience-api` e `campaign-audience-e2e`.
 
 ### Especificação-mestra v1.0 — Fase 4, entrega 1: conversas (schema v15)
 

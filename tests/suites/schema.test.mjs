@@ -54,13 +54,19 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 15;
+const LATEST = 16;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v14: undo exactly what v15 (conversas) added.
+// Back to v15: undo exactly what v16 (públicos salvos) added.
+async function downgradeToV15(name) {
+  await query(name, `DROP TABLE crm_campaign_audiences; DELETE FROM schema_migrations WHERE version = 16;`);
+}
+
+// Back to v14: undo exactly what v16 and v15 (conversas) added.
 async function downgradeToV14(name) {
+  await downgradeToV15(name);
   await query(
     name,
     `DROP INDEX crm_contacts_attendant_idx; DROP INDEX crm_messages_created_idx;
@@ -194,6 +200,8 @@ ok((await query(B, `SELECT (SELECT count(*) FROM crm_automation_runs) + (SELECT 
 const attendanceTags = (await query(B, `SELECT label FROM crm_tags WHERE category = 'atendimento' ORDER BY sort`)).map((r) => r.label).join(",");
 ok(attendanceTags === "Aguardando cliente,Dúvida,Suporte,Reclamação,Urgente", `v15: Atendimento tags seeded (${attendanceTags})`);
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_contacts WHERE attendant_id IS NOT NULL`))[0].n === 0, "v15: nobody is attending any conversation yet");
+// v16 (Fase 4, entrega 2): saved audiences start empty.
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_campaign_audiences`))[0].n === 0, "v16: no saved audiences yet");
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);
