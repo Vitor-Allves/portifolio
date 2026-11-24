@@ -1,28 +1,31 @@
 "use client";
 
 // Lembretes (especificação v1.0, módulo 8): the bell in the CRM header. It
-// lists my tasks whose reminder time has come (until I dismiss each one)
-// and how many of my tasks are late. In-app only: it checks while the CRM
-// is open — nothing is sent by WhatsApp or e-mail.
+// lists my tasks whose reminder time has come (until I dismiss each one),
+// my unread notices from the automações (lead atribuído, alerta, interesse
+// em campanha) and how many of my tasks are late. In-app only: it checks
+// while the CRM is open — nothing is sent by WhatsApp or e-mail.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CrmReminders } from "@/lib/crm-types";
+import type { CrmBellNotice, CrmReminders } from "@/lib/crm-types";
 import { CRM_LINK_BTN, CRM_POPOVER } from "./crm-styles";
-import { taskDueLabel } from "./crm-format";
+import { relativeTime, taskDueLabel } from "./crm-format";
 
 const POLL_MS = 60_000;
 
 export default function CrmReminderBell({
   version,
   onOpenTask,
+  onOpenContact,
   onShowTasks,
 }: {
   /** Bumped after any change in the CRM: reload. */
   version: number;
   onOpenTask: (taskId: string) => void;
+  onOpenContact: (contactId: string) => void;
   onShowTasks: () => void;
 }) {
-  const [data, setData] = useState<CrmReminders>({ due: [], overdue: 0 });
+  const [data, setData] = useState<CrmReminders & { notifications: CrmBellNotice[] }>({ due: [], overdue: 0, notifications: [] });
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const box = useRef<HTMLDivElement | null>(null);
@@ -30,7 +33,10 @@ export default function CrmReminderBell({
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/crm/reminders/", { cache: "no-store" });
-      if (res.ok) setData((await res.json()) as CrmReminders);
+      if (res.ok) {
+        const d = (await res.json()) as CrmReminders & { notifications?: CrmBellNotice[] };
+        setData({ ...d, notifications: d.notifications ?? [] });
+      }
     } catch {
       // The bell just keeps what it had; the next check tries again.
     }
@@ -72,7 +78,13 @@ export default function CrmReminderBell({
     void load();
   }
 
-  const count = data.due.length;
+  async function markRead(ids: string[] | "all") {
+    setData((d) => ({ ...d, notifications: ids === "all" ? [] : d.notifications.filter((n) => !ids.includes(n.id)) }));
+    await fetch("/api/crm/notifications/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).catch(() => {});
+    void load();
+  }
+
+  const count = data.due.length + data.notifications.length;
   const label = count === 0 ? "Lembretes" : `Lembretes: ${count} ${count === 1 ? "novo" : "novos"}`;
 
   return (
@@ -99,9 +111,42 @@ export default function CrmReminderBell({
           <header className="px-4 py-2.5 border-b border-crm-line">
             <h2 className="text-[13px] font-semibold">Lembretes</h2>
           </header>
+          {data.notifications.length > 0 && (
+            <section aria-label="Avisos" className="border-b border-crm-line">
+              <div className="px-4 pt-2 flex items-center justify-between">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-crm-faint">Avisos</h3>
+                <button type="button" onClick={() => void markRead("all")} className="text-[11.5px] text-crm-dim hover:text-crm-text">
+                  Marcar todos como lidos
+                </button>
+              </div>
+              <ul className="divide-y divide-crm-line max-h-[35vh] overflow-y-auto">
+                {data.notifications.map((n) => (
+                  <li key={n.id} className="px-4 py-2.5 flex items-start gap-2">
+                    <button
+                      type="button"
+                      disabled={!n.contactId}
+                      onClick={() => {
+                        setOpen(false);
+                        void markRead([n.id]);
+                        if (n.contactId) onOpenContact(n.contactId);
+                      }}
+                      className="min-w-0 flex-1 text-left disabled:cursor-default"
+                    >
+                      <span className="block text-[13px] font-semibold">{n.title}</span>
+                      {n.body && <span className="block text-[11.5px] text-crm-dim">{n.body}</span>}
+                      <span className="block text-[11px] text-crm-faint">{relativeTime(n.at, now)}</span>
+                    </button>
+                    <button type="button" onClick={() => void markRead([n.id])} aria-label={`Marcar como lido: ${n.title}`} className="text-[11.5px] text-crm-dim hover:text-crm-text shrink-0">
+                      Lido
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {count === 0 ? (
             <p className="px-4 py-4 text-[12.5px] text-crm-dim">Nenhum lembrete agora.</p>
-          ) : (
+          ) : data.due.length === 0 ? null : (
             <ul className="divide-y divide-crm-line max-h-[50vh] overflow-y-auto">
               {data.due.map((t) => (
                 <li key={t.id} className="px-4 py-2.5 flex items-start gap-2">

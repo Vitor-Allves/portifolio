@@ -6,7 +6,19 @@ import CrmThemeToggle from "./CrmThemeToggle";
 import { LegadoLockup, Mascot, type MascotName } from "./crm-brand";
 import { initials } from "./crm-format";
 
-export type CrmView = "dashboard" | "board" | "conversations" | "tasks" | "agenda" | "contacts" | "companies" | "campaigns" | "settings" | "team" | "audit";
+export type CrmView =
+  | "dashboard"
+  | "board"
+  | "conversations"
+  | "tasks"
+  | "agenda"
+  | "contacts"
+  | "companies"
+  | "campaigns"
+  | "settings"
+  | "automations"
+  | "team"
+  | "audit";
 
 /** Menu groups (especificação v1.0): a group shows only when it has a section this profile can open. */
 export const CRM_GROUPS = [
@@ -104,6 +116,15 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
   },
   {
     group: "admin",
+    id: "automations",
+    label: "Automações",
+    hint: "Tarefas e avisos sozinhos",
+    description: "Regras que criam tarefas, lembretes e avisos sozinhas: ligue, pause, ajuste prazos e responsáveis e veja cada execução. Nenhuma automação envia mensagem.",
+    tip: "Todas começam desligadas. Comece pelas de evento (novo lead, proposta enviada); as de verificação diária rodam no horário agendado ou em Rodar agora.",
+    mascot: "titanWelcome",
+  },
+  {
+    group: "admin",
     id: "team",
     label: "Usuários e permissões",
     hint: "Perfis de acesso",
@@ -123,6 +144,7 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
 ];
 
 const ICONS: Record<CrmView, React.ReactNode> = {
+  automations: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />,
   audit: <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1 13.6-3.3-3.3 1.4-1.4 1.9 1.9 4.9-4.9 1.4 1.4-6.3 6.3Z" />,
   dashboard: <path d="M4 13h4v7H4v-7Zm6-9h4v16h-4V4Zm6 6h4v10h-4V10Z" />,
   board: <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />,

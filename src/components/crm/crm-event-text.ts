@@ -70,6 +70,8 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
           return what;
       }
     }
+    case "automation":
+      return `Automação: ${String(p.text ?? "")}`;
     case "tag": {
       const via = p.via && p.via !== "manual" ? ` (${TAG_VIA.find((v) => v.id === p.via)?.label ?? String(p.via)})` : "";
       return p.action === "removed" ? `Etiqueta removida: ${String(p.label)}` : `Etiqueta adicionada: ${String(p.label)}${via}`;

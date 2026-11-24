@@ -32,13 +32,14 @@ import {
   type CampaignStatus,
   type CampaignSummary,
   type SkipReason,
+  CAMPAIGN_REPLY_WINDOW,
 } from "./crm-campaign-rules";
 import { WhatsAppConfigError, isRateLimited, sendTemplate, WhatsAppApiError } from "./whatsapp";
 
 /** A claimed recipient older than this was abandoned by a function that died mid-send. */
 const STALE_CLAIM = "2 minutes";
 /** Results windows. */
-const REPLY_WINDOW = "3 days";
+const REPLY_WINDOW = CAMPAIGN_REPLY_WINDOW;
 const DEAL_WINDOW = "30 days";
 
 /** Why a contact can't receive a campaign right now (null = it can). Same rule everywhere. */

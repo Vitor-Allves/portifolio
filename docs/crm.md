@@ -51,6 +51,15 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   empresa, ou atividade interna (sem contato nem empresa).
 - `crm_task_events` (v13) — o histórico de cada tarefa: criada, editada
   (quais campos), reagendada, responsável trocado, mudança de situação.
+- `crm_automations` (v14) — as dez automações da especificação: situação
+  (ativa, pausada, desativada — todas começam desativadas), parâmetros
+  ajustáveis (`config`: prazo, responsável, tipo de tarefa, prioridade,
+  dias, lembrete...; o padrão fica no código, `crm-automation-defs.ts`) e a
+  última verificação diária. `crm_automation_runs` — uma linha por execução
+  (feita, ignorada ou falha, com o detalhe); `(automação, dedupe_key)` é
+  único, então a mesma automação nunca age duas vezes no mesmo lead,
+  oportunidade ou tarefa. `crm_notifications` — os avisos no sino (lead
+  atribuído, lead parado, interesse em campanha), lidos ou não, por pessoa.
 - `crm_companies` — empresas; `name_key` é o nome normalizado (sem acento,
   caixa, pontuação e sufixos como LTDA/ME/S.A.) e é único, então "Clínica
   Ribeiro" e "clinica ribeiro ltda" são a mesma empresa. Desde a v10: razão
@@ -112,6 +121,7 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Etiquetas nos contatos | sim | sim | nos seus | sim |
   | Empresas: dados, CNPJ, situação, etiquetas | sim | sim | sim | sim |
   | Empresas: responsável pela conta | qualquer um | qualquer um | só assumir sem dono / soltar a sua | não |
+  | Automações: ligar, ajustar, rodar, histórico | sim | não | não | não |
   | Personalização (listas e etiquetas) | sim | não | não | não |
   | Arquivar e restaurar contatos | sim | sim | nos seus | sim |
   | Usuários e permissões (perfis, exceções, cargos, logins só CRM) | sim | não | não | não |
@@ -222,6 +232,21 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   15 min, 1 h ou 1 dia antes; tarefa de dia todo: no dia ou na véspera, às
   8h. Reagendar faz o lembrete valer de novo; concluir ou cancelar tira do
   sino. Dispensar o próprio lembrete não exige poder editar o funil.
+- **Automações** (`crm-automations.ts`): nenhuma envia mensagem — criam
+  tarefas, lembretes, linhas no histórico ("Automação") e avisos no sino. As
+  de evento (1 novo lead, 2 lead atribuído, 4 reunião agendada, 5 proposta
+  enviada, 10 resposta de campanha) rodam logo depois que a ação de quem
+  disparou é gravada; se a automação falhar, a ação da pessoa continua
+  valendo e a falha aparece no histórico de execuções (e pode acontecer de
+  novo no próximo evento). As de tempo (3 lead sem movimentação, 6 lead sem
+  resposta) rodam na verificação diária: `GET /api/cron/automations`, que só
+  aceita o cabeçalho `Authorization: Bearer <CRON_SECRET>` (sem a variável,
+  fica desligada), ou no botão "Rodar agora" do Administrador; cada
+  verificação trata até 100 registros por automação. Importações de
+  planilha não criam tarefa de primeiro contato; troca de responsável em
+  lote gera um aviso só por pessoa; uma resposta "SAIR" não conta como
+  interesse; mensagem de campanha não conta como "nossa última mensagem"
+  na automação 6. As 7, 8 e 9 dependem dos clientes ativos (Fase 5).
 - **Situação da tarefa:** cancelada só volta reativada (pendente); concluir
   pede o resultado (opcional). Tudo entra no histórico da tarefa e, quando
   há contato, no histórico do contato.
@@ -248,6 +273,27 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 3, entrega 2: automações (schema v14)
+
+- **Automações** (nova seção em Administração, perfil Administrador; nova
+  permissão "Automações"): as dez da especificação com gatilho, condição,
+  ação, prazo, responsável e situação; ativar, pausar, desativar e ajustar;
+  histórico de execuções e falhas, com o contato a um clique.
+- Funcionando já: 1 novo lead → tarefa de primeiro contato; 2 lead
+  atribuído → aviso ao responsável; 4 reunião agendada → lembrete; 5
+  proposta enviada → follow-up; 10 resposta de campanha → histórico,
+  temperatura e aviso. 3 lead sem movimentação → alerta e 6 lead sem
+  resposta → tarefa rodam na verificação diária ou em "Rodar agora".
+  7, 8 e 9 aparecem como "Disponível na Fase 5".
+- **Avisos no sino**, junto dos lembretes, com "Marcar como lido".
+- Todas começam **desativadas**: nada muda para a equipe até o
+  Administrador ligar.
+- Banco v14: só tabelas novas (`crm_automations`, `crm_automation_runs`,
+  `crm_notifications`).
+- Verificação diária automática: rota pronta e protegida por `CRON_SECRET`;
+  o agendamento na Vercel depende de aprovação (ver segurança).
+- Testes: `automations-api` e `automations-e2e`.
 
 ### Especificação-mestra v1.0 — Fase 3, entrega 1: tarefas e agenda (schema v13)
 

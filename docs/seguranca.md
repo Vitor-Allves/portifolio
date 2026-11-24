@@ -135,7 +135,7 @@ inclusive valores e etapas das oportunidades.
 | Prévias da Vercel podiam alterar o banco de produção | Crítica | **Corrigido**: trava em `db.ts`; falta banco próprio para prévias (decisão de infraestrutura) |
 | Outras dependências vulneráveis (`@vercel/functions`, `sharp`, `zod`…) | Alta | **Corrigido** (`npm audit` zerado) |
 | Testes fora do repositório, sem verificação automática | Alta | **Corrigido**: `tests/` + CI |
-| Sem execução agendada no servidor (automações, filas) | Alta | Pendente: decisão Vercel Pro ou alternativa |
+| Sem execução agendada no servidor (automações, filas) | Alta | Em parte: `/api/cron/automations` pronto, só aceita `Bearer <CRON_SECRET>` e fica desligado sem a variável; falta aprovar o agendamento diário na Vercel e criar `CRON_SECRET` |
 | Plano Hobby da Vercel é para uso não comercial | Alta | Pendente: decisão de plano |
 | 2FA não obrigatório para Administrador/Gestor do CRM | Média | **Corrigido** para Administradores (Fase 2); Gestor fica opcional |
 | Código 2FA pode ser reutilizado dentro da mesma janela de 30s | Baixa | Pendente (guardar o último código aceito) |

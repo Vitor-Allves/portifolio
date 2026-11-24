@@ -286,7 +286,9 @@ export type CrmEventKind =
   | "restored"
   | "deal"
   | "task"
-  | "tag";
+  | "tag"
+  /** Written by an automation (Fase 3): payload { automation, text }. */
+  | "automation";
 
 export type CrmEvent = {
   id: string;
@@ -374,6 +376,9 @@ export type CrmTaskEvent = { id: string; action: string; payload: Record<string,
 
 /** The reminders bell: reminders that are due, and how many of my tasks are late. */
 export type CrmReminders = { due: CrmTask[]; overdue: number };
+
+/** A notice in the bell (automações): a lead given to me, an alert, interest in a campaign. */
+export type CrmBellNotice = { id: string; kind: string; title: string; body: string | null; contactId: string | null; at: string };
 
 export type CrmContactDetail = CrmContactCard & {
   consentSource: string | null;

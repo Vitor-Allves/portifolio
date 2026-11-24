@@ -58,13 +58,15 @@ export type CrmCapabilities = {
   sendCampaigns: boolean;
   /** Personalização do CRM: lists, tags (Administrador). */
   customize: boolean;
+  /** Automações: turn on, pause, adjust, run now, see the run history (Administrador). */
+  manageAutomations: boolean;
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false },
 };
 
 export type CrmCap = keyof CrmCapabilities;
@@ -117,6 +119,7 @@ export const CRM_PERMISSION_MODULES: {
     label: "Administração",
     items: [
       { cap: "customize", action: "Administrar", label: "Personalização (listas e etiquetas)" },
+      { cap: "manageAutomations", action: "Administrar", label: "Automações (ativar, pausar, ajustar, rodar e ver o histórico)" },
       { cap: "manageTeam", action: "Administrar", label: "Usuários e permissões (só pelo perfil Administrador)" },
     ],
   },

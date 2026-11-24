@@ -7,6 +7,7 @@ import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import { companyKey as crmCompanyKey } from "./crm-types";
 import { DEFAULT_OPTIONS, DEFAULT_TAGS } from "./crm-catalog";
+import { AUTOMATION_DEFS } from "./crm-automation-defs";
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -53,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -849,6 +850,67 @@ async function ensureSchema(): Promise<void> {
 
     await done(13);
   }
+
+  if (current < 14) {
+    // v14 — Fase 3, entrega 2 (especificação v1.0): automações. New tables
+    // only. Every automation starts "desativada": nothing changes for the
+    // team until an Administrador turns one on. Automations never send
+    // messages — they create tasks, reminders, history lines and notices.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_automations (
+        id TEXT PRIMARY KEY,
+        -- ativa | pausada | desativada
+        status TEXT NOT NULL DEFAULT 'desativada',
+        -- The template's adjustable parameters (prazo, responsável, tipo de tarefa...); defaults live in code.
+        config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        last_run_at TIMESTAMPTZ,
+        last_run_summary JSONB,
+        updated_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        updated_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    // One line per execution. (automation, dedupe_key) is unique, so the same
+    // lead / opportunity / task is never handled twice by the same rule; a
+    // failure gets its own key, so it can be tried again.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_automation_runs (
+        id TEXT PRIMARY KEY,
+        automation_id TEXT NOT NULL REFERENCES crm_automations (id),
+        dedupe_key TEXT NOT NULL,
+        -- ok | ignorada | falha
+        status TEXT NOT NULL,
+        detail TEXT,
+        contact_id TEXT REFERENCES crm_contacts (id) ON DELETE SET NULL,
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES crm_tasks (id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (automation_id, dedupe_key)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_automation_runs_created_idx ON crm_automation_runs (created_at DESC)`);
+    // Notices in the bell (lead atribuído, alerta, interesse em campanha).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES internal_users (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT,
+        contact_id TEXT REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        automation_id TEXT REFERENCES crm_automations (id),
+        read_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_notifications_unread_idx ON crm_notifications (user_id, created_at DESC) WHERE read_at IS NULL`);
+    for (const a of AUTOMATION_DEFS) {
+      await db.query(`INSERT INTO crm_automations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [a.id]);
+    }
+
+    await done(14);
+  }
 }
 
 function slugifyUsernameCandidate(raw: string): string {
@@ -938,19 +1000,47 @@ export async function getDb(): Promise<Pool> {
  * write the owning row atomically), and revoke/reset flows that bump
  * `session_version` together with other account fields.
  */
+// Work to do once a transaction has committed (automations, Fase 3): queued
+// with onCommit by code running inside withTransaction, run right after
+// COMMIT, never after a ROLLBACK. A failure there is logged and never undoes
+// or fails what was just saved.
+const inTransaction = new WeakSet<object>();
+const afterCommit = new WeakMap<object, (() => Promise<void>)[]>();
+
+async function runQuietly(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    console.error("[db] after-commit work failed", err);
+  }
+}
+
+/** Runs `fn` after the transaction `client` is in commits (or now, when `client` isn't in one). */
+export async function onCommit(client: object, fn: () => Promise<void>): Promise<void> {
+  if (!inTransaction.has(client)) return runQuietly(fn);
+  afterCommit.set(client, [...(afterCommit.get(client) ?? []), fn]);
+}
+
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   await getDb();
   const pool = getPool();
   const client = await pool.connect();
+  let result: T;
+  let queued: (() => Promise<void>)[] = [];
+  inTransaction.add(client);
   try {
     await client.query("BEGIN");
-    const result = await fn(client);
+    result = await fn(client);
     await client.query("COMMIT");
-    return result;
+    queued = afterCommit.get(client) ?? [];
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
+    inTransaction.delete(client);
+    afterCommit.delete(client);
     client.release();
   }
+  for (const work of queued) await runQuietly(work);
+  return result;
 }

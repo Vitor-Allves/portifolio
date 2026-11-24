@@ -12,6 +12,7 @@
 import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
 import { getDb, withTransaction } from "./db";
+import { afterOwnersAssigned } from "./crm-automation-hooks";
 import {
   CRM_IMPORT_MAX_ROWS,
   companyKey,
@@ -421,6 +422,8 @@ export async function commitImport(
         importId,
       ]
     );
+
+    if (ownerId) await afterOwnersAssigned(client, ids.map((contactId) => ({ contactId, ownerId })), actor, true);
 
     // Tags from the sheet, recorded as applied by this import.
     const tagPairs = checked.fresh.flatMap((r, i) => r.tagIds.map((tagId) => ({ contactId: ids[i], tagId })));
