@@ -46,12 +46,14 @@ ok(true, "second contract: ends in 20 days");
 await panel.getByLabel("Situação do cliente").selectOption("ativo");
 await panel.getByRole("button", { name: "Salvar cliente" }).click();
 await panel.getByText("Salvo", { exact: true }).waitFor();
+await panel.getByRole("tab", { name: "Histórico" }).click();
 const history = panel.getByRole("region", { name: "Histórico do cliente" });
 await history.getByText("Situação: Onboarding → Ativo").waitFor();
 await history.getByLabel("Registrar no histórico").fill("Kickoff feito com a Ana");
 await history.getByRole("button", { name: "Registrar no histórico" }).click();
 await history.getByText("Kickoff feito com a Ana").waitFor();
 ok(await history.getByText(/Virou cliente pela oportunidade ganha “Tráfego Ribeiro”/).isVisible(), "history: from the opportunity, situation, note");
+await panel.getByRole("tab", { name: "Cliente", exact: true }).click();
 await shot(g, "f5e1-painel-cliente");
 
 // ---- company ↔ client ↔ contact ----

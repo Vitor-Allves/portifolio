@@ -46,7 +46,8 @@ import CrmTaskDialog, { type TaskDialogTarget, type TaskDraft } from "./CrmTaskD
 import CrmReminderBell from "./CrmReminderBell";
 import CrmAutomationsView from "./CrmAutomationsView";
 import CrmClientsView from "./CrmClientsView";
-import CrmClientPanel from "./CrmClientPanel";
+import CrmClientPanel, { type ClientTab } from "./CrmClientPanel";
+import CrmFollowUpView from "./CrmFollowUpView";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -291,7 +292,7 @@ function CrmAppInner({
   const isWide = useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
   const [companyId, setCompanyId] = useState<string | null>(null);
   // Clientes ativos: the client panel (shown when no contact or company panel is on top of it).
-  const [clientId, setClientId] = useState<string | null>(null);
+  const [clientId, setClientId] = useState<{ id: string; tab?: ClientTab; month?: string } | null>(null);
   // The task form, over whatever is open (new task, or one being edited).
   const [taskTarget, setTaskTarget] = useState<TaskDialogTarget | null>(null);
   const openTask = useCallback((id: string) => setTaskTarget({ id }), []);
@@ -357,10 +358,10 @@ function CrmAppInner({
     setSelected({ contactId, tab, dealId });
   }, []);
 
-  const openClient = useCallback((id: string) => {
+  const openClient = useCallback((id: string, opts: { tab?: ClientTab; month?: string } = {}) => {
     setSelected(null);
     setCompanyId(null);
-    setClientId(id);
+    setClientId({ id, ...opts });
   }, []);
 
   const visible = useMemo(() => {
@@ -487,7 +488,7 @@ function CrmAppInner({
           "contacts",
           "companies",
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
-          ...(caps.viewClients ? (["clients"] as const) : []),
+          ...(caps.viewClients ? (["clients", "followup"] as const) : []),
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
           ...(caps.manageTeam ? (["team", "audit"] as const) : []),
@@ -518,7 +519,13 @@ function CrmAppInner({
               <p className="hidden sm:block text-[12.5px] text-crm-dim truncate">{section.description}</p>
             </div>
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              <CrmReminderBell version={dataVersion} onOpenTask={openTask} onOpenContact={(id) => openContact(id)} onShowTasks={() => setView("tasks")} />
+              <CrmReminderBell
+                version={dataVersion}
+                onOpenTask={openTask}
+                onOpenContact={(id) => openContact(id)}
+                onOpenClient={caps.viewClients ? (id) => openClient(id) : undefined}
+                onShowTasks={() => setView("tasks")}
+              />
               <button type="button" onClick={() => setNewOpen(true)} aria-label="Novo contato" className={`${CRM_BTN_PRIMARY} shrink-0 gap-1`}>
                 <span aria-hidden="true">+</span>
                 <span className="hidden sm:inline">Novo contato</span>
@@ -695,6 +702,8 @@ function CrmAppInner({
             onOpenClient={openClient}
             onOpenContact={(id) => openContact(id, "detalhes")}
           />
+        ) : view === "followup" && caps.viewClients ? (
+          <CrmFollowUpView version={dataVersion} onOpenClient={(id, month) => openClient(id, { tab: "acompanhamento", month })} />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
         ) : view === "automations" && caps.manageAutomations ? (
@@ -835,8 +844,10 @@ function CrmAppInner({
 
       {clientId && !selected && !companyId && (
         <CrmClientPanel
-          key={clientId}
-          clientId={clientId}
+          key={`${clientId.id}|${clientId.tab ?? ""}|${clientId.month ?? ""}`}
+          clientId={clientId.id}
+          initialTab={clientId.tab}
+          initialMonth={clientId.month}
           team={team}
           currentUserId={currentUserId}
           caps={caps}

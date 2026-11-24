@@ -37,8 +37,13 @@ async function send(url: string, method: string, body: unknown): Promise<{ ok: b
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** Rules about Clientes ativos: the responsible is the client's, not the lead's. */
+const CLIENT_RULES: string[] = ["cliente_onboarding", "renovacao_contrato", "cliente_sem_atualizacao"];
+
 /** Prazo, in words. */
 function deadline(def: AutomationDef, cfg: AutomationConfig): string {
+  if (def.id === "renovacao_contrato") return `${plural(cfg.days ?? 0, "dia", "dias")} antes do fim do contrato`;
+  if (def.id === "cliente_sem_atualizacao") return `A partir do dia ${cfg.dayOfMonth ?? 25} do mês (tarefa para o dia)`;
   if (def.fields.includes("dueDays")) return cfg.dueDays ? `Tarefa para ${plural(cfg.dueDays, "dia", "dias")} depois` : "Tarefa para o mesmo dia";
   if (def.fields.includes("days")) return `${plural(cfg.days ?? 0, "dia", "dias")}${def.id === "lead_sem_resposta" ? " sem resposta (tarefa para o dia)" : " parado"}`;
   if (def.fields.includes("reminderMinutes")) return `Lembrete ${TASK_REMINDERS_TIMED.find((r) => r.minutes === cfg.reminderMinutes)?.label.toLowerCase() ?? ""}`;
@@ -51,6 +56,7 @@ function responsible(def: AutomationDef, cfg: AutomationConfig, team: CrmTeamMem
   if (def.id === "lead_atribuido") return "O novo responsável do lead";
   if (def.id === "resposta_campanha") return cfg.notifyOwner ? "Aviso para o responsável do lead" : "Sem aviso";
   if (def.id === "reuniao_agendada") return "O responsável da reunião";
+  if (CLIENT_RULES.includes(def.id)) return `Responsável pelo cliente (sem responsável: ${cfg.fallbackOwnerId ? name(cfg.fallbackOwnerId) : def.id === "renovacao_contrato" ? "não avisa ninguém" : "ninguém"})`;
   if (!def.fields.includes("owner")) return "—";
   const main = !cfg.owner || cfg.owner === "lead" ? "Responsável do lead" : name(cfg.owner);
   const fallback = cfg.fallbackOwnerId ? name(cfg.fallbackOwnerId) : "ninguém";
@@ -116,9 +122,15 @@ function ConfigForm({
           <input type="number" min={0} max={60} value={draft.dueDays ?? 0} onChange={(e) => set({ dueDays: Number(e.target.value) })} aria-label="Prazo em dias" className={`${CRM_INPUT} mt-1`} />
         </label>
       )}
+      {has("dayOfMonth") && (
+        <label className="block">
+          <span className={CRM_LABEL}>A partir do dia do mês</span>
+          <input type="number" min={1} max={28} value={draft.dayOfMonth ?? 25} onChange={(e) => set({ dayOfMonth: Number(e.target.value) })} aria-label="Dia do mês" className={`${CRM_INPUT} mt-1`} />
+        </label>
+      )}
       {has("days") && (
         <label className="block">
-          <span className={CRM_LABEL}>{def.id === "lead_sem_resposta" ? "Dias sem resposta" : "Dias parado"}</span>
+          <span className={CRM_LABEL}>{def.id === "lead_sem_resposta" ? "Dias sem resposta" : def.id === "renovacao_contrato" ? "Dias antes do fim" : "Dias parado"}</span>
           <input type="number" min={1} max={90} value={draft.days ?? 1} onChange={(e) => set({ days: Number(e.target.value) })} aria-label="Dias" className={`${CRM_INPUT} mt-1`} />
         </label>
       )}
@@ -157,9 +169,14 @@ function ConfigForm({
       )}
       {has("fallbackOwnerId") && (!draft.owner || draft.owner === "lead") && (
         <label className="block">
-          <span className={CRM_LABEL}>Se o lead não tiver responsável</span>
-          <select value={draft.fallbackOwnerId ?? ""} onChange={(e) => set({ fallbackOwnerId: e.target.value || null })} aria-label="Se o lead não tiver responsável" className={`${CRM_INPUT} mt-1`}>
-            <option value="">{def.id === "lead_sem_movimentacao" ? "Não avisar ninguém" : "Deixar sem responsável"}</option>
+          <span className={CRM_LABEL}>{CLIENT_RULES.includes(def.id) ? "Se o cliente não tiver responsável" : "Se o lead não tiver responsável"}</span>
+          <select
+            value={draft.fallbackOwnerId ?? ""}
+            onChange={(e) => set({ fallbackOwnerId: e.target.value || null })}
+            aria-label={CLIENT_RULES.includes(def.id) ? "Se o cliente não tiver responsável" : "Se o lead não tiver responsável"}
+            className={`${CRM_INPUT} mt-1`}
+          >
+            <option value="">{def.id === "lead_sem_movimentacao" || def.id === "renovacao_contrato" ? "Não avisar ninguém" : "Deixar sem responsável"}</option>
             {people}
           </select>
         </label>

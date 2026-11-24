@@ -63,6 +63,10 @@ export function clientEventText(e: CrmClientEvent): string {
       return `${str(p.label) || "Contrato"} — ${changesText(p.changes) || "editado"}`;
     case "note":
       return str(p.text);
+    case "report": {
+      const fields = Array.isArray(p.fields) && p.action === "edited" ? `: ${(p.fields as string[]).join(", ").toLowerCase()}` : "";
+      return `Acompanhamento de ${str(p.monthLabel)} ${p.action === "edited" ? "atualizado" : "registrado"}${fields}`;
+    }
     default:
       return "";
   }

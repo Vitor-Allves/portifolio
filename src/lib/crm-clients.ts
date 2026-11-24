@@ -11,9 +11,13 @@ import { getDb, withTransaction } from "./db";
 import { writeAudit } from "./audit-log";
 import { CrmConflictError, CrmForbiddenError, CrmInputError, CrmNotFoundError, brDate, cleanText, escapeLike, iso, parseDateOnly } from "./crm-core";
 import { requireCap, visibleTo, type CrmSession } from "./crm-access";
-import { canAssignOwner } from "./crm-permissions";
+import { canAssignOwner, type CrmCapabilities } from "./crm-permissions";
 import { optionLabel, requireOptionId } from "./crm-options";
 import {
+  isMonth,
+  monthLabel,
+  type CrmClientReport,
+  type CrmFollowUpRow,
   clientStatusLabel,
   contractStatusLabel,
   formatBRL,
@@ -32,6 +36,9 @@ import {
 } from "./crm-types";
 
 type Q = Pick<PoolClient, "query">;
+
+/** Who acts on clients: a person (CrmSession) or the automation "Lead convertido em cliente" (userId null). */
+export type ClientActor = { userId: string | null; userName: string; caps: CrmCapabilities };
 
 /** Today in Brasília, YYYY-MM-DD. */
 export function todayBr(now = new Date()): string {
@@ -153,7 +160,7 @@ export async function listClients(s: CrmSession, f: ClientFilters): Promise<{ cl
   return { clients: rows.map((r) => mapClient(r, s.caps.seeContractValues)), valuesHidden: !s.caps.seeContractValues };
 }
 
-const canSee = (s: CrmSession, ownerId: string | null) => s.caps.seeAllLeads || ownerId === null || ownerId === s.userId;
+const canSee = (s: ClientActor, ownerId: string | null) => s.caps.seeAllLeads || ownerId === null || ownerId === s.userId;
 
 type ContractDbRow = {
   id: string;
@@ -212,18 +219,20 @@ export async function getClient(s: CrmSession, id: string): Promise<CrmClientDet
   const r = rows[0];
   if (!r || !canSee(s, r.owner_id)) throw new CrmNotFoundError("Cliente não encontrado.");
   const show = s.caps.seeContractValues;
-  const [contracts, events] = await Promise.all([
+  const [contracts, events, reports] = await Promise.all([
     db.query<ContractDbRow>(`${CONTRACT_SELECT} WHERE k.client_id = $1 ORDER BY (k.status = 'vigente') DESC, k.starts_on DESC, k.created_at DESC`, [id]),
     db.query<{ id: string; kind: CrmClientEvent["kind"]; payload: Record<string, unknown>; user_name: string | null; created_at: Date }>(
       `SELECT id, kind, payload, user_name, created_at FROM crm_client_events WHERE client_id = $1 ORDER BY created_at DESC, id DESC LIMIT 300`,
       [id]
     ),
+    db.query<ReportDbRow>(`${REPORT_SELECT} WHERE r.client_id = $1 ORDER BY r.month DESC`, [id]),
   ]);
   return {
     ...mapClient(r, show),
     dealId: r.deal_id,
     createdByName: r.created_by_name,
     contracts: contracts.rows.map((k) => mapContract(k, show)),
+    reports: reports.rows.map(mapReport),
     events: events.rows.map((e) =>
       eventForViewer({ id: e.id, kind: e.kind, payload: e.payload ?? {}, userName: e.user_name, createdAt: iso(e.created_at)! }, show)
     ),
@@ -284,7 +293,7 @@ export async function listClientSuggestions(s: CrmSession): Promise<CrmClientSug
 
 // ---------- writing ----------
 
-async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind"], payload: Record<string, unknown>, s: CrmSession): Promise<void> {
+async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind"], payload: Record<string, unknown>, s: ClientActor): Promise<void> {
   await q.query(`INSERT INTO crm_client_events (id, client_id, kind, payload, user_id, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [
     randomUUID(),
     clientId,
@@ -324,7 +333,7 @@ function parseMoney(value: unknown): number | null {
 }
 
 /** A contract's fields from a form, on top of `base` (its current values, or the defaults). */
-async function readContract(q: Q, s: CrmSession, input: ContractInput, base: ContractValues): Promise<ContractValues> {
+async function readContract(q: Q, s: ClientActor, input: ContractInput, base: ContractValues): Promise<ContractValues> {
   const out = { ...base };
   if (input.services !== undefined) {
     if (!Array.isArray(input.services)) throw new CrmInputError("Serviços inválidos.");
@@ -364,7 +373,7 @@ async function serviceLabels(q: Q, ids: string[]): Promise<string[]> {
 
 const period = (k: { startsOn: string; endsOn: string | null }) => `${brDate(k.startsOn)} → ${k.endsOn ? brDate(k.endsOn) : "sem prazo"}`;
 
-async function insertContract(q: Q, s: CrmSession, clientId: string, k: ContractValues, dealId: string | null, dealTitle: string | null): Promise<string> {
+async function insertContract(q: Q, s: ClientActor, clientId: string, k: ContractValues, dealId: string | null, dealTitle: string | null): Promise<string> {
   const id = randomUUID();
   try {
     await q.query(
@@ -428,7 +437,27 @@ type DealForClient = {
  */
 export async function createClient(s: CrmSession, input: ClientInput): Promise<{ id: string; created: boolean }> {
   requireCap(s, "editClients");
-  const result = await withTransaction(async (q) => {
+  const result = await withTransaction((q) => createClientTx(q, s, input));
+  if (result.created) await auditClientCreated(s, result.id, result.companyName, typeof input.dealId === "string" && input.dealId ? "oportunidade" : "empresa");
+  return { id: result.id, created: result.created };
+}
+
+export async function auditClientCreated(s: ClientActor, id: string, companyName: string | null, via: string): Promise<void> {
+  await writeAudit({
+    actorUserId: s.userId,
+    actorLabel: s.userName,
+    actorKind: s.userId ? "admin" : "system",
+    action: "crm.client_create",
+    targetType: "crm_client",
+    targetId: id,
+    targetLabel: companyName,
+    metadata: { via },
+  });
+}
+
+/** createClient inside a transaction, without the permission check (the caller checked it, or it's the automation). */
+export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): Promise<{ id: string; created: boolean; companyName: string | null }> {
+  {
     let deal: DealForClient | null = null;
     let companyId: string;
     if (typeof input.dealId === "string" && input.dealId) {
@@ -489,10 +518,10 @@ export async function createClient(s: CrmSession, input: ClientInput): Promise<{
     let ownerId: string | null;
     if (input.ownerId !== undefined) {
       ownerId = typeof input.ownerId === "string" && input.ownerId ? input.ownerId : null;
-      if (!canAssignOwner(s.caps, s.userId, ownerId, null)) throw new CrmForbiddenError("Seu perfil só pode deixar o cliente com você ou sem responsável.");
+      if (!canAssignOwner(s.caps, s.userId ?? "", ownerId, null)) throw new CrmForbiddenError("Seu perfil só pode deixar o cliente com você ou sem responsável.");
     } else {
       ownerId = deal?.owner_id ?? deal?.contact_owner ?? company.owner_id ?? s.userId;
-      if (!canAssignOwner(s.caps, s.userId, ownerId, null)) ownerId = s.userId;
+      if (!canAssignOwner(s.caps, s.userId ?? "", ownerId, null)) ownerId = s.userId;
     }
     const owner = await requireActiveUser(q, ownerId).catch(async (err) => {
       if (input.ownerId !== undefined) throw err;
@@ -526,20 +555,7 @@ export async function createClient(s: CrmSession, input: ClientInput): Promise<{
       await insertContract(q, s, id, k, deal?.id ?? null, deal?.title ?? null);
     }
     return { id, created: true, companyName: company.name };
-  });
-  if (result.created) {
-    await writeAudit({
-      actorUserId: s.userId,
-      actorLabel: s.userName,
-      actorKind: "admin",
-      action: "crm.client_create",
-      targetType: "crm_client",
-      targetId: result.id,
-      targetLabel: result.companyName,
-      metadata: { via: typeof input.dealId === "string" && input.dealId ? "oportunidade" : "empresa" },
-    });
   }
-  return { id: result.id, created: result.created };
 }
 
 type ClientLock = { id: string; company_id: string; company_name: string; owner_id: string | null; owner_name: string | null; status: string; started_on: string | null; notes: string | null };
@@ -745,4 +761,192 @@ export async function addClientNote(s: CrmSession, clientId: string, text: unkno
     await addClientEvent(q, clientId, "note", { text: body }, s);
     await q.query(`UPDATE crm_clients SET updated_at = now() WHERE id = $1`, [clientId]);
   });
+}
+
+// ---------- acompanhamento mensal (Fase 5, entrega 2) ----------
+
+type ReportDbRow = {
+  id: string;
+  client_id: string;
+  month: string;
+  services: string[] | null;
+  activities: string | null;
+  results: string | null;
+  attention: string | null;
+  next_actions: string | null;
+  owner_id: string | null;
+  owner_name: string | null;
+  updated_by_name: string | null;
+  updated_at: Date;
+  created_at: Date;
+};
+
+const REPORT_SELECT = `
+  SELECT r.id, r.client_id, to_char(r.month, 'YYYY-MM') AS month, r.services, r.activities, r.results, r.attention, r.next_actions,
+         r.owner_id, ru.name AS owner_name, r.updated_by_name, r.updated_at, r.created_at
+  FROM crm_client_reports r LEFT JOIN internal_users ru ON ru.id = r.owner_id`;
+
+function mapReport(r: ReportDbRow): CrmClientReport {
+  return {
+    id: r.id,
+    clientId: r.client_id,
+    month: r.month,
+    services: r.services ?? [],
+    activities: r.activities,
+    results: r.results,
+    attention: r.attention,
+    nextActions: r.next_actions,
+    ownerId: r.owner_id,
+    ownerName: r.owner_name,
+    updatedByName: r.updated_by_name,
+    updatedAt: iso(r.updated_at)!,
+    createdAt: iso(r.created_at)!,
+  };
+}
+
+/** This month in Brasília, "YYYY-MM". */
+export function currentMonthBr(now = new Date()): string {
+  return todayBr(now).slice(0, 7);
+}
+
+export type ReportInput = {
+  month?: unknown;
+  services?: unknown;
+  activities?: unknown;
+  results?: unknown;
+  attention?: unknown;
+  nextActions?: unknown;
+  ownerId?: unknown;
+  /** The updatedAt the form was opened with: someone else saving in between is refused (409) instead of overwritten. */
+  expectedUpdatedAt?: unknown;
+};
+
+const REPORT_FIELDS = [
+  ["activities", "activities", "Atividades executadas"],
+  ["results", "results", "Resultados"],
+  ["attention", "attention", "Pontos de atenção"],
+  ["nextActions", "next_actions", "Próximas ações"],
+] as const;
+
+/**
+ * Registers (or updates) the client's acompanhamento of a month: services
+ * done, activities, results, points of attention, next actions and who is
+ * responsible for it. One per client per month; a future month is refused.
+ * Every save goes to the client's history with what changed.
+ */
+export async function saveReport(s: CrmSession, clientId: string, input: ReportInput): Promise<void> {
+  await withTransaction(async (q) => {
+    const cl = await lockClient(q, s, clientId);
+    if (!isMonth(input.month)) throw new CrmInputError("Escolha o mês de referência.");
+    const month = input.month;
+    if (month > currentMonthBr()) throw new CrmInputError("O acompanhamento é de um mês que já começou.");
+    const { rows } = await q.query<ReportDbRow>(`${REPORT_SELECT} WHERE r.client_id = $1 AND r.month = $2::date FOR UPDATE OF r`, [clientId, `${month}-01`]);
+    const cur = rows[0] ?? null;
+    if (cur && typeof input.expectedUpdatedAt === "string" && input.expectedUpdatedAt && iso(cur.updated_at) !== input.expectedUpdatedAt) {
+      throw new CrmConflictError(`${cur.updated_by_name ?? "Alguém"} salvou o acompanhamento de ${monthLabel(month)} enquanto você editava. Abra de novo para ver o que mudou.`);
+    }
+    if (!cur && typeof input.expectedUpdatedAt === "string" && input.expectedUpdatedAt) {
+      throw new CrmConflictError(`O acompanhamento de ${monthLabel(month)} não existe mais. Abra de novo.`);
+    }
+
+    // services
+    let services = cur?.services ?? [];
+    if (input.services !== undefined) {
+      if (!Array.isArray(input.services)) throw new CrmInputError("Serviços inválidos.");
+      const ids = [...new Set(input.services.filter((x): x is string => typeof x === "string" && x.length > 0))].slice(0, 20);
+      for (const id of ids) await requireOptionId(q, "service", id, services.includes(id) ? id : null);
+      services = ids;
+    }
+    const texts: Record<string, string | null> = {};
+    for (const [key, col] of REPORT_FIELDS) {
+      const v = input[key];
+      texts[col] = v !== undefined ? cleanText(v, 4000) : (cur?.[col] ?? null);
+    }
+    if (services.length === 0 && Object.values(texts).every((t) => !t)) throw new CrmInputError("Preencha pelo menos um campo do acompanhamento.");
+
+    // responsible: the one chosen (same rule as the client's responsible), else the current one, else the client's.
+    let ownerId: string | null = cur ? cur.owner_id : cl.owner_id;
+    if (input.ownerId !== undefined) {
+      const next = typeof input.ownerId === "string" && input.ownerId ? input.ownerId : null;
+      if (next !== ownerId) {
+        if (!canAssignOwner(s.caps, s.userId, next, ownerId)) throw new CrmForbiddenError("Seu perfil só pode assumir o acompanhamento ou deixar o seu.");
+        await requireActiveUser(q, next);
+        ownerId = next;
+      }
+    }
+
+    const changed: string[] = [];
+    if (cur) {
+      if (services.join() !== (cur.services ?? []).join()) changed.push("Serviços realizados");
+      for (const [, col, label] of REPORT_FIELDS) if (texts[col] !== cur[col]) changed.push(label);
+      if (ownerId !== cur.owner_id) changed.push("Responsável");
+      if (changed.length === 0) return;
+      await q.query(
+        `UPDATE crm_client_reports SET services = $2, activities = $3, results = $4, attention = $5, next_actions = $6, owner_id = $7,
+                updated_by = $8, updated_by_name = $9, updated_at = now() WHERE id = $1`,
+        [cur.id, services, texts.activities, texts.results, texts.attention, texts.next_actions, ownerId, s.userId, s.userName]
+      );
+    } else {
+      await q.query(
+        `INSERT INTO crm_client_reports (id, client_id, month, services, activities, results, attention, next_actions, owner_id, created_by, updated_by, updated_by_name)
+         VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10, $10, $11)`,
+        [randomUUID(), clientId, `${month}-01`, services, texts.activities, texts.results, texts.attention, texts.next_actions, ownerId, s.userId, s.userName]
+      );
+    }
+    await q.query(`UPDATE crm_clients SET updated_at = now() WHERE id = $1`, [clientId]);
+    await addClientEvent(q, clientId, "report", { month, monthLabel: monthLabel(month), action: cur ? "edited" : "created", fields: changed }, s);
+  });
+}
+
+/**
+ * "Acompanhamento de clientes": the clients that were current in `month`
+ * (started by then; not encerrado before it), with that month's
+ * acompanhamento if there is one. Comercial: only theirs (and unassigned).
+ */
+export async function listFollowUp(s: CrmSession, monthRaw: unknown): Promise<{ month: string; rows: CrmFollowUpRow[] }> {
+  requireCap(s, "viewClients");
+  const month = isMonth(monthRaw) ? monthRaw : currentMonthBr();
+  const first = `${month}-01`;
+  const visible = visibleTo(s);
+  const db = await getDb();
+  const { rows } = await db.query<{
+    id: string;
+    company_name: string;
+    status: string;
+    owner_id: string | null;
+    owner_name: string | null;
+    services: string[] | null;
+    report_owner: string | null;
+    report_by: string | null;
+    report_at: Date | null;
+    report_attention: string | null;
+  }>(
+    `SELECT cl.id, co.name AS company_name, cl.status, cl.owner_id, u.name AS owner_name,
+            COALESCE((SELECT array_agg(DISTINCT sv ORDER BY sv) FROM crm_contracts k, unnest(k.services) sv
+                      WHERE k.client_id = cl.id AND k.status = 'vigente'), '{}') AS services,
+            ru.name AS report_owner, r.updated_by_name AS report_by, r.updated_at AS report_at, r.attention AS report_attention
+     FROM crm_clients cl
+     JOIN crm_companies co ON co.id = cl.company_id
+     LEFT JOIN internal_users u ON u.id = cl.owner_id
+     LEFT JOIN crm_client_reports r ON r.client_id = cl.id AND r.month = $1::date
+     LEFT JOIN internal_users ru ON ru.id = r.owner_id
+     WHERE (cl.started_on IS NULL OR cl.started_on < ($1::date + interval '1 month'))
+       AND (cl.status <> 'encerrado' OR cl.ended_on >= $1::date OR r.id IS NOT NULL)
+       AND ($2::text IS NULL OR cl.owner_id = $2 OR cl.owner_id IS NULL)
+     ORDER BY (r.id IS NULL) DESC, lower(co.name), cl.id
+     LIMIT 500`,
+    [first, visible]
+  );
+  return {
+    month,
+    rows: rows.map((r) => ({
+      clientId: r.id,
+      companyName: r.company_name,
+      status: isCrmClientStatus(r.status) ? r.status : "ativo",
+      ownerId: r.owner_id,
+      ownerName: r.owner_name,
+      services: r.services ?? [],
+      report: r.report_at ? { ownerName: r.report_owner, updatedByName: r.report_by, updatedAt: iso(r.report_at)!, attention: r.report_attention } : null,
+    })),
+  };
 }

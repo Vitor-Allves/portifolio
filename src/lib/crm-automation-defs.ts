@@ -39,8 +39,10 @@ export type AutomationConfig = {
   owner?: string;
   /** When the lead has no owner: a user id, or null = nobody (task without owner / no notice). */
   fallbackOwnerId?: string | null;
-  /** Days without movement / without an answer (scheduled checks). */
+  /** Days without movement / without an answer / before a contract ends (scheduled checks). */
   days?: number;
+  /** From this day of the month on, a client without the month's acompanhamento gets a task (1–28). */
+  dayOfMonth?: number;
   /** Meeting reminder, minutes before (all-day meetings: 08:00 that day). */
   reminderMinutes?: number;
   /** Temperature to set on a campaign reply ("" = leave as is). */
@@ -62,7 +64,7 @@ export type AutomationDef = {
   action: string;
   /** Runs on the daily check instead of on an event. */
   scheduled: boolean;
-  /** false = depends on Fase 5 (clientes ativos, contratos). */
+  /** false = not ready to be turned on yet. */
   available: boolean;
   fields: AutomationField[];
   defaults: AutomationConfig;
@@ -147,36 +149,36 @@ export const AUTOMATION_DEFS: AutomationDef[] = [
     number: 7,
     name: "Lead convertido em cliente: onboarding",
     trigger: "Uma oportunidade é ganha.",
-    condition: "Depende do cadastro de clientes ativos.",
-    action: "Inicia o processo de onboarding.",
+    condition: "O contato tem empresa. Se a empresa já é cliente, a oportunidade vira um contrato novo dela (sem onboarding).",
+    action: "Cadastra o cliente em Onboarding (serviço e valor negociado como contrato) e cria a tarefa de onboarding para o responsável.",
     scheduled: false,
-    available: false,
-    fields: [],
-    defaults: {},
+    available: true,
+    fields: ["taskKind", "title", "dueDays", "priority", "fallbackOwnerId"],
+    defaults: { taskKind: "acompanhamento_cliente", title: "Onboarding do cliente", dueDays: 2, priority: "alta", fallbackOwnerId: null },
   },
   {
     id: "renovacao_contrato",
     number: 8,
     name: "Contrato perto da renovação: alerta",
     trigger: "Verificação diária.",
-    condition: "Depende dos contratos dos clientes ativos.",
-    action: "Alerta o responsável pela conta.",
+    condition: "Contrato vigente de um cliente que termina nos próximos X dias.",
+    action: "Aviso no sino do responsável pelo cliente, uma vez para cada data de fim.",
     scheduled: true,
-    available: false,
-    fields: [],
-    defaults: {},
+    available: true,
+    fields: ["days", "fallbackOwnerId"],
+    defaults: { days: 30, fallbackOwnerId: null },
   },
   {
     id: "cliente_sem_atualizacao",
     number: 9,
     name: "Cliente sem atualização mensal: tarefa",
-    trigger: "Verificação diária.",
-    condition: "Depende do acompanhamento dos clientes ativos.",
-    action: "Cria a tarefa de atualização.",
+    trigger: "Verificação diária, a partir do dia X do mês.",
+    condition: "Cliente em Onboarding ou Ativo sem o acompanhamento do mês registrado.",
+    action: "Cria a tarefa de atualização para o responsável pelo cliente, uma por mês.",
     scheduled: true,
-    available: false,
-    fields: [],
-    defaults: {},
+    available: true,
+    fields: ["dayOfMonth", "taskKind", "title", "priority", "fallbackOwnerId"],
+    defaults: { dayOfMonth: 25, taskKind: "acompanhamento_cliente", title: "Atualizar o acompanhamento do mês", priority: "media", fallbackOwnerId: null },
   },
   {
     id: "resposta_campanha",
@@ -226,6 +228,8 @@ export type CrmNotification = {
   title: string;
   body: string | null;
   contactId: string | null;
+  /** A notice about a client of Clientes ativos (opens the client). */
+  clientId: string | null;
   at: string;
 };
 

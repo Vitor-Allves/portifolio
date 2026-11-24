@@ -36,7 +36,7 @@ const off = await newContact({ name: "Lead Sem Automação", phone: "15990001001
 ok((await autoTasks(off)) === "0" && (await sql(`SELECT count(*) FROM crm_automation_runs`)) === "0", "with everything off, a new lead gets no task and nothing runs");
 
 // ---- validation ----
-ok((await set("cliente_onboarding", { status: "ativa" })).status() === 400, "Fase 5 rules can't be turned on yet");
+ok((await set("cliente_sem_atualizacao", { config: { dayOfMonth: 31 } })).status() === 400, "dia do mês out of range refused (1–28)");
 ok((await set("proposta_enviada", { config: { dueDays: 99 } })).status() === 400, "prazo out of range refused");
 ok((await set("proposta_enviada", { config: { owner: "u-ninguem" } })).status() === 400, "unknown responsável refused");
 ok((await set("proposta_enviada", { config: { taskKind: "nao_existe" } })).status() === 400, "unknown task type refused");

@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1018,6 +1018,38 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_client_events_client_idx ON crm_client_events (client_id, created_at DESC)`);
 
     await done(17);
+  }
+
+  if (current < 18) {
+    // v18 — Fase 5, entrega 2 (especificação v1.0): acompanhamento mensal dos
+    // clientes ativos (one per client per month) and notices in the bell that
+    // open a client (contract near its end). New table + one nullable column.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_reports (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        -- first day of the reference month
+        month DATE NOT NULL,
+        -- serviços realizados (ids from Personalização → Serviços)
+        services TEXT[] NOT NULL DEFAULT '{}',
+        activities TEXT,
+        results TEXT,
+        attention TEXT,
+        next_actions TEXT,
+        -- responsável pelo acompanhamento
+        owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        updated_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        updated_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (client_id, month)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_reports_month_idx ON crm_client_reports (month)`);
+    await db.query(`ALTER TABLE crm_notifications ADD COLUMN IF NOT EXISTS client_id TEXT REFERENCES crm_clients (id) ON DELETE CASCADE`);
+
+    await done(18);
   }
 }
 
