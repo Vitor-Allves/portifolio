@@ -20,11 +20,12 @@ import {
   type ProposalContent,
   type ProposalItem,
 } from "@/lib/crm-proposal-types";
-import { formatBRL, parseMoneyToCents } from "@/lib/crm-types";
+import { formatBRL, parseMoneyToCents, type CrmTeamMember } from "@/lib/crm-types";
+import { CONTRACT_RENEWALS } from "@/lib/crm-operation-types";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_SEGMENT_TRACK, crmSegment } from "./crm-styles";
 import { TAG_TONE, useCatalog } from "./crm-catalog-context";
 import { centsToInput } from "./crm-fields";
-import { dateTime } from "./crm-format";
+import { dateTime, todaySp } from "./crm-format";
 
 type ItemDraft = {
   serviceId: string | null;
@@ -115,6 +116,7 @@ const EVENT_TEXT: Record<string, (p: Record<string, unknown>) => string> = {
   link_renewed: () => "Link renovado (o anterior parou de funcionar)",
   link_revoked: () => "Link desativado",
   pdf: () => "PDF gerado",
+  formalized: (p) => `Formalizada: contrato nº ${String(p.contractNumber ?? "").padStart(4, "0")}`,
 };
 
 export function ProposalStatusChip({ status }: { status: string }) {
@@ -129,6 +131,8 @@ export default function CrmProposalPanel({
   onClose,
   onChanged,
   onOpenContact,
+  onOpenClient,
+  team = [],
 }: {
   proposalId: string;
   currentUserId: string;
@@ -136,6 +140,10 @@ export default function CrmProposalPanel({
   onClose: () => void;
   onChanged?: () => void;
   onOpenContact?: (contactId: string) => void;
+  /** Opens the active client the proposal was formalized into. */
+  onOpenClient?: (clientId: string) => void;
+  /** Who may be the operations owner of the contract. */
+  team?: CrmTeamMember[];
 }) {
   const { options } = useCatalog();
   const [p, setP] = useState<CrmProposalDetail | null>(null);
@@ -150,6 +158,33 @@ export default function CrmProposalPanel({
   const [channel, setChannel] = useState("link");
   const [actReason, setActReason] = useState("");
   const [approver, setApprover] = useState("");
+  const [formal, setFormal] = useState<null | {
+    wonReason: string;
+    startsOn: string;
+    termMonths: string;
+    dueDay: string;
+    renewal: string;
+    cancellationRules: string;
+    opsOwnerId: string;
+  }>(null);
+
+  async function formalize() {
+    if (!p || !formal) return;
+    setBusy(true);
+    const r = await call(`/api/crm/proposals/${p.id}/formalize/`, "POST", {
+      ...formal,
+      termMonths: formal.termMonths || null,
+      dueDay: formal.dueDay || null,
+      renewal: formal.renewal || null,
+      opsOwnerId: formal.opsOwnerId || null,
+    });
+    setBusy(false);
+    if (!r.ok) return setError(String(r.data?.error ?? "Não foi possível formalizar."));
+    setError(null);
+    setFormal(null);
+    setNotice("Venda registrada, cliente e contrato criados. O onboarding começou.");
+    reload();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -371,6 +406,134 @@ export default function CrmProposalPanel({
                   </button>
                 )}
               </div>
+              {p.status === "aprovada" &&
+                (p.contract ? (
+                  <div
+                    role="status"
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-crm-green/30 bg-crm-green/[0.06] px-3 py-2 text-[12.5px]"
+                  >
+                    <span className="flex-1">{`Formalizada: contrato nº ${String(p.contract.number).padStart(4, "0")}.`}</span>
+                    {onOpenClient && (
+                      <button type="button" onClick={() => onOpenClient(p.contract!.clientId)} className={CRM_LINK_BTN}>
+                        Abrir cliente
+                      </button>
+                    )}
+                  </div>
+                ) : mayAct && !formal ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-crm-green/30 bg-crm-green/[0.06] px-3 py-2 text-[12.5px]">
+                    <span className="flex-1 basis-60">
+                      Proposta aprovada. Registre a venda e gere o contrato com estes serviços, valores e condições; o cliente entra em onboarding.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormal({ wonReason: "", startsOn: todaySp(), termMonths: "", dueDay: "", renewal: "", cancellationRules: "", opsOwnerId: "" })
+                      }
+                      className={CRM_BTN_PRIMARY}
+                    >
+                      Formalizar contrato
+                    </button>
+                  </div>
+                ) : formal ? (
+                  <div className="rounded-xl border border-crm-line bg-crm-sunken p-3 space-y-2" role="form" aria-label="Formalizar contrato">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <label className="block col-span-2 sm:col-span-1">
+                        <span className={CRM_LABEL}>Motivo do ganho *</span>
+                        <select
+                          value={formal.wonReason}
+                          onChange={(e) => setFormal({ ...formal, wonReason: e.target.value })}
+                          aria-label="Motivo do ganho"
+                          className={`${CRM_INPUT} mt-1`}
+                        >
+                          <option value="">Escolha</option>
+                          {options("won_reason").map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className={CRM_LABEL}>Início</span>
+                        <input
+                          type="date"
+                          value={formal.startsOn}
+                          onChange={(e) => setFormal({ ...formal, startsOn: e.target.value })}
+                          aria-label="Início do contrato"
+                          className={`${CRM_INPUT} mt-1`}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={CRM_LABEL}>Prazo (meses)</span>
+                        <input
+                          value={formal.termMonths}
+                          onChange={(e) => setFormal({ ...formal, termMonths: e.target.value })}
+                          inputMode="numeric"
+                          aria-label="Prazo do contrato (meses)"
+                          className={`${CRM_INPUT} mt-1`}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={CRM_LABEL}>Dia de vencimento</span>
+                        <input
+                          value={formal.dueDay}
+                          onChange={(e) => setFormal({ ...formal, dueDay: e.target.value })}
+                          inputMode="numeric"
+                          aria-label="Dia de vencimento das cobranças"
+                          className={`${CRM_INPUT} mt-1`}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={CRM_LABEL}>Renovação</span>
+                        <select
+                          value={formal.renewal}
+                          onChange={(e) => setFormal({ ...formal, renewal: e.target.value })}
+                          aria-label="Renovação do contrato"
+                          className={`${CRM_INPUT} mt-1`}
+                        >
+                          <option value="">A combinar</option>
+                          {CONTRACT_RENEWALS.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className={CRM_LABEL}>Responsável operacional</span>
+                        <select
+                          value={formal.opsOwnerId}
+                          onChange={(e) => setFormal({ ...formal, opsOwnerId: e.target.value })}
+                          aria-label="Responsável operacional"
+                          className={`${CRM_INPUT} mt-1`}
+                        >
+                          <option value="">O do cliente</option>
+                          {team.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <textarea
+                      value={formal.cancellationRules}
+                      onChange={(e) => setFormal({ ...formal, cancellationRules: e.target.value })}
+                      rows={2}
+                      placeholder="Regras de cancelamento (ex.: aviso prévio de 30 dias)"
+                      aria-label="Regras de cancelamento do contrato"
+                      className={`${CRM_INPUT} resize-y`}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button type="button" disabled={busy || !formal.wonReason} onClick={() => void formalize()} className={CRM_BTN_PRIMARY}>
+                        Registrar venda e gerar contrato
+                      </button>
+                      <button type="button" onClick={() => setFormal(null)} className="text-[12.5px] px-2 text-crm-dim hover:text-crm-text">
+                        Voltar
+                      </button>
+                    </div>
+                  </div>
+                ) : null)}
               {link && (
                 <p className="text-[11.5px] text-crm-faint break-all">
                   Link do cliente: <span className="text-crm-dim">{link}</span>

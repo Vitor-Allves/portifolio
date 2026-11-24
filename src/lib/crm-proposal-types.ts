@@ -204,6 +204,8 @@ export type CrmProposalDetail = CrmProposalSummary & {
   discountAuthorizedPct: number | null;
   discountAuthorizedByName: string | null;
   link: { token: string; createdAt: string } | null;
+  /** The contract formalized from it (evolução v1.0, item 8). */
+  contract: { id: string; clientId: string; number: number } | null;
   versions: CrmProposalVersion[];
   events: CrmProposalEvent[];
   approvals: CrmProposalApproval[];

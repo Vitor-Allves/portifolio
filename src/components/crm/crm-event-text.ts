@@ -39,6 +39,7 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
         return `${n} ${String(p.action)}${p.via === "cliente" ? ` pelo cliente${p.name ? ` (${String(p.name)})` : ""}, online` : ` (registrada pela equipe)${p.reason ? `: ${String(p.reason)}` : ""}`}`;
       if (p.action === "em_negociacao") return `${n} em negociação`;
       if (p.action === "cancelada") return `${n} cancelada${p.reason ? `: ${String(p.reason)}` : ""}`;
+      if (p.action === "formalized") return `${n} formalizada: contrato nº ${String(p.contractNumber ?? "").padStart(4, "0")}`;
       return n;
     }
     case "file":

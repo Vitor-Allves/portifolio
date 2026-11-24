@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 24;
+const LATEST = 25;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,22 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v23: undo exactly what v24 (propostas) added.
+// Back to v24: undo exactly what v25 (contratos e operação) added.
+async function downgradeToV24(name) {
+  await query(
+    name,
+    `DROP TABLE crm_client_satisfaction; DROP TABLE crm_client_deliverables; DROP TABLE crm_client_onboarding;
+     ALTER TABLE crm_contracts DROP COLUMN number, DROP COLUMN proposal_id, DROP COLUMN one_time_cents, DROP COLUMN payment_terms, DROP COLUMN due_day,
+       DROP COLUMN term_months, DROP COLUMN renewal, DROP COLUMN cancellation_rules, DROP COLUMN sales_owner_id, DROP COLUMN ops_owner_id,
+       DROP COLUMN signed_file_id, DROP COLUMN signed_on;
+     DROP SEQUENCE crm_contract_number_seq;
+     DELETE FROM schema_migrations WHERE version = 25;`
+  );
+}
+
+// Back to v23: undo exactly what v25 and v24 (propostas) added.
 async function downgradeToV23(name) {
+  await downgradeToV24(name);
   await query(
     name,
     `DROP TABLE crm_proposal_approvals; DROP TABLE crm_proposal_events; DROP TABLE crm_proposal_versions; DROP TABLE crm_proposals;
@@ -360,6 +374,32 @@ try {
   refusedStatus = true;
 }
 ok(refusedStatus, "v24: only the eight proposal statuses");
+// v25: existing contracts numbered in creation order; the next one continues; the new tables start empty.
+const db25 = "crm_schema_v25";
+await freshDb(db25);
+migrate(db25);
+await downgradeToV24(db25);
+await query(db25, `INSERT INTO crm_companies (id, name, name_key) VALUES ('co1', 'Empresa Um', 'empresa um'), ('co2', 'Empresa Dois', 'empresa dois')`);
+await query(db25, `INSERT INTO crm_clients (id, company_id, status) VALUES ('cl1', 'co1', 'ativo'), ('cl2', 'co2', 'ativo')`);
+await query(
+  db25,
+  `INSERT INTO crm_contracts (id, client_id, starts_on, value_cents, created_at) VALUES ('k-new', 'cl2', '2026-03-01', 1000, '2026-03-01'), ('k-old', 'cl1', '2025-01-01', 2000, '2025-01-01')`
+);
+ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v24 → v${LATEST}`);
+const nums = await query(db25, `SELECT id, number FROM crm_contracts ORDER BY number`);
+ok(nums.map((r) => `${r.id}:${r.number}`).join() === "k-old:1,k-new:2", `v25: contracts numbered by creation (${nums.map((r) => `${r.id}:${r.number}`).join()})`);
+await query(db25, `INSERT INTO crm_contracts (id, client_id, starts_on) VALUES ('k-3', 'cl1', '2026-11-01')`);
+ok((await query(db25, `SELECT number FROM crm_contracts WHERE id = 'k-3'`))[0].number === 3, "v25: the next contract is number 3");
+ok((await query(db25, `SELECT value_cents, payment_terms, renewal FROM crm_contracts WHERE id = 'k-old'`))[0].value_cents === "2000", "v25: existing contract values untouched");
+ok((await query(db25, `SELECT (SELECT count(*) FROM crm_client_onboarding) + (SELECT count(*) FROM crm_client_deliverables) + (SELECT count(*) FROM crm_client_satisfaction) AS n`))[0].n === "0", "v25: no checklist, deliverables or satisfaction invented for existing clients");
+let refusedScore = false;
+try {
+  await query(db25, `INSERT INTO crm_client_satisfaction (id, client_id, score) VALUES ('s1', 'cl1', 11)`);
+} catch {
+  refusedScore = true;
+}
+ok(refusedScore, "v25: satisfaction from 0 to 10");
+await admin(`DROP DATABASE IF EXISTS ${db25} WITH (FORCE)`);
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

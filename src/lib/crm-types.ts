@@ -1003,6 +1003,25 @@ export type CrmContract = {
   /** Days until it ends (Brasília), for a vigente contract with an end date; negative = already ended. */
   daysLeft: number | null;
   createdAt: string;
+  /** Evolução v1.0 (item 8): the contract's number and extra details. */
+  number: number;
+  proposalId: string | null;
+  proposalNumber: number | null;
+  /** The one-time part of a monthly contract (from a proposal); hidden like valueCents. */
+  oneTimeCents: number | null;
+  paymentTerms: string | null;
+  dueDay: number | null;
+  termMonths: number | null;
+  renewal: string | null;
+  cancellationRules: string | null;
+  salesOwnerId: string | null;
+  /** The sales owner, or the won opportunity's owner when none was set. */
+  salesOwnerName: string | null;
+  opsOwnerId: string | null;
+  opsOwnerName: string | null;
+  signedFileId: string | null;
+  signedFileName: string | null;
+  signedOn: string | null;
 };
 
 export type CrmClientRow = {
@@ -1033,7 +1052,7 @@ export type CrmClientRow = {
 
 export type CrmClientEvent = {
   id: string;
-  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report" | "intelligence";
+  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report" | "intelligence" | "onboarding" | "deliverable" | "satisfaction" | "contract_details";
   payload: Record<string, unknown>;
   userName: string | null;
   createdAt: string;

@@ -496,6 +496,7 @@ export async function getProposal(s: CrmSession, id: string): Promise<CrmProposa
     db.query<ApprovalRow>(`SELECT * FROM crm_proposal_approvals WHERE proposal_id = $1 ORDER BY created_at DESC`, [id]),
     getDiscountLimit(db),
   ]);
+  const contract = (await db.query<{ id: string; client_id: string; number: number }>(`SELECT id, client_id, number FROM crm_contracts WHERE proposal_id = $1`, [id])).rows[0];
   const current = versions.rows.find((v) => v.version === r.version)!;
   return {
     ...summary(r, limit),
@@ -505,6 +506,7 @@ export async function getProposal(s: CrmSession, id: string): Promise<CrmProposa
     discountAuthorizedPct: r.discount_authorized_pct === null ? null : Number(r.discount_authorized_pct),
     discountAuthorizedByName: r.discount_authorized_by_name,
     link: r.share_token ? { token: r.share_token, createdAt: iso(r.share_token_at)! } : null,
+    contract: contract ? { id: contract.id, clientId: contract.client_id, number: contract.number } : null,
     versions: versions.rows.map(mapVersion),
     events: events.rows.map(
       (e): CrmProposalEvent => ({ id: e.id, kind: e.kind, version: e.version, payload: e.payload, actorName: e.actor_name, createdAt: iso(e.created_at)! }),

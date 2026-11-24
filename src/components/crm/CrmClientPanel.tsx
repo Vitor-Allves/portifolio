@@ -25,10 +25,12 @@ import { shiftMonth } from "./CrmFollowUpView";
 import { ClientStatusChip, clientEventText, contractDue, contractValue } from "./crm-client-ui";
 import ClientMediaSection from "./CrmClientMedia";
 import CrmFiles from "./CrmFiles";
+import CrmClientOperation from "./CrmClientOperation";
+import CrmContractDetails from "./CrmContractDetails";
 import CrmAnalysisDialog from "./CrmAnalysisDialog";
 
 type Form = { ownerId: string; status: string; endReason: string; startedOn: string; notes: string };
-export type ClientTab = "cliente" | "acompanhamento" | "historico";
+export type ClientTab = "cliente" | "operacao" | "acompanhamento" | "historico";
 
 async function send(url: string, method: string, body: unknown): Promise<{ client?: CrmClientDetail; error?: string }> {
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -190,6 +192,7 @@ export default function CrmClientPanel({
                   {(
                     [
                       ["cliente", "Cliente"],
+                      ["operacao", "Operação"],
                       ["acompanhamento", "Acompanhamento"],
                       ["historico", "Histórico"],
                     ] as [ClientTab, string][]
@@ -211,6 +214,8 @@ export default function CrmClientPanel({
                   {error}
                 </p>
               )}
+
+              {tab === "operacao" && <CrmClientOperation clientId={client.id} canEdit={canEdit} team={team} contracts={client.contracts} onChanged={onChanged} />}
 
               {tab === "acompanhamento" && (
                 <ReportsTab
@@ -366,6 +371,16 @@ export default function CrmClientPanel({
                                   Editar
                                 </button>
                               )}
+                              <CrmContractDetails
+                                clientId={client.id}
+                                contract={k}
+                                team={team}
+                                canEdit={canEdit}
+                                onSaved={(c) => {
+                                  setClient(c);
+                                  onChanged();
+                                }}
+                              />
                             </li>
                           )
                         )}

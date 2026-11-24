@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1366,6 +1366,90 @@ async function ensureSchema(): Promise<void> {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_proposal_approvals_idx ON crm_proposal_approvals (proposal_id, created_at DESC)`);
     await done(24);
+  }
+
+  if (current < 25) {
+    // v25 — Evolução v1.0 (contratos e operação, itens 8 e 9): contracts get a
+    // number (the existing ones numbered in the order they were created — the
+    // only change to existing rows), the proposal they came from, payment
+    // terms, due day, term, renewal, cancellation rules, sales and operations
+    // owners and the signed document; clients get the onboarding checklist,
+    // deliverables and satisfaction records (new tables, empty).
+    await db.query(`CREATE SEQUENCE IF NOT EXISTS crm_contract_number_seq`);
+    await db.query(`
+      ALTER TABLE crm_contracts
+        ADD COLUMN IF NOT EXISTS number INTEGER,
+        ADD COLUMN IF NOT EXISTS proposal_id TEXT REFERENCES crm_proposals (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS one_time_cents BIGINT,
+        ADD COLUMN IF NOT EXISTS payment_terms TEXT,
+        ADD COLUMN IF NOT EXISTS due_day SMALLINT CHECK (due_day BETWEEN 1 AND 31),
+        ADD COLUMN IF NOT EXISTS term_months SMALLINT CHECK (term_months BETWEEN 1 AND 120),
+        ADD COLUMN IF NOT EXISTS renewal TEXT CHECK (renewal IN ('automatica', 'manual', 'sem_renovacao')),
+        ADD COLUMN IF NOT EXISTS cancellation_rules TEXT,
+        ADD COLUMN IF NOT EXISTS sales_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS ops_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS signed_file_id TEXT REFERENCES crm_files (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS signed_on DATE
+    `);
+    await db.query(`
+      UPDATE crm_contracts k SET number = n.rn
+      FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) AS rn FROM crm_contracts) n
+      WHERE n.id = k.id AND k.number IS NULL
+    `);
+    await db.query(`SELECT setval('crm_contract_number_seq', GREATEST((SELECT COALESCE(max(number), 0) FROM crm_contracts), 1), (SELECT count(*) > 0 FROM crm_contracts))`);
+    await db.query(`ALTER TABLE crm_contracts ALTER COLUMN number SET DEFAULT nextval('crm_contract_number_seq')`);
+    await db.query(`ALTER TABLE crm_contracts ALTER COLUMN number SET NOT NULL`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_contracts_number_key ON crm_contracts (number)`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_contracts_proposal_key ON crm_contracts (proposal_id) WHERE proposal_id IS NOT NULL`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_onboarding (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        item TEXT NOT NULL,
+        label TEXT NOT NULL,
+        sort SMALLINT NOT NULL DEFAULT 0,
+        owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        due_on DATE,
+        done_at TIMESTAMPTZ,
+        done_by_name TEXT,
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (client_id, item)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_deliverables (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        contract_id TEXT REFERENCES crm_contracts (id) ON DELETE SET NULL,
+        service TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        due_on DATE,
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_andamento', 'entregue', 'cancelado')),
+        delivered_at TIMESTAMPTZ,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_deliverables_client_idx ON crm_client_deliverables (client_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_deliverables_due_idx ON crm_client_deliverables (status, due_on)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_satisfaction (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        score SMALLINT NOT NULL CHECK (score BETWEEN 0 AND 10),
+        comment TEXT,
+        recorded_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        recorded_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_satisfaction_idx ON crm_client_satisfaction (client_id, created_at DESC)`);
+    await done(25);
   }
 }
 

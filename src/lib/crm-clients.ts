@@ -11,6 +11,7 @@ import { getDb, withTransaction } from "./db";
 import { writeAudit } from "./audit-log";
 import { CrmConflictError, CrmForbiddenError, CrmInputError, CrmNotFoundError, brDate, cleanText, escapeLike, iso, parseDateOnly } from "./crm-core";
 import { requireCap, visibleTo, type CrmSession } from "./crm-access";
+import { seedOnboarding } from "./crm-onboarding-seed";
 import { canAssignOwner, type CrmCapabilities } from "./crm-permissions";
 import { optionLabel, requireOptionId } from "./crm-options";
 import {
@@ -179,13 +180,37 @@ type ContractDbRow = {
   deal_title: string | null;
   days_left: number | null;
   created_at: Date;
+  number: number;
+  proposal_id: string | null;
+  proposal_number: number | null;
+  one_time_cents: string | null;
+  payment_terms: string | null;
+  due_day: number | null;
+  term_months: number | null;
+  renewal: string | null;
+  cancellation_rules: string | null;
+  sales_owner_id: string | null;
+  sales_owner_name: string | null;
+  ops_owner_id: string | null;
+  ops_owner_name: string | null;
+  signed_file_id: string | null;
+  signed_file_name: string | null;
+  signed_on: string | null;
 };
 
 const CONTRACT_SELECT = `
   SELECT k.id, k.client_id, k.services, k.starts_on::text AS starts_on, k.ends_on::text AS ends_on, k.value_cents, k.billing, k.status,
          k.notes, k.deal_id, d.title AS deal_title, k.created_at,
-         CASE WHEN k.status = 'vigente' AND k.ends_on IS NOT NULL THEN k.ends_on - ${TODAY_SQL} END AS days_left
-  FROM crm_contracts k LEFT JOIN crm_deals d ON d.id = k.deal_id`;
+         CASE WHEN k.status = 'vigente' AND k.ends_on IS NOT NULL THEN k.ends_on - ${TODAY_SQL} END AS days_left,
+         k.number, k.proposal_id, p.number AS proposal_number, k.one_time_cents, k.payment_terms, k.due_day, k.term_months, k.renewal, k.cancellation_rules,
+         k.sales_owner_id, COALESCE(su.name, du.name) AS sales_owner_name, k.ops_owner_id, ou.name AS ops_owner_name,
+         k.signed_file_id, f.name AS signed_file_name, k.signed_on::text AS signed_on
+  FROM crm_contracts k LEFT JOIN crm_deals d ON d.id = k.deal_id
+  LEFT JOIN crm_proposals p ON p.id = k.proposal_id
+  LEFT JOIN internal_users su ON su.id = k.sales_owner_id
+  LEFT JOIN internal_users du ON du.id = d.owner_id
+  LEFT JOIN internal_users ou ON ou.id = k.ops_owner_id
+  LEFT JOIN crm_files f ON f.id = k.signed_file_id`;
 
 function mapContract(r: ContractDbRow, showValues: boolean): CrmContract {
   return {
@@ -202,6 +227,22 @@ function mapContract(r: ContractDbRow, showValues: boolean): CrmContract {
     dealTitle: r.deal_title,
     daysLeft: r.days_left === null ? null : Number(r.days_left),
     createdAt: iso(r.created_at)!,
+    number: r.number,
+    proposalId: r.proposal_id,
+    proposalNumber: r.proposal_number,
+    oneTimeCents: showValues && r.one_time_cents !== null ? Number(r.one_time_cents) : null,
+    paymentTerms: r.payment_terms,
+    dueDay: r.due_day,
+    termMonths: r.term_months,
+    renewal: r.renewal,
+    cancellationRules: r.cancellation_rules,
+    salesOwnerId: r.sales_owner_id,
+    salesOwnerName: r.sales_owner_name,
+    opsOwnerId: r.ops_owner_id,
+    opsOwnerName: r.ops_owner_name,
+    signedFileId: r.signed_file_id,
+    signedFileName: r.signed_file_name,
+    signedOn: r.signed_on,
   };
 }
 
@@ -296,7 +337,7 @@ export async function listClientSuggestions(s: CrmSession): Promise<CrmClientSug
 
 // ---------- writing ----------
 
-async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind"], payload: Record<string, unknown>, s: ClientActor): Promise<void> {
+export async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind"], payload: Record<string, unknown>, s: ClientActor): Promise<void> {
   await q.query(`INSERT INTO crm_client_events (id, client_id, kind, payload, user_id, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [
     randomUUID(),
     clientId,
@@ -308,7 +349,7 @@ async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind
 }
 
 /** Someone active in the CRM, or null for "sem responsável". */
-async function requireActiveUser(q: Q, id: string | null): Promise<{ id: string; name: string } | null> {
+export async function requireActiveUser(q: Q, id: string | null): Promise<{ id: string; name: string } | null> {
   if (!id) return null;
   const { rows } = await q.query<{ id: string; name: string }>(`SELECT id, name FROM internal_users WHERE id = $1 AND revoked_at IS NULL`, [id]);
   if (!rows[0]) throw new CrmInputError("Escolha um responsável ativo no CRM.");
@@ -553,6 +594,8 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
       { via: deal ? "oportunidade" : "empresa", dealTitle: deal?.title ?? null, status: clientStatusLabel(status), owner: owner?.name ?? null, startedOn },
       s
     );
+    // Evolução v1.0 (item 9): a client in onboarding starts with the checklist.
+    if (status === "onboarding") await seedOnboarding(q, id, owner?.id ?? null);
     if (deal || input.contract) {
       const base = dealValues({ services: [], startsOn: startedOn, endsOn: null, valueCents: null, billing: "mensal", status: "vigente", notes: null });
       // From an opportunity the value is the negotiated one; a form may adjust it only with the right to see values.
@@ -566,7 +609,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
 type ClientLock = { id: string; company_id: string; company_name: string; owner_id: string | null; owner_name: string | null; status: string; started_on: string | null; notes: string | null };
 
 /** The client, locked, after checking this person may edit it. */
-async function lockClient(q: Q, s: CrmSession, id: string): Promise<ClientLock> {
+export async function lockClient(q: Q, s: CrmSession, id: string): Promise<ClientLock> {
   requireCap(s, "editClients");
   const { rows } = await q.query<ClientLock>(
     `SELECT cl.id, cl.company_id, co.name AS company_name, cl.owner_id, u.name AS owner_name, cl.status, cl.started_on::text AS started_on, cl.notes

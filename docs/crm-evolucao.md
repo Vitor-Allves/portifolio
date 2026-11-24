@@ -117,7 +117,13 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   visualização confirmada pela página e aprovação/recusa online com
   evidências; versão enviada congelada (alterar cria a próxima, com motivo e
   diferenças); 8 situações, expiração automática; tela Propostas.
-- [ ] 6. Contratos e operação
+- [x] 6. Contratos e operação — contrato numerado (os existentes numerados
+  pela ordem de criação), proposta de origem, condições de pagamento, dia de
+  vencimento, prazo de vigência (calcula o vencimento), renovação, regras de
+  cancelamento, responsáveis comercial e operacional, documento assinado e
+  PDF para assinatura; "Formalizar contrato" na proposta aprovada registra a
+  venda, cria o cliente e o contrato e começa o onboarding; aba Operação do
+  cliente com checklist de onboarding (8 itens), entregáveis e satisfação.
 - [ ] 7. Financeiro e comissões
 - [ ] 8. Automações, agendamento, indicadores
 - [ ] 9. Relatórios, Intelligence, LGPD

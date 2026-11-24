@@ -1000,6 +1000,11 @@ function CrmAppInner({
             setProposalId(null);
             openContact(id, "negocio");
           }}
+          onOpenClient={(id) => {
+            setProposalId(null);
+            openClient(id);
+          }}
+          team={team}
         />
       )}
 

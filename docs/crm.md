@@ -165,6 +165,21 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 - `crm_proposal_approvals` (v24) — aprovações e recusas: versão, nome,
   e-mail, documento, comentário, impressão digital do conteúdo, se veio do
   cliente pelo link (IP, navegador) ou foi registrada pela equipe (quem).
+- `crm_contracts` (v25, colunas novas): `number` (sequência
+  `crm_contract_number_seq`), `proposal_id`, `one_time_cents` (parte única de
+  um contrato mensal vindo de proposta), `payment_terms`, `due_day`,
+  `term_months`, `renewal` (automática, negociada, sem renovação),
+  `cancellation_rules`, `sales_owner_id`, `ops_owner_id`, `signed_file_id`
+  (um documento do cliente em `crm_files`) e `signed_on`.
+- `crm_client_onboarding` (v25) — o checklist de onboarding do cliente (um
+  item por etapa: reunião inicial, briefing, documentação, acessos,
+  materiais, responsáveis, cronograma, início da execução), com responsável,
+  prazo, quem concluiu e quando.
+- `crm_client_deliverables` (v25) — entregáveis: o quê, serviço, contrato,
+  responsável, prazo, situação (pendente, em andamento, entregue, cancelado)
+  e data de entrega.
+- `crm_client_satisfaction` (v25) — avaliações de satisfação (0 a 10) com
+  comentário, quem registrou e quando.
 - `crm_proposal_templates` e `crm_settings` (v24) — modelos de proposta e o
   desconto máximo sem autorização (`proposal_discount_limit`).
 - `crm_files` (v23) — documentos e anexos: o arquivo (`content`, até 4 MB,
@@ -510,6 +525,38 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — contratos e operação (schema v25)
+
+- **Contrato completo** (especificação, item 8): número, cliente e empresa,
+  proposta de origem, serviços, valor (mensal e parte única), condições de
+  pagamento, dia de vencimento, início, prazo de vigência (o vencimento é
+  calculado), renovação, regras de cancelamento, responsáveis comercial e
+  operacional e o documento assinado (um dos documentos do cliente, com a
+  data). No cartão do contrato: "Detalhes" e "Gerar contrato (PDF)" — um
+  documento com as partes, o objeto (os serviços da proposta aprovada), os
+  valores, a vigência, a renovação, o cancelamento, a proposta de origem com
+  o código de verificação e as linhas de assinatura, para revisar com o
+  jurídico. Os contratos existentes ganharam número pela ordem de criação;
+  nada mais neles mudou. Os alertas de vencimento continuam na automação
+  "Renovação de contrato".
+- **Da proposta ao cliente** (item 9): numa proposta aprovada, "Formalizar
+  contrato" pede o motivo do ganho, o início, o prazo, o dia de vencimento, a
+  renovação, as regras de cancelamento e o responsável operacional; o CRM
+  registra a venda (Venda fechada, resultado "Proposta aprovada", valor da
+  proposta), cria o cliente ativo (ou um contrato novo num cliente que já
+  existe) com os serviços, valores e condições aprovados e começa o
+  onboarding. A proposta passa a apontar para o contrato.
+- **Operação do cliente** (item 9): aba Operação no cliente, com o checklist
+  de onboarding (8 itens, com responsável e prazo; todo cliente novo em
+  Onboarding já começa com ele, os antigos podem começar), os entregáveis
+  (responsável, prazo, situação; atrasados em destaque) e o histórico de
+  satisfação (nota 0–10 e média). Tudo vai para o histórico do cliente;
+  mudar exige poder alterar clientes e o cliente ser seu (ou ser Gestor).
+- Banco v25: colunas novas em `crm_contracts`, `crm_client_onboarding`,
+  `crm_client_deliverables`, `crm_client_satisfaction`.
+- Testes: `operations-api` e `operations-e2e`; o teste de banco confere a v25
+  (numeração dos contratos existentes).
 
 ### Evolução v1.0 — propostas e orçamentos (schema v24)
 
