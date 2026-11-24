@@ -36,6 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const keys = Object.keys(body);
     if (keys.some((k) => PIPELINE_FIELDS.includes(k) || k === "ownerId")) requireCap(actor, "editPipeline");
     if (keys.some((k) => !PIPELINE_FIELDS.includes(k) && k !== "ownerId")) requireCap(actor, "editContacts");
+    if (body.archived !== undefined) requireCap(actor, "archiveContacts");
     requireOwnerChange(actor, body.ownerId, ownerId);
     const found = await updateContact(id, body, actor);
     if (!found) return NextResponse.json({ error: "Contato não encontrado." }, { status: 404 });

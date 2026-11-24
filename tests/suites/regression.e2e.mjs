@@ -85,7 +85,7 @@ ok(jd.length > 0 && !jd.some((d) => d.ownerId === "u-vitor"), "Comercial doesn't
 ok((await japi.get(`${BASE}/api/crm/team/`)).status() === 403, "Comercial can't open Equipe");
 const { page: a } = await open("admin");
 await go(a, "Usuários e permissões");
-await a.getByRole("cell", { name: /João/ }).waitFor();
+await a.getByRole("button", { name: "Abrir João" }).waitFor();
 ok(true, "Administrador opens Equipe");
 
 ok(errors.length === 0, `no page errors (${errors.join(" | ")})`);

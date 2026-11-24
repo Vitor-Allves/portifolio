@@ -34,6 +34,12 @@ regras que valem para todas as fases. Atualizar a cada fase.
   servidor, em cada rota (`src/lib/auth-context.ts`, `src/lib/crm-auth.ts`).
 - CRM: perfis Administrador, Gestor, Comercial e Marketing
   (`src/lib/crm-permissions.ts`), conferidos em todas as rotas `/api/crm/**`.
+  Desde a Fase 2, cada pessoa pode ter exceções por módulo e ação, aplicadas
+  no servidor (`effectiveCapabilities`); "Usuários e permissões" só vem pelo
+  perfil Administrador, nunca por exceção.
+- Logins só do CRM (Analista sem empresas no Intelligence) são criados,
+  redefinidos e desativados no CRM pelo Administrador, sempre confirmando a
+  própria senha; os demais continuam com o administrador geral.
   Registro de outra pessoa, para o Comercial, responde como "não encontrado"
   (alterar o id na URL não expõe nada).
 - Logins de clientes (Intelligence) nunca entram no CRM.
@@ -53,7 +59,8 @@ regras que valem para todas as fases. Atualizar a cada fase.
 ## Auditoria (registro de ações)
 
 `audit_log` (visível ao administrador geral no Intelligence): acessos e 2FA,
-criação/desativação de usuários, troca de perfil (Intelligence e CRM),
+criação/desativação de usuários (Intelligence e logins só do CRM), troca de
+perfil e de permissões do CRM (antes → depois), cargo e departamento,
 redefinição de senha, encerramento de sessões, importações, desfazer
 importação, exportações, disparo/cancelamento/exclusão de campanhas. O
 histórico de cada contato (`crm_events`) guarda quem mudou o quê e quando,

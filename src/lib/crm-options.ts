@@ -72,12 +72,18 @@ export async function getCatalogUsage(): Promise<CrmCatalogUsage> {
      UNION ALL SELECT 'segment:' || o.id, (SELECT count(*) FROM crm_companies co WHERE co.segment = o.label)
                 + (SELECT count(*) FROM crm_contacts c WHERE c.segment = o.label)
        FROM crm_options o WHERE o.kind = 'segment'
-     UNION ALL SELECT 'tag:' || tag_id, count(*) FROM crm_contact_tags GROUP BY tag_id`
+     UNION ALL SELECT 'service:' || s, count(*) FROM (
+         SELECT service_interest AS s FROM crm_contacts WHERE service_interest IS NOT NULL
+         UNION ALL SELECT service FROM crm_deals WHERE service IS NOT NULL) x GROUP BY s
+     UNION ALL SELECT 'won_reason:' || won_reason, count(*) FROM crm_deals WHERE won_reason IS NOT NULL GROUP BY won_reason
+     UNION ALL SELECT 'department:' || crm_department, count(*) FROM internal_users WHERE crm_department IS NOT NULL GROUP BY crm_department
+     UNION ALL SELECT 'tag:' || tag_id, count(*) FROM crm_contact_tags GROUP BY tag_id
+     UNION ALL SELECT 'tag:' || tag_id, count(*) FROM crm_company_tags GROUP BY tag_id`
   );
   const usage: CrmCatalogUsage = { options: {}, tags: {} };
   for (const r of rows) {
     const n = Number(r.n);
-    if (r.k.startsWith("tag:")) usage.tags[r.k.slice(4)] = n;
+    if (r.k.startsWith("tag:")) usage.tags[r.k.slice(4)] = (usage.tags[r.k.slice(4)] ?? 0) + n;
     else usage.options[r.k] = n;
   }
   return usage;

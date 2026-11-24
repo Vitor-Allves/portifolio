@@ -45,8 +45,10 @@ export type CrmCapabilities = {
   sendWhatsApp: boolean;
   /** Give a lead/opportunity/task to anyone. Without it: only to oneself or no one. */
   assignAnyOwner: boolean;
-  /** Create/edit contacts and companies, notes, consent, opt-out, archive. */
+  /** Create/edit contacts and companies, notes, consent, opt-out, tags. */
   editContacts: boolean;
+  /** Archive and restore contacts (the CRM never deletes). Needs editContacts. */
+  archiveContacts: boolean;
   importContacts: boolean;
   exportContacts: boolean;
   manageTeam: boolean;
@@ -59,14 +61,100 @@ export type CrmCapabilities = {
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false },
 };
 
+export type CrmCap = keyof CrmCapabilities;
+
+/** The profile's own permissions (the template), without anyone's exceptions. */
 export function crmCapabilities(role: CrmRole): CrmCapabilities {
   return CAPS[role];
+}
+
+/**
+ * Permissões por módulo e ação (especificação v1.0, Fase 2): every
+ * capability, grouped the way the Usuários e permissões screen shows it.
+ * A profile is the template; a person may have exceptions on top of it.
+ */
+export const CRM_PERMISSION_MODULES: {
+  id: string;
+  label: string;
+  items: { cap: CrmCap; action: "Visualizar" | "Criar e editar" | "Excluir" | "Exportar" | "Administrar"; label: string }[];
+}[] = [
+  {
+    id: "contatos",
+    label: "Contatos e empresas",
+    items: [
+      { cap: "seeAllLeads", action: "Visualizar", label: "Ver todos os leads (sem isso: só os seus e os sem responsável)" },
+      { cap: "editContacts", action: "Criar e editar", label: "Cadastrar e editar contatos e empresas, notas, consentimento e etiquetas" },
+      { cap: "archiveContacts", action: "Excluir", label: "Arquivar e restaurar contatos (nada é apagado)" },
+      { cap: "importContacts", action: "Criar e editar", label: "Importar planilhas e desfazer importações" },
+      { cap: "exportContacts", action: "Exportar", label: "Exportar contatos em CSV" },
+    ],
+  },
+  {
+    id: "funil",
+    label: "Funil, tarefas e carteiras",
+    items: [
+      { cap: "editPipeline", action: "Criar e editar", label: "Criar e mover oportunidades, criar e concluir tarefas" },
+      { cap: "assignAnyOwner", action: "Administrar", label: "Trocar o responsável de qualquer lead (sem isso: só assumir os sem dono e soltar os seus)" },
+    ],
+  },
+  { id: "conversas", label: "Conversas", items: [{ cap: "sendWhatsApp", action: "Criar e editar", label: "Enviar mensagens pelo WhatsApp" }] },
+  {
+    id: "campanhas",
+    label: "Campanhas",
+    items: [
+      { cap: "editCampaigns", action: "Visualizar", label: "Ver campanhas e resultados, montar rascunhos" },
+      { cap: "sendCampaigns", action: "Administrar", label: "Disparar, pausar e cancelar campanhas" },
+    ],
+  },
+  {
+    id: "administracao",
+    label: "Administração",
+    items: [
+      { cap: "customize", action: "Administrar", label: "Personalização (listas e etiquetas)" },
+      { cap: "manageTeam", action: "Administrar", label: "Usuários e permissões (só pelo perfil Administrador)" },
+    ],
+  },
+];
+
+export const CRM_CAPS: CrmCap[] = CRM_PERMISSION_MODULES.flatMap((m) => m.items.map((i) => i.cap));
+
+/** Managing the team comes only with the Administrador profile — never as an exception, so nobody grants it around the profile rule. */
+export const FIXED_CAPS: readonly CrmCap[] = ["manageTeam"];
+
+/** Individual exceptions: cap → true (granted) / false (removed). */
+export type CrmPermissionOverrides = Partial<Record<CrmCap, boolean>>;
+
+/** Keeps only real, overridable capabilities that differ from the profile. */
+export function sanitizeOverrides(raw: unknown, role: CrmRole): CrmPermissionOverrides {
+  const out: CrmPermissionOverrides = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const cap of CRM_CAPS) {
+    if (FIXED_CAPS.includes(cap)) continue;
+    const v = (raw as Record<string, unknown>)[cap];
+    if (typeof v === "boolean" && v !== CAPS[role][cap]) out[cap] = v;
+  }
+  return out;
+}
+
+/**
+ * What a person may do: the profile, then their exceptions. Capabilities
+ * that only make sense together are kept consistent (dispatching campaigns
+ * needs the campaigns screen; archiving and importing need contact editing).
+ */
+export function effectiveCapabilities(role: CrmRole, overrides: unknown): CrmCapabilities {
+  const caps: CrmCapabilities = { ...CAPS[role], ...sanitizeOverrides(overrides, role) };
+  if (!caps.editCampaigns) caps.sendCampaigns = false;
+  if (!caps.editContacts) {
+    caps.archiveContacts = false;
+    caps.importContacts = false;
+  }
+  return caps;
 }
 
 /** Whether `userId` may give a record to `ownerId` (null = no owner) when it currently belongs to `currentOwnerId`. */
@@ -76,3 +164,26 @@ export function canAssignOwner(caps: CrmCapabilities, userId: string, ownerId: s
   // Without the right to reassign: take an unowned lead, or let go of one's own.
   return (ownerId === userId && currentOwnerId === null) || (ownerId === null && currentOwnerId === userId);
 }
+
+/** One person on the Usuários e permissões screen. */
+export type CrmTeamRow = {
+  id: string;
+  name: string;
+  username: string;
+  email: string | null;
+  staffRole: StaffRole;
+  access: CrmAccess;
+  /** A general administrator is always a CRM administrator. */
+  locked: boolean;
+  jobTitle: string | null;
+  /** crm_options id, kind "department". */
+  department: string | null;
+  /** Individual exceptions on top of the profile. */
+  overrides: CrmPermissionOverrides;
+  /** What the person may do (profile + exceptions); null without CRM access. */
+  caps: CrmCapabilities | null;
+  /** A login with no Intelligence access (analista with no companies): created and managed from the CRM. */
+  crmOnly: boolean;
+  active: boolean;
+  totpEnabled: boolean;
+};
