@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CRM_STAGES,
   formatBRL,
   stageLabel,
   type CrmDashboard,
   type CrmDashboardMetrics,
+  type CrmDashboardRecord,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_ALERT, CRM_FILTER, CRM_INPUT, CRM_LABEL, CRM_TD, CRM_TH } from "./crm-styles";
-import { addDays, relativeTime, shortDate, spDate } from "./crm-format";
+import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_FILTER, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_TD, CRM_TH } from "./crm-styles";
+import { addDays, dateTime, relativeTime, shortDate, spDate } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import { useCatalog } from "./crm-catalog-context";
 
@@ -57,6 +59,7 @@ function Tile({
   now,
   before,
   goodWhenUp = true,
+  onOpen,
 }: {
   label: string;
   value: string;
@@ -64,6 +67,8 @@ function Tile({
   now?: number | null;
   before?: number | null;
   goodWhenUp?: boolean;
+  /** Opens the records behind the number. */
+  onOpen?: () => void;
 }) {
   let delta: React.ReactNode = null;
   if (now !== undefined && before !== undefined && now !== null && before !== null) {
@@ -78,15 +83,143 @@ function Tile({
       );
     }
   }
-  return (
-    <div className="rounded-xl border border-crm-line bg-crm-card px-3.5 py-3 shadow-[var(--crm-shadow)] min-w-0">
-      <p className={`${CRM_LABEL} leading-snug`}>{label}</p>
-      <p className="mt-1 text-[24px] leading-none font-semibold tabular-nums text-crm-text">{value}</p>
-      <p className="mt-1.5 h-4 flex items-center gap-2 text-[11px] font-medium truncate">
+  const body = (
+    <>
+      <span className={`${CRM_LABEL} leading-snug block`}>{label}</span>
+      <span className="mt-1 block text-[24px] leading-none font-semibold tabular-nums text-crm-text">{value}</span>
+      <span className="mt-1.5 h-4 flex items-center gap-2 text-[11px] font-medium truncate">
         {delta}
         {note && <span className="text-crm-dim truncate">{note}</span>}
-      </p>
-    </div>
+      </span>
+    </>
+  );
+  const box = "rounded-xl border border-crm-line bg-crm-card px-3.5 py-3 shadow-[var(--crm-shadow)] min-w-0 text-left";
+  return onOpen ? (
+    <button type="button" onClick={onOpen} aria-label={`${label}: ${value}. Ver os registros`} className={`${box} hover:border-crm-accent/50 transition-colors`}>
+      {body}
+    </button>
+  ) : (
+    <div className={box}>{body}</div>
+  );
+}
+
+/** Indicators that open a list of records, with the list's title. */
+const METRIC_TITLE: Record<string, string> = {
+  leads: "Leads cadastrados no período",
+  deals: "Oportunidades abertas no período",
+  meetings: "Reuniões agendadas no período",
+  proposals: "Propostas enviadas no período",
+  won: "Negócios ganhos no período",
+  lost: "Negócios perdidos no período",
+  tasksDone: "Tarefas concluídas no período",
+  open: "Oportunidades abertas agora",
+  stalled: "Oportunidades paradas",
+  overdue: "Tarefas e follow-ups atrasados",
+  today: "Tarefas para hoje",
+  recurring: "Clientes com contrato mensal vigente",
+  campaigns: "Campanhas iniciadas no período",
+};
+
+/** The records behind a number, each one opening its contact / client / task; CSV when allowed. */
+function RecordsDialog({
+  metric,
+  query,
+  canExport,
+  onClose,
+  onOpen,
+}: {
+  metric: string;
+  query: URLSearchParams;
+  canExport: boolean;
+  onClose: () => void;
+  onOpen: (r: CrmDashboardRecord) => void;
+}) {
+  const [data, setData] = useState<{ total: number; rows: CrmDashboardRecord[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const qs = new URLSearchParams(query);
+  qs.set("metric", metric);
+  const url = qs.toString();
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/crm/dashboard/records/?${url}`)
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { total?: number; rows?: CrmDashboardRecord[]; error?: string } | null;
+        if (cancelled) return;
+        if (!res.ok || !body?.rows) setError(body?.error ?? "Não foi possível carregar a lista.");
+        else setData({ total: body.total ?? body.rows.length, rows: body.rows });
+      })
+      .catch(() => !cancelled && setError("Não foi possível carregar a lista."));
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  useEffect(() => {
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const exportQs = new URLSearchParams(qs);
+  exportQs.set("what", "records");
+  const openable = (r: CrmDashboardRecord) => r.kind === "client" || r.kind === "task" || !!r.contactId;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={METRIC_TITLE[metric] ?? "Registros"}
+        className="fixed z-50 inset-x-3 top-[8vh] bottom-[8vh] sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[680px] rounded-2xl border border-crm-line bg-crm-raised shadow-[var(--crm-shadow-lg)] flex flex-col"
+      >
+        <header className="px-5 py-3.5 border-b border-crm-line flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[15px] font-semibold">{METRIC_TITLE[metric] ?? "Registros"}</h2>
+            <p className="text-[12px] text-crm-dim">
+              {data ? `${data.total} ${data.total === 1 ? "registro" : "registros"}${data.total > data.rows.length ? ` (mostrando ${data.rows.length})` : ""}` : "Carregando..."}
+            </p>
+          </div>
+          {canExport && data && data.total > 0 && (
+            <a href={`/api/crm/dashboard/export/?${exportQs}`} download className={`${CRM_BTN_OUTLINE} shrink-0`}>
+              Exportar CSV
+            </a>
+          )}
+          <button type="button" onClick={onClose} aria-label="Fechar lista" className="text-crm-dim hover:text-crm-text text-[20px] leading-none px-1">
+            ×
+          </button>
+        </header>
+        <div className="flex-1 overflow-y-auto">
+          {error && <p className={`${CRM_ALERT} m-4`}>{error}</p>}
+          {data && data.rows.length === 0 && <p className="p-5 text-[12.5px] text-crm-dim">Nenhum registro.</p>}
+          <ul className="divide-y divide-crm-line" aria-label="Registros do indicador">
+            {data?.rows.map((r) => (
+              <li key={`${r.kind}:${r.id}`}>
+                <button
+                  type="button"
+                  disabled={!openable(r)}
+                  onClick={() => onOpen(r)}
+                  className="w-full text-left px-5 py-2.5 hover:bg-crm-hover disabled:hover:bg-transparent disabled:cursor-default flex items-center gap-3"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold truncate">{r.title}</span>
+                    <span className="block text-[11.5px] text-crm-dim truncate">
+                      {[r.detail, r.stage ? stageLabel(r.stage) : null, r.ownerName ? `com ${r.ownerName}` : null].filter(Boolean).join(" · ") || "—"}
+                    </span>
+                  </span>
+                  <span className="text-right shrink-0">
+                    {r.valueCents !== null && <span className="block text-[12.5px] font-semibold tabular-nums">{formatBRL(r.valueCents)}</span>}
+                    {r.at && <span className="block text-[11px] text-crm-faint">{dateTime(r.at)}</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {metric === "campaigns" && data && data.rows.length > 0 && <p className="px-5 py-3 text-[11.5px] text-crm-faint">Os resultados completos ficam em Campanhas.</p>}
+          {metric === "recurring" && <p className="px-5 py-3 text-[11.5px] text-crm-faint">Soma mensal dos contratos vigentes. Não é faturamento emitido nem valor recebido.</p>}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -123,6 +256,8 @@ function SeriesChart({ data }: { data: CrmDashboard }) {
     return () => ro.disconnect();
   }, [asTable]);
   const s = data.series;
+  // The hovered week/month — gone when the period changes under the mouse (fewer buckets).
+  const point = hover !== null ? s[hover] : undefined;
   const max = Math.max(1, ...s.map((p) => Math.max(p.newLeads, p.won)));
   const ticks = max <= 4 ? Array.from({ length: max + 1 }, (_, i) => i) : [0, Math.round(max / 2), max];
   const H = 200;
@@ -197,16 +332,16 @@ function SeriesChart({ data }: { data: CrmDashboard }) {
               );
             })}
           </svg>
-          {hover !== null && (
+          {hover !== null && point && (
             <div
               className="pointer-events-none absolute top-1 rounded-lg border border-crm-line bg-crm-raised px-3 py-2 text-[12px] shadow-[var(--crm-shadow-lg)] whitespace-nowrap"
               style={{ left: `${Math.min(80, Math.max(0, ((pad.l + step * hover) / W) * 100))}%` }}
             >
               <p className="font-semibold text-crm-text">
-                {unit} {s[hover].label}
+                {unit} {point.label}
               </p>
-              <p className="text-crm-dim">Novos leads: <span className="text-crm-text tabular-nums">{s[hover].newLeads}</span></p>
-              <p className="text-crm-dim">Ganhos: <span className="text-crm-text tabular-nums">{s[hover].won}</span></p>
+              <p className="text-crm-dim">Novos leads: <span className="text-crm-text tabular-nums">{point.newLeads}</span></p>
+              <p className="text-crm-dim">Ganhos: <span className="text-crm-text tabular-nums">{point.won}</span></p>
             </div>
           )}
         </div>
@@ -235,6 +370,10 @@ export default function CrmDashboardView({
   seeAll,
   version,
   now,
+  canExport = false,
+  onOpenContact,
+  onOpenClient,
+  onOpenTask,
 }: {
   team: CrmTeamMember[];
   currentUserId: string;
@@ -242,8 +381,17 @@ export default function CrmDashboardView({
   seeAll: boolean;
   version: number;
   now: number;
+  /** "Exportar relatórios". */
+  canExport?: boolean;
+  onOpenContact?: (contactId: string) => void;
+  onOpenClient?: (clientId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }) {
-  const { label } = useCatalog();
+  const { label, options } = useCatalog();
+  const [source, setSource] = useState("all");
+  const [segment, setSegment] = useState("all");
+  const [stage, setStage] = useState("all");
+  const [records, setRecords] = useState<string | null>(null);
   const today = spDate(now);
   const [preset, setPreset] = useState<Preset>("mes");
   const [custom, setCustom] = useState<[string, string]>(() => presetRange("mes", today));
@@ -251,11 +399,11 @@ export default function CrmDashboardView({
   const [result, setResult] = useState<{ key: string; data: CrmDashboard | null; error: string | null } | null>(null);
 
   const [from, to] = preset === "custom" ? custom : presetRange(preset, today);
-  const key = `${from}|${to}|${owner}`;
+  const query = new URLSearchParams({ from, to, owner, source, segment, stage });
+  const key = query.toString();
   useEffect(() => {
     let cancelled = false;
-    const qs = new URLSearchParams({ from, to, owner });
-    fetch(`/api/crm/dashboard/?${qs}`)
+    fetch(`/api/crm/dashboard/?${key}`)
       .then(async (res) => {
         const body = (await res.json().catch(() => null)) as { dashboard?: CrmDashboard; error?: string } | null;
         if (cancelled) return;
@@ -265,7 +413,7 @@ export default function CrmDashboardView({
     return () => {
       cancelled = true;
     };
-  }, [key, from, to, owner, version]);
+  }, [key, version]);
 
   const d = result?.data ?? null;
   const loading = !result || result.key !== key;
@@ -308,9 +456,39 @@ export default function CrmDashboardView({
         ) : (
           <span className="text-[12px] px-3 py-1.5 rounded-full border border-crm-line text-crm-dim">Seus números</span>
         )}
-        <span className="text-[12px] text-crm-faint" aria-live="polite">
+        <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Origem" className={CRM_FILTER}>
+          <option value="all">Todas as origens</option>
+          {options("source").map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select value={segment} onChange={(e) => setSegment(e.target.value)} aria-label="Segmento" className={CRM_FILTER}>
+          <option value="all">Todos os segmentos</option>
+          {options("segment").map((o) => (
+            <option key={o.id} value={o.label}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Etapa" className={CRM_FILTER} title="A etapa vale para o funil e as oportunidades abertas e paradas">
+          <option value="all">Todas as etapas</option>
+          {CRM_STAGES.map((st) => (
+            <option key={st.id} value={st.id}>
+              {st.label}
+            </option>
+          ))}
+        </select>
+        {canExport && (
+          <a href={`/api/crm/dashboard/export/?${new URLSearchParams([...query.entries(), ["what", "summary"]])}`} download className={`${CRM_LINK_BTN} ml-auto`}>
+            Exportar CSV
+          </a>
+        )}
+        <span className="basis-full text-[12px] text-crm-faint" aria-live="polite">
           {shortDate(from)} a {shortDate(to)}
           {d ? ` · comparado com ${shortDate(d.previousFrom)} a ${shortDate(d.previousTo)}` : ""}
+          {stage !== "all" ? " · a etapa vale para o funil e as oportunidades abertas e paradas" : ""}
         </span>
       </div>
 
@@ -337,17 +515,75 @@ export default function CrmDashboardView({
 
           {c && p && (
             <section aria-label="Indicadores do período" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-              <Tile label="Novos leads" value={String(c.newLeads)} now={c.newLeads} before={p.newLeads} note={vs} />
-              <Tile label="Novas oportunidades" value={String(c.newDeals)} now={c.newDeals} before={p.newDeals} />
-              <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} />
-              <Tile label="Propostas enviadas" value={String(c.proposals)} now={c.proposals} before={p.proposals} />
-              <Tile label="Ganhos" value={String(c.wonCount)} now={c.wonCount} before={p.wonCount} note={c.wonValueCents > 0 ? brl(c.wonValueCents) : null} />
-              <Tile label="Perdidos" value={String(c.lostCount)} now={c.lostCount} before={p.lostCount} goodWhenUp={false} note={c.lostValueCents > 0 ? brl(c.lostValueCents) : null} />
+              <Tile label="Novos leads" value={String(c.newLeads)} now={c.newLeads} before={p.newLeads} note={vs} onOpen={() => setRecords("leads")} />
+              <Tile label="Novas oportunidades" value={String(c.newDeals)} now={c.newDeals} before={p.newDeals} onOpen={() => setRecords("deals")} />
+              <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} onOpen={() => setRecords("meetings")} />
+              <Tile label="Propostas enviadas" value={String(c.proposals)} now={c.proposals} before={p.proposals} onOpen={() => setRecords("proposals")} />
+              <Tile
+                label="Ganhos"
+                value={String(c.wonCount)}
+                now={c.wonCount}
+                before={p.wonCount}
+                note={c.wonValueCents > 0 ? `${brl(c.wonValueCents)} vendidos` : null}
+                onOpen={() => setRecords("won")}
+              />
+              <Tile
+                label="Perdidos"
+                value={String(c.lostCount)}
+                now={c.lostCount}
+                before={p.lostCount}
+                goodWhenUp={false}
+                note={c.lostValueCents > 0 ? brl(c.lostValueCents) : null}
+                onOpen={() => setRecords("lost")}
+              />
               <Tile label="Conversão" value={pct(c.conversion)} now={c.conversion} before={p.conversion} note="ganhos ÷ fechados" />
               <Tile label="Ticket médio" value={brl(c.avgTicketCents)} now={c.avgTicketCents} before={p.avgTicketCents} />
               <Tile label="Tempo para fechar" value={c.avgCycleDays === null ? "—" : `${c.avgCycleDays} d`} now={c.avgCycleDays} before={p.avgCycleDays} goodWhenUp={false} note="média, até ganhar" />
-              <Tile label="Tarefas concluídas" value={String(c.tasksDone)} now={c.tasksDone} before={p.tasksDone} />
+              <Tile label="Tarefas concluídas" value={String(c.tasksDone)} now={c.tasksDone} before={p.tasksDone} onOpen={() => setRecords("tasksDone")} />
             </section>
+          )}
+
+          <section aria-label="Agora" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+            <Tile label="Oportunidades abertas" value={String(d.openNow.count)} note={d.openNow.valueCents > 0 ? brl(d.openNow.valueCents) : "agora"} onOpen={() => setRecords("open")} />
+            <Tile
+              label="Oportunidades paradas"
+              value={String(d.stalledNow.count)}
+              note={`${d.stalledNow.days}+ dias sem movimento`}
+              onOpen={() => setRecords("stalled")}
+            />
+            <Tile label="Follow-ups e tarefas atrasados" value={String(d.tasksNow.overdue)} note="agora" onOpen={() => setRecords("overdue")} />
+            <Tile label="Tarefas para hoje" value={String(d.tasksNow.today)} note="agora" onOpen={() => setRecords("today")} />
+            {d.recurring && (
+              <Tile
+                label="Receita recorrente contratada"
+                value={d.recurring.monthlyCents === null ? `${d.recurring.clients}` : brl(d.recurring.monthlyCents)}
+                note={`${d.recurring.clients} ${d.recurring.clients === 1 ? "cliente" : "clientes"} · contratos vigentes/mês`}
+                onOpen={() => setRecords("recurring")}
+              />
+            )}
+          </section>
+          <p className="text-[11.5px] text-crm-faint -mt-2">
+            Valor vendido = valor negociado nas oportunidades ganhas. Receita recorrente = soma mensal dos contratos vigentes. Faturamento emitido e valor recebido não
+            são controlados pelo CRM.
+          </p>
+
+          {d.campaigns && (
+            <Card title="Desempenho das campanhas">
+              {d.campaigns.count === 0 ? (
+                <p className="text-[12.5px] text-crm-dim">Nenhuma campanha iniciada no período.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                  <Tile label="Campanhas" value={String(d.campaigns.count)} note="iniciadas no período" onOpen={() => setRecords("campaigns")} />
+                  <Tile label="Enviadas" value={String(d.campaigns.sent)} />
+                  <Tile label="Entregues" value={String(d.campaigns.delivered)} />
+                  <Tile label="Lidas" value={String(d.campaigns.read)} />
+                  <Tile label="Responderam" value={String(d.campaigns.replied)} />
+                  <Tile label="Interessados" value={String(d.campaigns.interested)} />
+                  <Tile label="Oportunidades" value={String(d.campaigns.newDeals)} note="em até 30 dias" />
+                </div>
+              )}
+              <p className="mt-2 text-[11.5px] text-crm-faint">Campanhas não se dividem por pessoa, origem ou segmento.</p>
+            </Card>
           )}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -433,6 +669,23 @@ export default function CrmDashboardView({
             </div>
           </Card>
         </div>
+      )}
+
+      {records && (
+        <RecordsDialog
+          key={`${records}|${key}`}
+          metric={records}
+          query={query}
+          canExport={canExport}
+          onClose={() => setRecords(null)}
+          onOpen={(r) => {
+            if (r.kind === "client") onOpenClient?.(r.id);
+            else if (r.kind === "task") onOpenTask?.(r.id);
+            else if (r.contactId) onOpenContact?.(r.contactId);
+            else return;
+            setRecords(null);
+          }}
+        />
       )}
     </section>
   );

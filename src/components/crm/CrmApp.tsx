@@ -647,7 +647,17 @@ function CrmAppInner({
         )}
 
         {view === "dashboard" ? (
-          <CrmDashboardView team={team} currentUserId={currentUserId} seeAll={caps.seeAllLeads} version={dataVersion} now={now} />
+          <CrmDashboardView
+            team={team}
+            currentUserId={currentUserId}
+            seeAll={caps.seeAllLeads}
+            version={dataVersion}
+            now={now}
+            canExport={caps.exportReports}
+            onOpenContact={(id) => openContact(id, "negocio")}
+            onOpenClient={caps.viewClients ? (id) => openClient(id) : undefined}
+            onOpenTask={openTask}
+          />
         ) : view === "conversations" ? (
           <CrmConversationsView
             team={team}

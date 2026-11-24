@@ -42,7 +42,8 @@ export type AuditAction =
   | "crm.automation_run"
   | "crm.client_create"
   | "crm.client_update"
-  | "crm.contract_change";
+  | "crm.contract_change"
+  | "crm.report_export";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

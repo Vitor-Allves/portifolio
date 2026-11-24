@@ -585,6 +585,12 @@ export type CrmDashboard = {
   /** Right now, whatever the period. */
   openNow: { count: number; valueCents: number };
   tasksNow: { overdue: number; today: number };
+  /** Open opportunities in the same stage for `days` days, without a message or a finished task (now). */
+  stalledNow: { count: number; valueCents: number; days: number };
+  /** Receita recorrente contratada: clients with vigente monthly contracts (now). null = no access to clients; monthlyCents null = values hidden. */
+  recurring: { clients: number; monthlyCents: number | null } | null;
+  /** Campaigns that started sending in the period (null = no access to campaigns). */
+  campaigns: { count: number; sent: number; delivered: number; read: number; replied: number; interested: number; newDeals: number; optedOut: number } | null;
   /** Open opportunities per stage now, plus won/lost in the period. */
   funnel: { stage: CrmStage; count: number; valueCents: number }[];
   bucket: "week" | "month";
@@ -604,6 +610,22 @@ export type CrmDashboard = {
     tasksOverdue: number;
     lastActivityAt: string | null;
   }[];
+};
+
+/** One record behind a Painel number ("clicar no indicador"). */
+export type CrmDashboardRecord = {
+  kind: "contact" | "deal" | "task" | "client" | "campaign";
+  id: string;
+  /** Opens this contact (deals, leads, tasks of a contact). */
+  contactId: string | null;
+  /** Tasks of a company / clients. */
+  companyId: string | null;
+  title: string;
+  detail: string | null;
+  ownerName: string | null;
+  stage: CrmStage | null;
+  valueCents: number | null;
+  at: string | null;
 };
 
 export type CrmQuickReply = { id: string; title: string; body: string };
