@@ -1,5 +1,6 @@
 // Fase 1 · entrega 2 in the browser, on base + campaign fixtures: the stage
-// dialog (Proposta asks service + value, Ganho asks negotiated value + reason),
+// dialog (Proposta asks service + value, Venda fechada asks the tabulação:
+// result, negotiated value, reason and observation),
 // the funnel card and filters, contact fields and follow-up, companies with
 // CNPJ/situação/responsável, phone and dark theme.
 import { BASE, go, launchBrowser, login, ok, shot } from "../lib/helpers.mjs";
@@ -11,7 +12,8 @@ const errors = [];
 const { api: admin } = await login(browser, "admin", { open: false });
 for (const label of ["Gestão de tráfego", "Social media"]) await admin.post(`${BASE}/api/crm/catalog/options/`, { data: { kind: "service", label } });
 
-const { page: g } = await login(browser, "vitor", { errors });
+// A wide screen: the funnel has ten columns, and a drag needs both ends in view.
+const { page: g } = await login(browser, "vitor", { errors, width: 1920 });
 const board = (name) => g.getByRole("region", { name });
 const card = (text) => g.locator("[role='button'][aria-label^='Abrir ']").filter({ hasText: text }).first();
 
@@ -42,25 +44,27 @@ ok(totalAfter - totalBefore === 3500, `column total grows by the new value (${to
 // Cancel leaves the card where it was.
 await card("d6").dragTo(board("Proposta enviada"));
 await g.getByRole("dialog", { name: /Ir para Proposta enviada/ }).getByRole("button", { name: "Cancelar" }).click();
-ok((await board("Reunião agendada").locator("[aria-label^='Abrir ']").filter({ hasText: "d6" }).count()) === 1, "cancelling keeps the card in its column");
+ok((await board("Em qualificação").locator("[aria-label^='Abrir ']").filter({ hasText: "d6" }).count()) === 1, "cancelling keeps the card in its column");
 
-// ---- Ganho from the contact panel ----
+// ---- Venda fechada from the contact panel ----
 await card("d5").click();
 const panel = g.getByRole("dialog", { name: "Contato Eva Prado" });
 await panel.getByLabel("Etapa da oportunidade").selectOption("ganho");
-const wonDialog = g.getByRole("dialog", { name: /Negócio ganho/ });
+const wonDialog = g.getByRole("dialog", { name: /Venda fechada/ });
 await wonDialog.waitFor();
-ok((await wonDialog.getByLabel("Valor negociado").inputValue()) === "3.500", "Ganho: negotiated value starts from the estimate");
-ok(await wonDialog.getByRole("button", { name: "Marcar como ganho" }).isDisabled(), "…can't confirm without the reason");
+ok((await wonDialog.getByLabel("Valor negociado").inputValue()) === "3.500", "Venda fechada: negotiated value starts from the estimate");
+ok(await wonDialog.getByRole("button", { name: "Registrar venda" }).isDisabled(), "…can't confirm without the tabulação");
 await wonDialog.getByLabel("Valor negociado").fill("3.200");
+await wonDialog.getByLabel("Venda realizada").check();
 await wonDialog.getByLabel("Confiança nos resultados apresentados").check();
-await wonDialog.getByPlaceholder("Ex.: fechou o plano anual").fill("plano anual");
+ok(await wonDialog.getByText("Falta: observação").isVisible(), "…the observation is required too");
+await wonDialog.getByLabel("Observações do fechamento").fill("plano anual");
 await g.waitForTimeout(300);
 await shot(g, "f1e2-dialogo-ganho");
-await wonDialog.getByRole("button", { name: "Marcar como ganho" }).click();
+await wonDialog.getByRole("button", { name: "Registrar venda" }).click();
 await g.getByText("Conquista!").waitFor();
-await panel.getByText("Ganha: Confiança nos resultados apresentados · plano anual").waitFor();
-ok(true, "won with reason; celebration shown");
+await panel.getByText("Venda realizada: Confiança nos resultados apresentados · plano anual").waitFor();
+ok(await panel.getByText("encerrada por Vitor").isVisible(), "won with the tabulação, who closed it shown; celebration shown");
 ok((await panel.getByText("R$ 3.200").count()) > 0, "panel shows the negotiated value");
 
 // ---- contact fields (Detalhes) ----
@@ -80,9 +84,9 @@ await panel.getByRole("button", { name: "Fechar painel" }).click();
 // ---- contacts list ----
 await go(g, "Contatos");
 await g.getByLabel("Temperatura").selectOption("quente");
-await g.waitForTimeout(800);
 const rows = g.locator("table tbody tr");
-ok((await rows.count()) === 1 && (await rows.first().getByText("Eva Prado").isVisible()), "filtered by temperature");
+for (let i = 0; i < 40 && (await rows.count()) !== 1; i++) await g.waitForTimeout(250);
+ok((await rows.count()) === 1 && (await rows.first().getByText("Eva Prado").isVisible()), `filtered by temperature (${await rows.count()} rows: ${(await rows.allTextContents()).map((t) => t.slice(0, 30)).join(" | ")})`);
 ok(await rows.first().getByText("Retorno 10/01/2026").isVisible(), "follow-up column shows the return date (overdue)");
 ok(await rows.first().getByText(/^Última:/).isVisible(), "…and the last interaction");
 await g.getByLabel("Temperatura").selectOption("");

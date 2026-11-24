@@ -915,7 +915,7 @@ export async function recordOutbound(
  * a Brazilian mobile) or creates it, saves the message once (WhatsApp
  * retries deliveries, so a repeated wa_message_id is ignored), bumps the
  * unread counter and reopens the 24h window. A lead still in "Novo" that
- * answers a message the team sent moves to "Em conversa" on its own; an
+ * answers a message the team sent moves to "Primeiro contato" (code conversa) on its own; an
  * archived lead that writes again comes back to the board.
  */
 export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { contactId: string; phone: string } | null }> {
@@ -970,7 +970,7 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
       await addEvent(client, contactId, "restored", { auto: true }, null);
     }
 
-    // A lead answering the team: its opportunities still in "Novo" move to "Em conversa".
+    // A lead answering the team: its opportunities still in "Novo lead" move to "Primeiro contato".
     if (!isNew) {
       const fresh = await client.query<{ id: string }>(`SELECT id FROM crm_deals WHERE contact_id = $1 AND stage = 'novo'`, [contactId]);
       if (fresh.rows.length > 0) {

@@ -381,7 +381,7 @@ function DialogBody({
                   onChange={(e) => setCreateDeals(e.target.checked)}
                   className="h-4 w-4 accent-[var(--crm-accent)]"
                 />
-                Criar uma oportunidade no funil (coluna Novo) para cada contato novo
+                Criar uma oportunidade no funil (coluna Novo lead) para cada contato novo
               </label>
             </section>
 
@@ -466,7 +466,7 @@ function DialogBody({
               </p>
               <p className="text-[12.5px] text-crm-dim">
                 {done.counts.duplicado} já estavam no CRM ou repetidos e {done.counts.erro} tinham erro — esses ficaram de fora. Os novos estão
-                na coluna Novo do funil e na aba Contatos.
+                na coluna Novo lead do funil e na aba Contatos.
               </p>
               {undoResult ? (
                 <p className="text-[12.5px] text-crm-dim">{undoResult}</p>

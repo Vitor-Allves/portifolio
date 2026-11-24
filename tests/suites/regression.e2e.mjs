@@ -38,11 +38,11 @@ ok((await fetch(`${BASE}/api/whatsapp/webhook/`, { method: "POST", headers: { "C
 const { page: g, api } = await open("vitor");
 await g.getByRole("heading", { level: 1, name: "Painel" }).waitFor();
 
-// Funil: the WhatsApp lead is a card in Novo; drag to Em conversa
+// Funil: the WhatsApp lead is a card in Novo lead; drag to Primeiro contato
 await go(g, "Funil");
 const card = g.locator("[aria-label^='Abrir ']").filter({ hasText: "Gabi Nova" }).first();
 await card.waitFor();
-await Promise.all([g.waitForResponse((r) => r.request().method() === "PATCH" && r.url().includes("/api/crm/deals/")), card.dragTo(g.getByRole("region", { name: "Em conversa" }))]);
+await Promise.all([g.waitForResponse((r) => r.request().method() === "PATCH" && r.url().includes("/api/crm/deals/")), card.dragTo(g.getByRole("region", { name: "Primeiro contato" }))]);
 const deals = (await (await api.get(`${BASE}/api/crm/deals/`)).json()).deals;
 ok(deals.find((d) => d.contactName === "Gabi Nova").stage === "conversa", "drag-and-drop moves the opportunity");
 
@@ -63,7 +63,7 @@ await go(g, "Conversas");
 const list = g.getByRole("region", { name: "Conversas" });
 await list.getByRole("button", { name: /Gabi Nova/ }).click();
 await g.getByRole("region", { name: "Contato Gabi Nova" }).getByText("Olá, quero saber dos planos").waitFor();
-ok(await list.getByRole("button", { name: /Gabi Nova/ }).getByText("Em conversa").isVisible(), "conversation tagged with its stage");
+ok(await list.getByRole("button", { name: /Gabi Nova/ }).getByText("Primeiro contato").isVisible(), "conversation tagged with its stage");
 
 // Tarefas / Agenda / Contatos (import preview) / Empresas
 await go(g, "Tarefas");

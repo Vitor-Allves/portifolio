@@ -594,7 +594,7 @@ export type CrmTeamMember = { id: string; name: string };
 export type CrmDashboardMetrics = {
   newLeads: number;
   newDeals: number;
-  /** Opportunities that entered "Reunião agendada" / "Proposta enviada" in the period. */
+  /** Opportunities that entered "Proposta enviada" in the period (meetings: Reunião tasks scheduled in it). */
   meetings: number;
   proposals: number;
   wonCount: number;

@@ -18,6 +18,7 @@ export type CrmView =
   | "clients"
   | "followup"
   | "goals"
+  | "reports"
   | "settings"
   | "automations"
   | "team"
@@ -69,7 +70,7 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
     label: "Funil de vendas",
     hint: "Oportunidades por etapa",
     description: "Cada card é uma oportunidade de negócio. Arraste entre as colunas para avançar; o topo de cada coluna mostra a quantidade e o valor.",
-    tip: "Arraste o card para mudar a etapa. Para marcar como perdido, o CRM pergunta o motivo.",
+    tip: "Arraste o card para mudar a etapa. Para encerrar, o CRM pede a tabulação: o resultado ou o motivo, e uma observação; reabrir pede a justificativa.",
     mascot: "titanWelcome",
   },
   {
@@ -136,11 +137,20 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
     mascot: "titanWin",
   },
   {
+    group: "gestao",
+    id: "reports",
+    label: "Relatórios",
+    hint: "Tabulação e resultados",
+    description: "Relatórios com filtros por período, vendedor, origem, serviço e motivo, na tela e para baixar em planilha ou PDF.",
+    tip: "Clique num grupo da tabulação para filtrar por ele. Baixar em planilha ou PDF fica registrado na auditoria.",
+    mascot: "titanDoubt",
+  },
+  {
     group: "admin",
     id: "settings",
     label: "Personalização",
     hint: "Listas e etiquetas",
-    description: "As listas do CRM (origens, segmentos, serviços, motivos, tipos de tarefa) e as etiquetas, com cores. Nada é apagado: o que sai vai para Arquivadas.",
+    description: "As listas do CRM (etapas do funil, origens, segmentos, serviços, motivos, tipos de tarefa) e as etiquetas, com cores. Nada é apagado: o que sai vai para Arquivadas.",
     tip: "Uma opção nova aparece na hora nos formulários e filtros. Renomear um segmento renomeia nas empresas e contatos que o usam.",
     mascot: "titanDoubt",
   },
@@ -181,6 +191,7 @@ const ICONS: Record<CrmView, React.ReactNode> = {
     <path d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2Zm0 4a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V6Zm0 4a2 2 0 1 0 2 2h-2v-2Zm3.6-6.4L13 6.2V11h4.8l2.6-2.6L18 8V6l-2.4-2.4Z" />
   ),
   board: <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />,
+  reports: <path d="M6 2h9l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm8 1.5V8h4.5L14 3.5ZM8 12v6h2v-6H8Zm3.5 2v4h2v-4h-2Zm3.5-3v7h2v-7h-2Z" />,
   conversations: (
     <path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v10.5A1.5 1.5 0 0 1 20 17H9.2l-4.4 3.7A.5.5 0 0 1 4 20.3V17a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5Zm3 4.5v1.8h10V8H7Zm0 3.8v1.8h7v-1.8H7Z" />
   ),

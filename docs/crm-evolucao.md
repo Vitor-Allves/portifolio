@@ -90,8 +90,13 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
 
 (atualizado a cada módulo)
 
-- [ ] 1. Funil
-- [ ] 2. Tabulação
+- [x] 1. Funil — 10 etapas na Personalização (nome, cor, ordem,
+  probabilidade), probabilidade da oportunidade, quadro e filtros lendo a
+  lista; "Reuniões" do Painel pelas tarefas do tipo Reunião.
+- [x] 2. Tabulação — obrigatória ao encerrar (4 grupos, motivo, observação,
+  quem encerrou, data e tarefa de retomada da oportunidade futura),
+  reabertura com justificativa, Relatórios → Tabulação comercial (tela,
+  planilha e PDF).
 - [ ] 3. Visibilidade e transferências
 - [ ] 4. Cadastros, duplicidade, diagnóstico, anexos, catálogo
 - [ ] 5. Propostas

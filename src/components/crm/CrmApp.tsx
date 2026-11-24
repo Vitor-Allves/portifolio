@@ -47,6 +47,7 @@ import CrmClientsView from "./CrmClientsView";
 import CrmClientPanel, { type ClientTab } from "./CrmClientPanel";
 import CrmFollowUpView from "./CrmFollowUpView";
 import CrmGoalsView from "./CrmGoalsView";
+import CrmReportsView from "./CrmReportsView";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -498,6 +499,7 @@ function CrmAppInner({
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
           ...(caps.viewClients ? (["clients", "followup"] as const) : []),
           "goals",
+          "reports",
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
           ...(caps.manageTeam ? (["team", "audit"] as const) : []),
@@ -733,6 +735,16 @@ function CrmAppInner({
             version={dataVersion}
             now={now}
           />
+        ) : view === "reports" ? (
+          <CrmReportsView
+            team={team}
+            currentUserId={currentUserId}
+            seeAll={caps.seeAllLeads}
+            canExport={caps.exportReports}
+            version={dataVersion}
+            now={now}
+            onOpenContact={(id) => openContact(id, "negocio")}
+          />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
         ) : view === "automations" && caps.manageAutomations ? (
@@ -776,7 +788,7 @@ function CrmAppInner({
                   <p className="crm-display text-[17px] mb-1">Vamos começar?</p>
                   <p className="text-[12.5px] text-crm-dim leading-relaxed">
                     Adicione o primeiro lead em <strong className="text-crm-text">+ Novo contato</strong>. Quem mandar mensagem para o
-                    número de prospecção também aparece aqui sozinho, na coluna Novo.
+                    número de prospecção também aparece aqui sozinho, na coluna Novo lead.
                   </p>
                 </div>
                 <Mascot name="legacyHello" decorative className="h-28 w-auto shrink-0" />
@@ -787,7 +799,7 @@ function CrmAppInner({
               className="flex gap-3 overflow-x-auto pb-4 items-start"
               onDragOver={(e) => {
                 // Dragging a card near the board's edge scrolls it, so the
-                // columns off screen (Ganho, Perdido) can still take the drop.
+                // columns off screen (Venda fechada, Venda perdida) can still take the drop.
                 const el = boardRef.current;
                 if (!el) return;
                 const r = el.getBoundingClientRect();
@@ -811,7 +823,7 @@ function CrmAppInner({
                       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropStage(null);
                     }}
                     onDrop={(e) => handleDrop(e, stage.id)}
-                    className={`w-[272px] shrink-0 rounded-2xl border transition-colors duration-150 ${
+                    className={`w-[248px] shrink-0 rounded-2xl border transition-colors duration-150 ${
                       dropStage === stage.id ? "border-crm-accent bg-crm-accent/[0.06]" : "border-transparent bg-crm-column"
                     }`}
                   >
@@ -822,18 +834,18 @@ function CrmAppInner({
                           {stage.label}
                           {stage.archived && <span className="text-[10.5px] font-normal text-crm-faint">(arquivada)</span>}
                         </h2>
-                        <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
+                        <span className="flex items-center gap-1.5">
+                          {!isClosedStage(stage.id) && (
+                            <span className="text-[10.5px] text-crm-faint tabular-nums" title={`Probabilidade de fechamento em ${stage.label}`}>
+                              {stage.probability}%
+                            </span>
+                          )}
+                          <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
+                        </span>
                       </div>
                       <p className="mt-0.5 pl-4 h-4 text-[11.5px] text-crm-dim tabular-nums" aria-label={`Total em ${stage.label}`}>
                         {total > 0 ? formatBRL(total) : ""}
-                        {isClosedStage(stage.id) ? (
-                          items.length > 0 ? <span className="text-crm-faint">{total > 0 ? " · " : ""}últimos 30 dias</span> : null
-                        ) : (
-                          <span className="text-crm-faint" title="Probabilidade de fechamento da etapa">
-                            {total > 0 ? " · " : ""}
-                            {stage.probability}%
-                          </span>
-                        )}
+                        {isClosedStage(stage.id) && items.length > 0 ? <span className="text-crm-faint">{total > 0 ? " · " : ""}últimos 30 dias</span> : null}
                       </p>
                     </header>
                     <div className="px-2.5 pb-3 space-y-2 min-h-[96px]">

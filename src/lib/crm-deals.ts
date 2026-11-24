@@ -24,6 +24,7 @@ import {
 } from "./crm-types";
 import { CrmInputError, addEvent, cleanText, iso, parseTemperature, type CrmActor } from "./crm-core";
 import { loadStageLabels, optionLabel, requireOptionId } from "./crm-options";
+import { createTaskTx } from "./crm-tasks";
 import { isLostCloseGroup, isWonResult, type LostCloseGroup } from "./crm-catalog";
 
 type Db = Pick<PoolClient, "query">;
@@ -366,8 +367,8 @@ export type DealPatch = {
 };
 
 /**
- * Applies whatever is present. Moving to "Perdido" requires a loss reason;
- * "Proposta enviada" and "Ganho" require the fields in STAGE_REQUIREMENTS
+ * Applies whatever is present. Closing (Venda fechada / Venda perdida) requires the tabulação;
+ * stages require the fields in STAGE_REQUIREMENTS
  * (moves the system makes on its own are exempt — they only go to "Em
  * conversa"); a field an opportunity's stage requires can't be emptied.
  * Entering won/lost stamps closed_at and reopening clears it (and the
@@ -593,6 +594,25 @@ export async function updateDealTx(
     values.push(id);
     await client.query(`UPDATE crm_deals SET ${sets.join(", ")} WHERE id = $${values.length}`, values);
     await syncContactStage(client, current.contact_id);
+  }
+  // Oportunidade futura: the date to pick it up again goes on the agenda of whoever owns it.
+  if (closing && stage === "perdido" && tab.group === "futuro" && tab.returnOn) {
+    const kind = await client.query(`SELECT 1 FROM crm_options WHERE kind = 'task_kind' AND id = 'follow_up' AND archived_at IS NULL`);
+    const deal = await client.query<{ owner_id: string | null; lost_reason: string | null }>(`SELECT owner_id, lost_reason FROM crm_deals WHERE id = $1`, [id]);
+    const reason = deal.rows[0]?.lost_reason ? await optionLabel(client, "lost_reason", deal.rows[0].lost_reason) : null;
+    await createTaskTx(
+      client,
+      {
+        contactId: current.contact_id,
+        dealId: id,
+        kind: kind.rows.length ? "follow_up" : "tarefa",
+        title: `Retomar: ${title}`,
+        description: `Oportunidade futura${reason ? ` (${reason})` : ""}. Para retomar, reabra a oportunidade.`,
+        dueDate: tab.returnOn,
+        ownerId: deal.rows[0]?.owner_id ?? actor?.userId ?? "",
+      },
+      actor
+    );
   }
   return { contactId: current.contact_id, stage, title };
 }

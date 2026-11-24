@@ -51,6 +51,8 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `media-e2e` | Fase 7 · entrega 1 no navegador: ligar e sincronizar pela aba Acompanhamento, mês corrente e outubro, campanhas, ligação no histórico, Marketing sem valores, celular e tema escuro |
 | `ai-api` | Fase 7 · entrega 2 pela API: sem chave (dados e cálculos, IA "não configurada", nada enviado) e com uma chave de teste contra a API falsa: só chama quando pedido, modelo/fallback/esforço, o que vai e o que não vai para a IA (telefone, e-mail, leads de outros, valores sem permissão), permissão "useAi", recusa, falha, auditoria e limite diário |
 | `ai-e2e` | Fase 7 · entrega 2 no navegador: resumo executivo no Painel, resumo do lead no contato, relatório do mês no cliente, Comercial sem IA, celular e tema escuro |
+| `funnel-api` | Evolução v1.0 · funil e tabulação pela API: as dez etapas na Personalização (nome, probabilidade, criar, ordenar, arquivar; só Administrador), probabilidade da oportunidade, tabulação obrigatória (resultado, grupo, motivo, observação, quem encerrou, data e tarefa de retomada), reabertura com justificativa, Painel sem contar oportunidade futura como perda, relatório de tabulação (filtros, Comercial só os seus, CSV e PDF auditados) |
+| `funnel-e2e` | Evolução v1.0 · funil e tabulação no navegador: etapas e motivos na Personalização, quadro com dez colunas, encerrar como oportunidade futura, reabrir com justificativa, Relatórios → Tabulação comercial (Gestor e Comercial), celular e tema escuro |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Os indicadores de mídia (Fase 7) leem uma Meta falsa (`tests/fixtures/fake-graph.mjs`,

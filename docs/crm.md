@@ -42,7 +42,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   pode ter várias. Desde a v10: serviço (`service`), valor negociado
   (`negotiated_cents`, o que vale um negócio ganho), origem própria
   (`source`, começa com a do contato), temperatura própria (vazia = a do
-  contato), motivo e detalhe do ganho (`won_reason`, `won_note`).
+  contato), motivo e detalhe do ganho (`won_reason`, `won_note`). Desde a
+  v21: probabilidade própria (`probability`, vazia = a da etapa) e a
+  tabulação do encerramento — grupo (`close_group`: positivo, negativo,
+  sem_conversao, futuro), resultado da venda (`won_result`), quem encerrou
+  (`closed_by`, `closed_by_name`) e, para oportunidade futura, a data de
+  retomar (`return_on`).
 - `crm_tasks` — tarefas e atividades: tipo (lista de Personalização), título,
   data/hora (`all_day` = sem horário), responsável, oportunidade, conclusão
   com resultado, cancelamento. Desde a v13: descrição, prioridade
@@ -352,20 +357,41 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   **Interessado** = respondeu e a automação "Resposta de campanha" registrou
   a resposta, ou respondeu e está "quente"; quem pediu para sair depois de
   receber nunca conta.
+- **Etapas do funil (v21):** lista da Personalização (`crm_options`,
+  `kind = 'stage'`), com nome, cor, ordem e probabilidade de fechamento
+  (`meta.probability`). Padrão: Novo lead 5%, Primeiro contato 10%, Em
+  qualificação 20%, Diagnóstico realizado 35%, Proposta em elaboração 45%,
+  Proposta enviada 55%, Em negociação 70%, Aguardando aprovação 85%, Venda
+  fechada 100%, Venda perdida 0%. Os códigos antigos foram mantidos
+  (`novo`, `conversa`, `reuniao`, `proposta`, `ganho`, `perdido`): só o nome
+  mudou, nenhum registro foi regravado. Novo lead, Venda fechada e Venda
+  perdida são fixas (não arquivam; Novo lead fica sempre primeiro e as duas
+  de encerramento, por último); uma etapa só é arquivada sem oportunidades
+  nela. Só o Administrador mexe nas etapas; tudo vai para a auditoria.
 - **Exigência que cresce com a etapa:** o cadastro inicial continua rápido
-  (nada é obrigatório até a proposta). Para ir a *Proposta enviada*, a
-  oportunidade precisa de serviço e valor estimado; para *Ganho*, de
-  serviço, valor negociado e motivo do ganho. O servidor recusa o movimento
-  sem esses dados (a tela pergunta antes de mover) e não deixa apagar um
-  campo que a etapa atual exige. Oportunidades que já estavam nessas etapas
-  antes da v10 continuam como estão. Movimentos automáticos (o lead
-  respondeu → *Em conversa*) não passam pela exigência. Sair de *Ganho*
-  limpa o motivo do ganho. No Painel, negócio ganho vale o valor negociado
-  (ou o estimado, quando não há negociado).
-- **Perda com motivo:** uma oportunidade só vai para *Perdido* com o motivo
-  (sem orçamento, escolheu outra empresa, parou de responder, sem perfil,
-  adiou, outro) e um detalhe opcional. Reabrir limpa o motivo; tudo fica no
-  histórico.
+  (nada é obrigatório até a proposta). *Proposta em elaboração* pede o
+  serviço; *Proposta enviada*, *Em negociação* e *Aguardando aprovação*,
+  serviço e valor estimado; *Venda fechada*, serviço, valor negociado e
+  motivo. Etapas criadas pelo Administrador não pedem nada a mais. O
+  servidor recusa o movimento sem esses dados (a tela pergunta antes de
+  mover) e não deixa apagar um campo que a etapa atual exige. Oportunidades
+  que já estavam nessas etapas antes da v10 continuam como estão. Movimentos
+  automáticos (o lead respondeu → *Primeiro contato*) não passam pela
+  exigência. No Painel, negócio ganho vale o valor negociado (ou o estimado).
+- **Tabulação obrigatória (v21):** encerrar sempre registra quem encerrou e
+  quando. *Venda fechada* pede o resultado (venda realizada ou proposta
+  aprovada), o motivo e uma observação. *Venda perdida* pede o tipo de
+  encerramento — perda comercial, sem conversão (não chegou a negociar) ou
+  oportunidade futura —, o motivo daquele grupo (cada motivo tem o seu
+  grupo, na Personalização) e uma observação; a oportunidade futura pede
+  também a data para retomar e cria a tarefa "Retomar: …" na agenda do
+  responsável. No Painel e nas metas, "perdidos" são as perdas comerciais e
+  os sem conversão (a oportunidade futura não conta como perda); conversão =
+  ganhos ÷ (ganhos + perdidos).
+- **Reabertura com justificativa:** tirar uma oportunidade de Venda fechada
+  ou Venda perdida (inclusive trocar uma pela outra) exige a justificativa,
+  que fica no histórico junto com o encerramento anterior. Reabrir limpa a
+  tabulação da oportunidade.
 - **Horários em Brasília:** tarefas são gravadas no fuso de Brasília (-03:00);
   tarefa "dia todo" fica ao meio-dia para não mudar de dia em nenhum fuso.
 - **Quem vê cada tarefa:** a tarefa segue o registro a que pertence — o
@@ -444,6 +470,30 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — funil configurável, tabulação e relatório de tabulação (schema v21)
+
+- **Funil de 10 etapas** editável na Personalização (nome, cor, ordem,
+  probabilidade, criar e arquivar), com os códigos antigos mantidos. O
+  quadro, os filtros, o Painel, as campanhas e as exportações leem a lista.
+- **Probabilidade** por etapa e própria da oportunidade (campo na aba
+  Negócio; vazio = a da etapa); aparece no card e no topo de cada coluna.
+- **Tabulação obrigatória** ao encerrar e **reabertura com justificativa**
+  (ver "Regras que o sistema garante"); motivos de encerramento com grupo
+  (16 motivos da especificação; os seis antigos renomeados só onde ninguém
+  tinha renomeado).
+- **Relatórios → Tabulação comercial:** por grupo, motivo e vendedor, com a
+  lista dos encerramentos; filtros de período, vendedor, origem, serviço,
+  grupo e motivo; planilha (CSV) e PDF com a identidade da Legado
+  (`src/lib/crm-pdf.ts`), com a permissão "Exportar relatórios" e registro na
+  auditoria. O Comercial vê só os próprios encerramentos.
+- **Painel:** "Reuniões agendadas" passa a contar as tarefas do tipo Reunião
+  do período (não existe mais a etapa "Reunião agendada").
+- Banco v21: `crm_options.meta`, etapas e motivos semeados,
+  `crm_deals.probability`, `won_result`, `close_group`, `closed_by`,
+  `closed_by_name`, `return_on` (encerramentos antigos recebem o grupo do
+  motivo registrado; nada é inventado).
+- Testes: `funnel-api` e `funnel-e2e`; `schema` cobre v20 → v21.
 
 ### Especificação-mestra v1.0 — Fase 7, entrega 2: assistente de IA
 

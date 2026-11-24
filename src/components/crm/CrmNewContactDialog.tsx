@@ -196,7 +196,7 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
               onChange={(e) => setCreateDeal(e.target.checked)}
               className="h-4 w-4 accent-[var(--crm-accent)]"
             />
-            Criar oportunidade no funil (coluna Novo)
+            Criar oportunidade no funil (coluna Novo lead)
           </label>
           {createDeal && (
             <Field label="Valor estimado (opcional)">

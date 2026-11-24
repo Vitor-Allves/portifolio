@@ -118,12 +118,14 @@ run_suite() {
     ai-api) reset_db base campaigns && start_server && node tests/suites/ai-off.api.mjs
       local AI_KEY_FOR_TEST="test-only-anthropic-key"; start_server && node tests/suites/ai.api.mjs ;;
     ai-e2e) local AI_KEY_FOR_TEST="test-only-anthropic-key"; reset_db base campaigns && start_server && node tests/suites/ai.e2e.mjs ;;
+    funnel-api) reset_db base campaigns && start_server && node tests/suites/funnel.api.mjs ;;
+    funnel-e2e) reset_db base campaigns && start_server && node tests/suites/funnel.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e funnel-api funnel-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

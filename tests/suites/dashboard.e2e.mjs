@@ -54,7 +54,7 @@ ok(await tile(g, "Novos leads").getByText("subiu").isVisible(), "Novos leads sho
 ok(await tile(g, "Perdidos").getByText("subiu").isVisible() && (await tile(g, "Perdidos").locator(".text-crm-red").count()) === 1, "more losses read as bad (red)");
 const funnel = g.getByRole("region", { name: "Funil agora" });
 ok(await funnel.getByText("1 · R$ 3 mil").isVisible(), "funnel: Proposta 1 · R$ 3 mil");
-ok(await g.getByRole("region", { name: "Por que perdemos" }).getByText("Escolheu outra empresa").isVisible(), "loss reason listed");
+ok(await g.getByRole("region", { name: "Por que perdemos" }).getByText("Fechamento com concorrente").isVisible(), "loss reason listed");
 ok(await g.getByRole("region", { name: "De onde vêm os leads" }).getByText("1 lead · 1 ganho (R$ 5 mil)").isVisible(), "Indicação converted 1 (R$ 5 mil)");
 const people = g.getByRole("region", { name: "Por pessoa da equipe" });
 ok(await people.getByRole("cell", { name: "Sem responsável" }).isVisible(), "unowned line in the team table");
