@@ -41,6 +41,7 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.client_create": "Cadastrou cliente ativo",
   "crm.client_update": "Mudou cliente ativo",
   "crm.contract_change": "Mudou contrato de cliente",
+  "crm.report_export": "Exportou relatório",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
@@ -113,6 +114,8 @@ function details(r: AdminRow): string {
           .map((v) => `${n(v.ok, "ação feita", "ações feitas")}${v.failed ? `, ${n(v.failed, "falha", "falhas")}` : ""}`)
           .join(" · ") || "nada ativo para rodar"
       );
+    case "crm.report_export":
+      return `${String(m.what ?? "")} · ${String(m.from ?? "")} a ${String(m.to ?? "")}${m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""}`;
     case "crm.client_create":
       return m.via === "oportunidade" ? "a partir de uma oportunidade ganha" : "a partir da empresa";
     case "crm.client_update":

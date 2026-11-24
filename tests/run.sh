@@ -101,12 +101,14 @@ run_suite() {
     clients-e2e) reset_db base campaigns && start_server && node tests/suites/clients.e2e.mjs ;;
     client-followup-api) reset_db base campaigns && start_server && node tests/suites/client-followup.api.mjs ;;
     client-followup-e2e) reset_db base campaigns && start_server && node tests/suites/client-followup.e2e.mjs ;;
+    dashboard-reports-api) reset_db base campaigns && start_server && node tests/suites/dashboard-reports.api.mjs ;;
+    dashboard-reports-e2e) reset_db base campaigns && start_server && node tests/suites/dashboard-reports.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

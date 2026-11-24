@@ -167,6 +167,9 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   campanhas; arquivar e importar exigem editar contatos; editar clientes e
   ver valores de contrato exigem ver os clientes ativos.
 
+  **Exportar relatórios (Fase 6):** Administrador, Gestor e Marketing (o
+  Comercial vê o próprio Painel, sem exportar).
+
   **Clientes ativos (Fase 5):** ver — Administrador, Gestor, Marketing e
   Comercial (este só os clientes de que é responsável e os sem
   responsável); criar e editar — Administrador, Gestor e Comercial (nos
@@ -237,6 +240,20 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   (queda da função) é marcado como "falhou — confira na conversa", nunca
   reenviado às cegas. Se a Meta limitar o número, a campanha pausa sozinha.
   Quem foi tirado à mão não entra na campanha (nem como "ficou de fora").
+- **Painel (indicadores):** cada número é definido uma vez (`crm-dashboard.ts`,
+  `SETS`) e a lista que abre ao clicar nele usa a mesma definição, então
+  número e lista sempre batem. Origem e segmento filtram leads,
+  oportunidades e tarefas (a oportunidade usa a própria origem, senão a do
+  contato; o segmento é o da empresa, senão o do contato); a etapa filtra só
+  o que está aberto agora (funil, abertas, paradas). "Paradas" = abertas, na
+  mesma etapa há 7 dias, sem mensagem nem tarefa concluída nesse tempo.
+  "Valor vendido" = negociado nas oportunidades ganhas; "receita recorrente
+  contratada" = soma mensal dos contratos vigentes dos clientes ativos; o CRM
+  não controla faturamento emitido nem valor recebido e diz isso na tela e no
+  CSV. Campanhas entram pelo início do envio e não se dividem por pessoa,
+  origem ou segmento (só para quem vê campanhas). Exportar (CSV) exige a
+  permissão "Exportar relatórios" e vai para a auditoria
+  (`crm.report_export`).
 - **Acompanhamento mensal:** um por cliente por mês, só de mês que já
   começou; precisa de pelo menos um campo. Salvar por cima do que outra
   pessoa salvou enquanto você editava é recusado (409) em vez de apagar o
@@ -348,6 +365,26 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 6, entrega 1: Painel aprimorado e relatórios
+
+- **Filtros novos no Painel:** origem, segmento e etapa (além de período e
+  responsável).
+- **Indicadores novos:** linha "Agora" com oportunidades abertas,
+  oportunidades paradas (7+ dias sem movimento), follow-ups e tarefas
+  atrasados, tarefas para hoje e receita recorrente contratada; bloco
+  "Desempenho das campanhas" (enviadas, entregues, lidas, responderam,
+  interessados, oportunidades).
+- **Clicar no indicador** abre a lista dos registros que ele contou (leads,
+  oportunidades, tarefas, clientes, campanhas); cada linha abre o registro.
+- **Exportar CSV** do Painel e de cada lista, com a nova permissão "Exportar
+  relatórios" e registro na auditoria.
+- Correção: o gráfico "semana a semana" derrubava a página quando o período
+  mudava com o mouse sobre uma barra que deixava de existir.
+- Sem mudança no banco.
+- Testes: `dashboard-reports-api` (cada número = sua lista, filtros,
+  receita recorrente, campanhas, exportação, Comercial só o seu) e
+  `dashboard-reports-e2e`; `dashboard-e2e` adaptado aos cartões clicáveis.
 
 ### Especificação-mestra v1.0 — Fase 5, entrega 2: acompanhamento mensal e automações 7, 8, 9 (schema v18)
 

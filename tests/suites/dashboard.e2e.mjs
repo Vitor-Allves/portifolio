@@ -22,7 +22,8 @@ async function open(username, { width = 1440, height = 900 } = {}) {
   await page.goto(`${BASE}/crm/`);
   return { page, api: ctx.request };
 }
-const tile = (p, label) => p.getByRole("region", { name: "Indicadores do período" }).locator("div").filter({ has: p.getByText(label, { exact: true }) }).first();
+// A tile is a button (it opens its records) or, for ratios, a plain box: label, then the value.
+const tile = (p, label) => p.getByRole("region", { name: "Indicadores do período" }).locator("button, div").filter({ has: p.getByText(label, { exact: true }) }).first();
 async function october(p) {
   await p.getByLabel("Período", { exact: true }).selectOption("custom");
   await p.getByLabel("Data inicial").fill("2026-10-01");
@@ -42,7 +43,7 @@ const nav = g.getByRole("navigation", { name: "Seções do CRM" });
 ok((await nav.getByRole("button").first().textContent()).startsWith("Painel"), "Painel is the first menu item");
 ok((await api.get(`${BASE}/api/crm/dashboard/?from=2026-10-31&to=2026-10-01`)).status() === 400, "inverted period refused");
 await october(g);
-const val = async (label) => (await tile(g, label).locator("p").nth(1).textContent()).trim();
+const val = async (label) => (await tile(g, label).locator("span").nth(1).textContent()).trim();
 ok((await val("Novos leads")) === "4", "Novos leads 4");
 ok((await val("Reuniões agendadas")) === "2", "Reuniões 2");
 ok((await val("Propostas enviadas")) === "2", "Propostas 2");
