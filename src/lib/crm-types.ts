@@ -278,6 +278,8 @@ export type CrmContactCard = {
   consentStatus: CrmConsentStatus;
   /** Set when the lead asked not to be contacted — campaigns must skip them. */
   optedOutAt: string | null;
+  /** LGPD: when the personal data was anonymized at the titular's request (evolução v1.0). */
+  anonymizedAt: string | null;
   archivedAt: string | null;
   createdAt: string;
   /** Tags on the contact (crm_tags.id); labels and colors come from the catalog. */
@@ -364,7 +366,9 @@ export type CrmEventKind =
   | "file"
   | "proposal"
   /** Mensagem agendada (evolução v1.0): payload { action: scheduled|canceled|sent|failed, id, sendAt, kind, templateName, error }. */
-  | "scheduled_message";
+  | "scheduled_message"
+  /** LGPD (evolução v1.0): payload { action: anonymized }. */
+  | "lgpd";
 
 export type CrmEvent = {
   id: string;

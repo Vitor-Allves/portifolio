@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 27;
+const LATEST = 28;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,14 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v26: undo exactly what v27 (automações e mensagens agendadas) added.
+// Back to v27: undo exactly what v28 (2FA e LGPD) added.
+async function downgradeToV27(name) {
+  await query(name, `ALTER TABLE internal_users DROP COLUMN totp_last_step; ALTER TABLE crm_contacts DROP COLUMN anonymized_at; DELETE FROM schema_migrations WHERE version = 28;`);
+}
+
+// Back to v26: undo exactly what v28 and v27 (automações e mensagens agendadas) added.
 async function downgradeToV26(name) {
+  await downgradeToV27(name);
   await query(
     name,
     `DROP TABLE crm_scheduled_messages;
@@ -447,6 +453,11 @@ try {
   refusedKind = true;
 }
 ok(refusedKind, "v27: a scheduled message is a text or a template, of an existing contact");
+// v28: nobody's 2FA step is known yet and no contact is anonymized.
+ok(
+  (await query(db25, `SELECT (SELECT count(*) FROM internal_users WHERE totp_last_step IS NOT NULL) + (SELECT count(*) FROM crm_contacts WHERE anonymized_at IS NOT NULL) AS n`))[0].n === "0",
+  "v28: no 2FA step kept, no contact anonymized"
+);
 await admin(`DROP DATABASE IF EXISTS ${db25} WITH (FORCE)`);
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);

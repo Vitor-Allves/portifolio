@@ -161,8 +161,9 @@ inclusive valores e etapas das oportunidades.
 
 - Retenção: definir prazo para leads inativos (sugestão: anonimizar após 24
   meses sem interação, salvo cliente ativo).
-- Direitos dos titulares: hoje é possível corrigir, arquivar e exportar pela
-  tela; **falta** exportar tudo de um contato e anonimizar sob pedido.
+- Direitos dos titulares: corrigir, arquivar, exportar tudo de um contato
+  (JSON) e anonimizar sob pedido — painel do contato, Detalhes e histórico,
+  só Administrador, com auditoria (evolução v1.0).
 - Transferência internacional: dados processados nos EUA (Vercel `iad1`) e
   na região do Neon; documentar ou mover para São Paulo.
 
@@ -177,9 +178,9 @@ inclusive valores e etapas das oportunidades.
 | Sem execução agendada no servidor (automações, filas) | Alta | Em parte: `/api/cron/automations` e `/api/cron/scheduled-messages` prontos, só aceitam `Bearer <CRON_SECRET>` e ficam desligados sem a variável; falta aprovar o agendamento na Vercel e criar `CRON_SECRET`. Mensagens agendadas também saem pela consulta do sino de quem estiver com o CRM aberto |
 | Plano Hobby da Vercel é para uso não comercial | Alta | Pendente: decisão de plano |
 | 2FA não obrigatório para Administrador/Gestor do CRM | Média | **Corrigido** para Administradores (Fase 2); Gestor fica opcional |
-| Código 2FA pode ser reutilizado dentro da mesma janela de 30s | Baixa | Pendente (guardar o último código aceito) |
+| Código 2FA pode ser reutilizado dentro da mesma janela de 30s | Baixa | **Corrigido** (evolução v1.0): último passo aceito guardado por pessoa (v28) |
 | Limite de tentativas por instância, não global | Média | Pendente (exige Redis/Upstash) |
 | Recuperação de senha só pelo administrador | Média | Depende do e-mail (Fase 4) |
 | Backups dependentes do plano Free do Neon | Média | Pendente: decisão de plano + rotina própria |
-| LGPD sem registro formal; sem exportar/anonimizar titular | Média | Rascunho acima; ferramenta planejada |
+| LGPD sem registro formal; sem exportar/anonimizar titular | Média | Em parte (evolução v1.0): exportar e anonimizar o titular no painel do contato (Administrador, auditado); falta validar o registro com o jurídico |
 | Apagar contato apaga em cascata seu histórico | Baixa | Só "desfazer importação" apaga, e só contatos não trabalhados |

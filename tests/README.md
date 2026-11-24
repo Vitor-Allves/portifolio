@@ -68,6 +68,8 @@ Chromium do Playwright (`npx playwright install chromium`, ou
 | `scheduled-messages-e2e` | Evolução v1.0 · mensagens agendadas no navegador: agendar pela conversa (aviso da janela de 24h), linha de agendadas, ver e cancelar, não enviada com motivo, Gestor vê quem agendou, celular e tema escuro |
 | `reports-api` | Evolução v1.0 · relatórios pela API: outubro igual ao Painel (funil, vendas, vendedores, perdas, produtividade, origens), filtro de origem, Comercial só os seus (mesmo pedindo outro), campanhas só para quem edita, propostas enviadas/aprovadas e expiradas, clientes (Marketing sem valores), contratos a vencer, receita recorrente e comissões (Marketing recusado), anúncios, planilha, PDF e auditoria |
 | `reports-e2e` | Evolução v1.0 · relatórios no navegador: vendas por vendedor com totais, vendas por período abrindo o lead, contratos a vencer abrindo o cliente, Comercial sem filtro de vendedor e sem baixar, celular e tema escuro |
+| `security-api` | Evolução v1.0 · segurança e LGPD pela API: código 2FA usado uma vez (replay recusado), dados do titular exportados (só Administrador, arquivo, conteúdo, auditoria) e anonimizados (senha, motivo, o que sai, o que fica, histórico, auditoria sem dados pessoais, uma vez só) |
+| `security-e2e` | Evolução v1.0 · LGPD no navegador: Gestor sem as ferramentas, Administrador baixa os dados e anonimiza (senha errada recusada) |
 | `regression` | Fases 1–3 e layout: webhook assinado, arrastar no funil, tarefa pelo painel, Conversas, Tarefas/Agenda/Contatos/Empresas, prévia de importação, perfis |
 
 Os indicadores de mídia (Fase 7) leem uma Meta falsa (`tests/fixtures/fake-graph.mjs`,

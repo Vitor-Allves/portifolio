@@ -153,5 +153,9 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   vencer, receita recorrente, comissões, resultados por origem, por anúncio
   e das campanhas), com filtros, totais, planilha e PDF, nas mesmas regras de
   acesso do resto do CRM.
-- [ ] 9b. LGPD, 2FA e segurança
+- [x] 9b. Segurança e LGPD — código 2FA de uso único; dados do titular
+  (exportar tudo e anonimizar a pedido, com motivo, senha e auditoria).
+  Já existiam: 2FA de Administrador, perfis e exceções, restrição por
+  responsável, auditoria (alterações, transferências, propostas, contratos,
+  exportações), encerrar sessões, arquivamento em vez de exclusão.
 - [ ] 10. Documentação e testes finais

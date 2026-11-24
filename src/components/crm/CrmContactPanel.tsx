@@ -33,6 +33,7 @@ import type { TaskDraft } from "./CrmTaskDialog";
 import { describeEvent } from "./crm-event-text";
 import CrmAnalysisDialog from "./CrmAnalysisDialog";
 import CrmScheduledMessages, { defaultScheduleValue } from "./CrmScheduledMessages";
+import CrmLgpdBox from "./CrmLgpdBox";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -1205,6 +1206,17 @@ export default function CrmContactPanel({
                       )}
                     </div>
                   </fieldset>
+                )}
+
+                {caps.manageTeam && (
+                  <CrmLgpdBox
+                    contactId={detail.id}
+                    anonymizedAt={detail.anonymizedAt}
+                    onAnonymized={() => {
+                      void load();
+                      onChanged();
+                    }}
+                  />
                 )}
 
                 {detail.adReferral && (

@@ -548,6 +548,30 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
 ## Registro de alterações
 
+### Evolução v1.0 — segurança: 2FA de uso único e LGPD (schema v28)
+
+- **Código 2FA vale uma vez:** o login guarda o último passo de 30 segundos
+  aceito de cada pessoa e recusa o mesmo código (ou um mais antigo), de
+  forma atômica — dois logins com o mesmo código ao mesmo tempo não passam
+  os dois. O código que confirma a configuração do 2FA também não serve para
+  entrar de novo.
+- **Direitos do titular (LGPD)**, no painel do contato (Detalhes e
+  histórico), só para Administrador: **Baixar dados do titular** (um JSON
+  com o contato, mensagens, histórico, oportunidades, tarefas, propostas e
+  aceites, diagnósticos, documentos listados sem o conteúdo, mensagens
+  agendadas, campanhas e transferências) e **Anonimizar** (motivo e senha do
+  Administrador; sem volta): saem nome, telefones, e-mail, cargo, cidade,
+  textos das mensagens, notas e textos livres do histórico, documentos,
+  diagnósticos, mensagens agendadas e avisos; o contato fica arquivado e
+  descadastrado; ficam datas, etapas, valores e quem da equipe fez o quê
+  (os números do CRM continuam batendo) e o aceite de proposta (comprova o
+  contrato). As duas ações vão para a auditoria, sem os dados pessoais. Se
+  a pessoa escrever de novo pelo WhatsApp, entra como um contato novo.
+- Banco v28: `internal_users.totp_last_step`, `crm_contacts.anonymized_at`.
+- Testes: `security-api` (2FA reutilizado recusado; exportar e anonimizar:
+  quem pode, senha, motivo, o que sai, o que fica, histórico, auditoria) e
+  `security-e2e`; o teste de banco confere a v28.
+
 ### Evolução v1.0 — relatórios e resultados por origem e anúncio
 
 - **Relatórios** (especificação, itens 14 e 15): além da Tabulação

@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1516,6 +1516,15 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_scheduled_messages_due_idx ON crm_scheduled_messages (send_at) WHERE status = 'pendente'`);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_scheduled_messages_contact_idx ON crm_scheduled_messages (contact_id, send_at DESC)`);
     await done(27);
+  }
+
+  if (current < 28) {
+    // v28 — Evolução v1.0 (segurança e LGPD, item 13): the last 2FA time step
+    // accepted per person (a code can't be used twice), and when a contact's
+    // personal data was anonymized at the titular's request.
+    await db.query(`ALTER TABLE internal_users ADD COLUMN IF NOT EXISTS totp_last_step BIGINT`);
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ`);
+    await done(28);
   }
 }
 

@@ -86,6 +86,7 @@ type CardRow = {
   consent_at: Date | null;
   opted_out_at: Date | null;
   archived_at: Date | null;
+  anonymized_at: Date | null;
   created_at: Date;
   tag_ids: string[];
   temperature: string | null;
@@ -116,7 +117,7 @@ const CARD_SELECT = `
          c.source, c.referred_by, c.stage, c.owner_id, u.name AS owner_name,
          c.next_action, c.next_action_at, c.last_message_at, c.last_message_preview, c.last_inbound_at,
          c.unread_count, c.ad_referral, c.stage_changed_at, c.consent_status, c.consent_source, c.consent_at,
-         c.opted_out_at, c.archived_at, c.created_at,
+         c.opted_out_at, c.archived_at, c.anonymized_at, c.created_at,
          ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids,
          c.temperature, c.service_interest, to_char(c.return_at, 'YYYY-MM-DD') AS return_at, c.is_decision_maker,
          c.alt_phone, c.potential, c.need,
@@ -167,6 +168,7 @@ function mapCard(r: CardRow): CrmContactCard {
     consentStatus: isCrmConsentStatus(r.consent_status) ? r.consent_status : "nao_informado",
     optedOutAt: iso(r.opted_out_at),
     archivedAt: iso(r.archived_at),
+    anonymizedAt: iso(r.anonymized_at),
     createdAt: iso(r.created_at)!,
     tagIds: r.tag_ids ?? [],
     temperature: isCrmTemperature(r.temperature) ? r.temperature : null,

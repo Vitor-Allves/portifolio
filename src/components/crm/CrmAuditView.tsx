@@ -46,6 +46,8 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.intelligence_link": "Ligou cliente ao Intelligence",
   "crm.ai_request": "Pediu análise à IA",
   "crm.transfer_request": "Pediu transferência de lead",
+  "crm.lgpd_export": "Exportou dados de titular (LGPD)",
+  "crm.lgpd_anonymize": "Anonimizou titular (LGPD)",
   "crm.transfer_decision": "Decidiu transferência de lead",
   "crm.proposal_change": "Criou ou mudou proposta",
   "crm.proposal_send": "Registrou envio de proposta",
@@ -126,6 +128,10 @@ function details(r: AdminRow): string {
           .map((v) => `${n(v.ok, "ação feita", "ações feitas")}${v.failed ? `, ${n(v.failed, "falha", "falhas")}` : ""}`)
           .join(" · ") || "nada ativo para rodar"
       );
+    case "crm.lgpd_export":
+      return `${n(m.messages, "mensagem", "mensagens")} · ${n(m.history, "registro", "registros")} · ${n(m.files, "documento", "documentos")}`;
+    case "crm.lgpd_anonymize":
+      return `${String(m.reason ?? "")} · ${n(m.messages, "mensagem limpa", "mensagens limpas")} · ${n(m.documents, "documento apagado", "documentos apagados")}`;
     case "crm.transfer_request":
       return `${String(m.contact ?? "")}: ${String(m.from ?? "sem responsável")} → ${String(m.to ?? "")} · ${String(m.reason ?? "")}`;
     case "crm.transfer_decision":

@@ -42,6 +42,8 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
       if (p.action === "formalized") return `${n} formalizada: contrato nº ${String(p.contractNumber ?? "").padStart(4, "0")}`;
       return n;
     }
+    case "lgpd":
+      return "Dados pessoais anonimizados a pedido do titular (LGPD)";
     case "scheduled_message": {
       const at = p.sendAt ? `${shortDate(String(p.sendAt))} às ${timeOfDay(String(p.sendAt))}` : "";
       const what = p.kind === "template" ? `Modelo "${String(p.templateName ?? "")}"` : "Mensagem";

@@ -55,7 +55,9 @@ export type AuditAction =
   | "crm.proposal_discount"
   | "crm.proposal_link"
   | "crm.proposal_settings"
-  | "crm.commission_rule";
+  | "crm.commission_rule"
+  | "crm.lgpd_export"
+  | "crm.lgpd_anonymize";
 
 export type AuditActorKind = "admin" | "client" | "system";
 
