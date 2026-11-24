@@ -54,13 +54,23 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 19;
+const LATEST = 20;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v18: undo exactly what v19 (metas) added.
+// Back to v19: undo exactly what v20 (ligação com o Intelligence) added.
+async function downgradeToV19(name) {
+  await query(
+    name,
+    `DROP TABLE crm_media_syncs; DROP INDEX crm_clients_client_access_idx; ALTER TABLE crm_clients DROP COLUMN client_access_id;
+     DELETE FROM schema_migrations WHERE version = 20;`
+  );
+}
+
+// Back to v18: undo exactly what v20 and v19 (metas) added.
 async function downgradeToV18(name) {
+  await downgradeToV19(name);
   await query(name, `DROP TABLE crm_goals; DELETE FROM schema_migrations WHERE version = 19;`);
 }
 
@@ -226,6 +236,11 @@ ok((await query(B, `SELECT (SELECT count(*) FROM crm_clients) + (SELECT count(*)
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_client_reports`))[0].n === 0, "v18: no acompanhamento yet");
 // v19 (Fase 6, entrega 2): no goals until an Administrador or Gestor sets them.
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_goals`))[0].n === 0, "v19: no goals yet");
+// v20 (Fase 7, entrega 1): no active client linked to the Intelligence, no media numbers synced.
+ok(
+  (await query(B, `SELECT (SELECT count(*) FROM crm_clients WHERE client_access_id IS NOT NULL) + (SELECT count(*) FROM crm_media_syncs) AS n`))[0].n === "0",
+  "v20: nothing linked to the Intelligence, nothing synced"
+);
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

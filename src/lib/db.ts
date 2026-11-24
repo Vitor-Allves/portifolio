@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1077,6 +1077,42 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_goals_one_idx ON crm_goals (month, (COALESCE(user_id, '')), metric)`);
 
     await done(19);
+  }
+
+  if (current < 20) {
+    // v20 — Fase 7, entrega 1 (especificação v1.0): clientes ativos ligados
+    // ao Legado Intelligence (client_access) e o histórico de cada
+    // sincronização dos indicadores de mídia. The Intelligence stays the
+    // official source; nothing here is ever overwritten — each sync is a new
+    // row. New column + new table only.
+    await db.query(`ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS client_access_id TEXT REFERENCES client_access (id) ON DELETE SET NULL`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_clients_client_access_idx ON crm_clients (client_access_id) WHERE client_access_id IS NOT NULL`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_media_syncs (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        -- the Intelligence client it came from, at the time
+        client_access_id TEXT REFERENCES client_access (id) ON DELETE SET NULL,
+        client_access_label TEXT NOT NULL,
+        -- first day of the reference month, and the days actually covered
+        month DATE NOT NULL,
+        period_from DATE NOT NULL,
+        period_to DATE NOT NULL,
+        -- meta_ads = Meta Marketing API, read the same way the Intelligence does
+        source TEXT NOT NULL,
+        account_ids TEXT[] NOT NULL,
+        -- accounts that couldn't be read this time (the numbers leave them out)
+        missing_accounts TEXT[] NOT NULL DEFAULT '{}',
+        totals JSONB NOT NULL,
+        campaigns JSONB NOT NULL,
+        synced_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        synced_by_name TEXT,
+        synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_media_syncs_client_idx ON crm_media_syncs (client_id, month, synced_at DESC)`);
+
+    await done(20);
   }
 }
 

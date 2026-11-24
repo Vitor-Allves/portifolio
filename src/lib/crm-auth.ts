@@ -4,6 +4,8 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { sessionScopeFromRequest, hasDataAccess } from "./auth-context";
+import { resolveAllowedAccountIds } from "./session-scope";
+import { MetaApiError, MetaConfigError } from "./meta-ads";
 import { DbConfigError } from "./db";
 import { CrmInputError } from "./crm";
 import { CrmConflictError, CrmForbiddenError, CrmNotFoundError } from "./crm-core";
@@ -22,7 +24,7 @@ export async function crmActorFromRequest(req: NextRequest): Promise<CrmSession 
   if (scope.kind !== "staff") return NextResponse.json({ error: "O CRM é exclusivo da equipe Legado." }, { status: 403 });
   const session = await crmSessionFor(scope.userId, scope.userName, scope.role);
   if (!session) return NextResponse.json({ error: "Seu perfil não tem acesso ao CRM." }, { status: 403 });
-  return session;
+  return { ...session, intelligenceAccountIds: resolveAllowedAccountIds(scope) };
 }
 
 /** Maps the CRM's known error types to a pt-BR response; anything else is logged and becomes a generic 500. */
@@ -37,6 +39,11 @@ export function crmErrorResponse(err: unknown, where: string): NextResponse {
     return NextResponse.json({ error: "O WhatsApp ainda não está conectado ao CRM (veja docs/whatsapp-crm-setup.md)." }, { status: 503 });
   }
   if (err instanceof WhatsAppApiError) return NextResponse.json({ error: err.message }, { status: 502 });
+  if (err instanceof MetaConfigError) return NextResponse.json({ error: "O Meta Ads ainda não está configurado no Intelligence (veja docs/meta-ads-setup.md)." }, { status: 503 });
+  if (err instanceof MetaApiError) {
+    console.error(`[${where}]`, err);
+    return NextResponse.json({ error: "Não foi possível buscar os números no Meta agora. Tente de novo em alguns minutos." }, { status: 502 });
+  }
   if (err instanceof DbConfigError) return NextResponse.json({ error: "Banco de dados não configurado." }, { status: 503 });
   console.error(`[${where}]`, err);
   return NextResponse.json({ error: "Erro inesperado no CRM. Tente novamente." }, { status: 500 });

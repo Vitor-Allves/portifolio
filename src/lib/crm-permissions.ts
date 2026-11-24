@@ -70,13 +70,15 @@ export type CrmCapabilities = {
   exportReports: boolean;
   /** Set the monthly goals of the team and of each person (Fase 6). */
   manageGoals: boolean;
+  /** Link an active client to its client in Legado Intelligence (Fase 7). Needs viewClients. */
+  linkIntelligence: boolean;
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: false, manageGoals: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false, exportReports: true, manageGoals: false },
+  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true },
+  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true },
+  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: false, manageGoals: false, linkIntelligence: false },
+  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false, exportReports: true, manageGoals: false, linkIntelligence: false },
 };
 
 export type CrmCap = keyof CrmCapabilities;
@@ -138,7 +140,8 @@ export const CRM_PERMISSION_MODULES: {
     items: [
       { cap: "viewClients", action: "Visualizar", label: "Ver os clientes ativos (sem \"ver todos os leads\": só os seus e os sem responsável)" },
       { cap: "editClients", action: "Criar e editar", label: "Cadastrar clientes, editar, registrar contratos e histórico" },
-      { cap: "seeContractValues", action: "Visualizar", label: "Ver os valores dos contratos" },
+      { cap: "seeContractValues", action: "Visualizar", label: "Ver os valores dos contratos (e o investimento em mídia)" },
+      { cap: "linkIntelligence", action: "Administrar", label: "Ligar clientes ativos ao Legado Intelligence" },
     ],
   },
   {
@@ -184,6 +187,7 @@ export function effectiveCapabilities(role: CrmRole, overrides: unknown): CrmCap
   if (!caps.viewClients) {
     caps.editClients = false;
     caps.seeContractValues = false;
+    caps.linkIntelligence = false;
   }
   if (!caps.editContacts) {
     caps.archiveContacts = false;

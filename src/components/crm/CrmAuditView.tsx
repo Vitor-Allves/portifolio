@@ -43,6 +43,7 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.contract_change": "Mudou contrato de cliente",
   "crm.report_export": "Exportou relatório",
   "crm.goals_change": "Mudou as metas",
+  "crm.intelligence_link": "Ligou cliente ao Intelligence",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
@@ -117,6 +118,8 @@ function details(r: AdminRow): string {
       );
     case "crm.report_export":
       return `${String(m.what ?? "")} · ${String(m.from ?? "")} a ${String(m.to ?? "")}${m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""}`;
+    case "crm.intelligence_link":
+      return m.to ? `${String(m.client ?? "")} → ${String(m.to)}` : `${String(m.client ?? "")}: ligação desfeita${m.from ? ` (era ${String(m.from)})` : ""}`;
     case "crm.goals_change":
       return `${String(m.monthLabel ?? m.month ?? "")} · ${n(m.changed, "meta alterada", "metas alteradas")}`;
     case "crm.client_create":

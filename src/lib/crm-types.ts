@@ -700,6 +700,73 @@ export type CrmProductivity = {
   team: CrmProductivityNumbers | null;
 };
 
+// ---------- Indicadores de mídia do Legado Intelligence (Fase 7, entrega 1) ----------
+
+/** A period's media numbers, computed exactly like the Intelligence does (rates from summed totals). Money in reais; null = hidden (no permission) or not applicable. */
+export type CrmMediaTotals = {
+  spend: number | null;
+  impressions: number;
+  /** Deduplicated per ad account (Meta's own account-level reach), summed across the client's accounts — as the Intelligence shows it. */
+  reach: number;
+  clicks: number;
+  linkClicks: number;
+  /** null = no campaign in scope reports conversations (not the same as 0). */
+  conversations: number | null;
+  /** % */
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  costPerConversation: number | null;
+};
+
+export type CrmMediaCampaign = {
+  id: string;
+  name: string;
+  accountName: string;
+  objective: string | null;
+  status: string;
+  spend: number | null;
+  impressions: number;
+  clicks: number;
+  conversations: number | null;
+};
+
+/** One synchronization, kept forever (the history). */
+export type CrmMediaSync = {
+  id: string;
+  /** "YYYY-MM" */
+  month: string;
+  periodFrom: string;
+  periodTo: string;
+  /** "Meta Ads (Legado Intelligence)" */
+  source: string;
+  intelligenceClient: string;
+  accountIds: string[];
+  /** Accounts that couldn't be read that time — left out of the numbers. */
+  missingAccounts: string[];
+  totals: CrmMediaTotals;
+  campaigns: CrmMediaCampaign[];
+  syncedAt: string;
+  syncedByName: string | null;
+};
+
+export type CrmClientMedia = {
+  month: string;
+  /** The Intelligence client this active client is linked to. */
+  link: { clientAccessId: string; label: string; accountCount: number } | null;
+  canLink: boolean;
+  canSync: boolean;
+  /** Why this person can't see or sync the numbers (their Intelligence access), when that's the case. */
+  blocked: string | null;
+  /** The month's latest sync. */
+  latest: CrmMediaSync | null;
+  /** Every sync of the month, newest first. */
+  history: { id: string; syncedAt: string; syncedByName: string | null; periodTo: string; partial: boolean }[];
+};
+
+/** An Intelligence client that can be linked (within the person's Intelligence access). */
+export type CrmIntelligenceClient = { id: string; label: string; accountCount: number; linkedClientId: string | null; linkedClientName: string | null };
+
 export type CrmQuickReply = { id: string; title: string; body: string };
 
 export type CrmTemplate = {
@@ -849,7 +916,7 @@ export type CrmClientRow = {
 
 export type CrmClientEvent = {
   id: string;
-  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report";
+  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report" | "intelligence";
   payload: Record<string, unknown>;
   userName: string | null;
   createdAt: string;

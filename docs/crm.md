@@ -109,6 +109,16 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   contagem ou centavos) e quem mudou por último. Único em (mês, pessoa,
   indicador). O realizado nunca é gravado: é contado na hora, com as mesmas
   definições do Painel.
+- `crm_clients.client_access_id` (v20) — o cliente do Legado Intelligence
+  (`client_access`) a que o cliente ativo está ligado; no máximo um cliente
+  ativo por cliente do Intelligence (índice único).
+  `crm_media_syncs` (v20) — cada sincronização dos indicadores de mídia de
+  um cliente ativo, nunca sobrescrita: cliente, cliente do Intelligence (id
+  e nome na hora), mês de referência e dias cobertos, fonte (`meta_ads`),
+  contas de anúncio lidas e as que falharam, totais (investimento,
+  impressões, alcance, cliques, conversas, CTR, CPC, CPM, custo por
+  conversa), campanhas (id, nome, objetivo, status e números), quem
+  sincronizou e quando.
 - `crm_options` — as listas editáveis (Personalização): origens, segmentos,
   serviços, motivos de perda e de ganho, tipos de tarefa, departamentos e
   prioridades. Tipos de tarefa e prioridades têm cor (`color`, v13), usada na
@@ -186,6 +196,13 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   seus); ver valores dos contratos — todos menos Marketing. Sem essa
   permissão o servidor não manda os valores (nem na lista, nem no
   histórico).
+
+  **Legado Intelligence (Fase 7):** ligar um cliente ativo ao cliente do
+  Intelligence — Administrador e Gestor ("Ligar clientes ativos ao Legado
+  Intelligence"). Sincronizar os indicadores de mídia — quem edita o
+  cliente. Em tudo isso vale também o acesso da pessoa no Intelligence: só
+  liga, sincroniza ou vê os números quem lá vê todas as contas de anúncio do
+  cliente. Investimento e custos seguem "ver valores".
 
   **Logins só do CRM:** o Administrador do CRM cria o acesso de quem só usa o
   CRM (perfil "Analista" no Intelligence, sem nenhuma empresa: lá não vê
@@ -279,6 +296,20 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   última atividade, com a linha da equipe. Contatos arquivados ficam de
   fora, como no Painel. O Painel mostra as metas do mês corrente de quem ele
   está mostrando (equipe, a pessoa escolhida ou o próprio Comercial).
+- **Indicadores de mídia (Legado Intelligence):** o CRM e o Intelligence são
+  o mesmo sistema (mesmo banco e login); o cliente do Intelligence é o
+  `client_access` com as contas de anúncio da Meta. Na aba Acompanhamento do
+  cliente ativo, "Sincronizar" lê o mês na API de Marketing da Meta do mesmo
+  jeito que o Intelligence (`getDashboardData` + `metrics.ts`: taxas a partir
+  dos totais somados; alcance = o alcance deduplicado de cada conta, somado)
+  e guarda uma sincronização nova — o mês corrente vai até hoje; mês que não
+  começou é recusado; uma segunda sincronização em menos de 1 minuto devolve
+  a anterior. Conta que falha fica de fora e é nomeada (sincronização
+  parcial); se nenhuma conta pode ser lida, nada é gravado. Só leitura na
+  Meta, com a mesma chave do Intelligence; o Intelligence continua sendo a
+  fonte oficial e a tela diz isso. Ligar, trocar ou desfazer a ligação fica
+  no histórico do cliente e na auditoria (`crm.intelligence_link`); desfazer
+  mantém as sincronizações já feitas.
 - **Acompanhamento mensal:** um por cliente por mês, só de mês que já
   começou; precisa de pelo menos um campo. Salvar por cima do que outra
   pessoa salvou enquanto você editava é recusado (409) em vez de apagar o
@@ -390,6 +421,30 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Especificação-mestra v1.0 — Fase 7, entrega 1: indicadores de mídia do Legado Intelligence (schema v20)
+
+- **Clientes ativos ligados ao Intelligence:** Administrador e Gestor ligam
+  cada cliente ativo ao seu cliente no Legado Intelligence (nova permissão
+  "Ligar clientes ativos ao Legado Intelligence"); um cliente do
+  Intelligence para um cliente ativo; ligação no histórico e na auditoria.
+- **Indicadores de mídia no Acompanhamento:** "Sincronizar" busca o mês
+  (investimento, impressões, alcance, cliques, conversas, CTR, CPC, CPM,
+  custo por conversa e as campanhas com objetivo e status) do mesmo jeito
+  que o Intelligence, com fonte, período e data na tela; cada
+  sincronização fica no histórico do mês.
+- **Acesso:** ninguém vê pelo CRM mais do que veria no Intelligence (as
+  contas de anúncio da pessoa precisam cobrir as do cliente); investimento e
+  custos só para quem vê valores.
+- `meta-ads.ts`: `META_GRAPH_BASE_URL` aponta para uma Meta falsa só nos
+  testes (ignorado na Vercel, como o `WHATSAPP_GRAPH_BASE_URL`).
+- Banco v20: coluna `crm_clients.client_access_id` e tabela
+  `crm_media_syncs` (nada muda nos dados existentes).
+- Testes: `media-api` (ligar, sincronizar, números iguais aos da API do
+  Intelligence, histórico, contas que falham, quem vê o quê) e `media-e2e`
+  (ligar e sincronizar pela tela, outubro e o mês corrente, campanhas,
+  histórico, Marketing sem valores, celular e tema escuro); `schema` na
+  v20.
 
 ### Especificação-mestra v1.0 — Fase 6, entrega 2: metas e produtividade (schema v19)
 

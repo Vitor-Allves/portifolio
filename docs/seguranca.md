@@ -56,7 +56,11 @@ regras que valem para todas as fases. Atualizar a cada fase.
 - Webhook do WhatsApp aceita só chamadas assinadas pela Meta.
 - Segredos só em variáveis de ambiente da Vercel; nunca em código, logs ou
   respostas. Em testes, a URL da Meta pode apontar para um servidor falso
-  (`WHATSAPP_GRAPH_BASE_URL`), o que é ignorado na Vercel.
+  (`WHATSAPP_GRAPH_BASE_URL` e, para os anúncios, `META_GRAPH_BASE_URL`), o
+  que é ignorado na Vercel — a chave nunca vai para outro endereço.
+- Indicadores de mídia no CRM (Fase 7): só leitura na Meta, com a mesma
+  chave do Intelligence, e ninguém vê pelo CRM contas de anúncio fora do
+  próprio acesso no Intelligence.
 - Dependências: `npm audit` sem falhas em 23/11/2026 (Next.js 16.4.6). A
   verificação automática (CI) roda em todo PR.
 

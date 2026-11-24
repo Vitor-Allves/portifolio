@@ -23,6 +23,7 @@ import { brDay, centsToInput } from "./crm-fields";
 import { dateTime, todaySp } from "./crm-format";
 import { shiftMonth } from "./CrmFollowUpView";
 import { ClientStatusChip, clientEventText, contractDue, contractValue } from "./crm-client-ui";
+import ClientMediaSection from "./CrmClientMedia";
 
 type Form = { ownerId: string; status: string; endReason: string; startedOn: string; notes: string };
 export type ClientTab = "cliente" | "acompanhamento" | "historico";
@@ -215,6 +216,7 @@ export default function CrmClientPanel({
                   canEdit={canEdit}
                   initialMonth={initialMonth}
                   onSave={async (body) => applied(await send(`/api/crm/clients/${clientId}/reports/`, "POST", body))}
+                  onLinkChanged={() => void load()}
                 />
               )}
 
@@ -532,12 +534,15 @@ function ReportsTab({
   canEdit,
   initialMonth,
   onSave,
+  onLinkChanged,
 }: {
   client: CrmClientDetail;
   team: CrmTeamMember[];
   canEdit: boolean;
   initialMonth?: string;
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
+  /** The link to the Intelligence changed (a line in the client's history). */
+  onLinkChanged: () => void;
 }) {
   const { label } = useCatalog();
   const thisMonth = todaySp().slice(0, 7);
@@ -570,6 +575,7 @@ function ReportsTab({
             {report ? `Atualizado por ${report.updatedByName ?? "—"} em ${dateTime(report.updatedAt)}` : "Ainda não registrado neste mês."}
           </p>
         </div>
+        <ClientMediaSection clientId={client.id} month={month} onLinkChanged={onLinkChanged} />
         <ReportForm key={month} client={client} month={month} report={report} team={team} canEdit={canEdit} onSave={onSave} />
       </section>
 

@@ -27,7 +27,16 @@ import { claimUsernameTx } from "./username-registry";
 import { EMPTY_PERMISSIONS } from "./client-permissions";
 import { resetInternalUserPassword, revokeInternalUser } from "./internal-users";
 
-export type CrmSession = NonNullable<CrmActor> & { role: CrmRole; caps: CrmCapabilities };
+export type CrmSession = NonNullable<CrmActor> & {
+  role: CrmRole;
+  caps: CrmCapabilities;
+  /**
+   * The Meta ad accounts this person may see in the Legado Intelligence
+   * (null = all, administrador geral). Set by crmActorFromRequest; the media
+   * indicators in the CRM never show more than the Intelligence would.
+   */
+  intelligenceAccountIds?: string[] | null;
+};
 
 /**
  * The CRM profile of a staff member, with their individual exceptions
@@ -71,6 +80,7 @@ const DENIED: Record<keyof CrmCapabilities, string> = {
   seeContractValues: "Seu perfil não vê os valores dos contratos.",
   exportReports: "Seu perfil não exporta relatórios.",
   manageGoals: "Só Administrador e Gestor definem as metas.",
+  linkIntelligence: "Só Administrador e Gestor ligam clientes ao Intelligence.",
 };
 
 export function requireCap(s: CrmSession, cap: keyof CrmCapabilities): void {
