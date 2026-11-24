@@ -54,7 +54,7 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 25;
+const LATEST = 26;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
@@ -63,8 +63,14 @@ const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
 const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
 
-// Back to v24: undo exactly what v25 (contratos e operação) added.
+// Back to v25: undo exactly what v26 (financeiro) added.
+async function downgradeToV25(name) {
+  await query(name, `DROP TABLE crm_commission_rules; ALTER TABLE crm_contracts DROP COLUMN status_changed_at; DELETE FROM schema_migrations WHERE version = 26;`);
+}
+
+// Back to v24: undo exactly what v26 and v25 (contratos e operação) added.
 async function downgradeToV24(name) {
+  await downgradeToV25(name);
   await query(
     name,
     `DROP TABLE crm_client_satisfaction; DROP TABLE crm_client_deliverables; DROP TABLE crm_client_onboarding;
@@ -399,6 +405,13 @@ try {
   refusedScore = true;
 }
 ok(refusedScore, "v25: satisfaction from 0 to 10");
+// v26: a contract already cancelled takes its last update as the date it left "vigente"; vigente ones have none.
+await downgradeToV25(db25);
+await query(db25, `UPDATE crm_contracts SET status = 'cancelado', updated_at = '2026-06-15T12:00:00Z' WHERE id = 'k-old'`);
+ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v25 → v${LATEST}`);
+const changed = await query(db25, `SELECT id, status_changed_at IS NOT NULL AS has FROM crm_contracts ORDER BY id`);
+ok(changed.map((r) => `${r.id}:${r.has}`).join() === "k-3:false,k-new:false,k-old:true", "v26: only the cancelled contract gets the date (its last update)");
+ok((await query(db25, `SELECT count(*)::int AS n FROM crm_commission_rules`))[0].n === 0, "v26: no commission rules invented");
 await admin(`DROP DATABASE IF EXISTS ${db25} WITH (FORCE)`);
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);

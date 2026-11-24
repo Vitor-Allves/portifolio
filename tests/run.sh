@@ -128,12 +128,14 @@ run_suite() {
     proposals-e2e) reset_db base campaigns && start_server && node tests/suites/proposals.e2e.mjs ;;
     operations-api) reset_db base campaigns && start_server && node tests/suites/operations.api.mjs ;;
     operations-e2e) reset_db base campaigns && start_server && node tests/suites/operations.e2e.mjs ;;
+    finance-api) reset_db base campaigns && start_server && node tests/suites/finance.api.mjs ;;
+    finance-e2e) reset_db base campaigns && start_server && node tests/suites/finance.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e funnel-api funnel-e2e transfers-api transfers-e2e cadastro-api cadastro-e2e proposals-api proposals-e2e operations-api operations-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e funnel-api funnel-e2e transfers-api transfers-e2e cadastro-api cadastro-e2e proposals-api proposals-e2e operations-api operations-e2e finance-api finance-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

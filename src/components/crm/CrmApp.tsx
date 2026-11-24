@@ -50,6 +50,7 @@ import CrmGoalsView from "./CrmGoalsView";
 import CrmReportsView from "./CrmReportsView";
 import CrmTransfersView from "./CrmTransfers";
 import CrmProposalsView from "./CrmProposalsView";
+import CrmFinanceView from "./CrmFinanceView";
 import CrmProposalPanel from "./CrmProposalPanel";
 
 type CrmAppProps = {
@@ -507,6 +508,7 @@ function CrmAppInner({
           ...(caps.viewClients ? (["clients", "followup"] as const) : []),
           "goals",
           ...(caps.editPipeline || caps.assignAnyOwner ? (["transfers"] as const) : []),
+          ...(caps.seeContractValues ? (["finance"] as const) : []),
           "reports",
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
@@ -756,6 +758,16 @@ function CrmAppInner({
               setDataVersion((v) => v + 1);
               void refresh();
             }}
+          />
+        ) : view === "finance" ? (
+          <CrmFinanceView
+            team={team}
+            currentUserId={currentUserId}
+            seeAll={caps.seeTeamProductivity}
+            canExport={caps.exportReports}
+            canManageRules={caps.manageGoals}
+            version={dataVersion}
+            now={now}
           />
         ) : view === "reports" ? (
           <CrmReportsView

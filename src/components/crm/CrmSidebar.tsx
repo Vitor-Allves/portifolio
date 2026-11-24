@@ -20,6 +20,7 @@ export type CrmView =
   | "followup"
   | "goals"
   | "reports"
+  | "finance"
   | "transfers"
   | "settings"
   | "automations"
@@ -158,6 +159,15 @@ export const CRM_SECTIONS: { id: CrmView; group: CrmGroup; label: string; hint: 
   },
   {
     group: "gestao",
+    id: "finance",
+    label: "Financeiro",
+    hint: "Receita e comissões",
+    description: "Valor vendido, receita recorrente e pontual, contratado e previsto, parcelas dos próximos meses, descontos, cancelamentos, receita perdida e comissões — calculados com os contratos e propostas do CRM.",
+    tip: "É gerencial: o CRM calcula, não fatura nem paga. As comissões seguem as regras cadastradas aqui (a mais específica vale).",
+    mascot: "titanWin",
+  },
+  {
+    group: "gestao",
     id: "reports",
     label: "Relatórios",
     hint: "Tabulação e resultados",
@@ -213,6 +223,7 @@ const ICONS: Record<CrmView, React.ReactNode> = {
   board: <path d="M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v7h-5V4Z" />,
   transfers: <path d="M7 4 2.5 8.5 7 13v-3h9V7H7V4Zm10 7v3H8v3h9v3l4.5-4.5L17 11Z" />,
   proposals: <path d="M6 2h9l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm8 1.5V8h4.5L14 3.5ZM8 11v2h8v-2H8Zm0 4v2h5v-2H8Zm7.2 1.4 1.4-1.4 1.4 1.4 2.8-2.8 1.4 1.4-4.2 4.2-2.8-2.8Z" />,
+  finance: <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15.9V19h-2v-1.1c-1.7-.3-3-1.4-3.1-3h2c.1.8.9 1.4 2.1 1.4 1.3 0 2-.6 2-1.4 0-.7-.5-1.2-2.2-1.6-2-.5-3.5-1.2-3.5-3 0-1.4 1.1-2.5 2.7-2.9V5h2v1.4c1.6.4 2.6 1.5 2.7 2.9h-2c-.1-.8-.7-1.3-1.8-1.3s-1.7.5-1.7 1.2c0 .7.6 1 2.3 1.5 1.9.5 3.4 1.2 3.4 3.1 0 1.5-1.1 2.6-2.9 3.1Z" />,
   reports: <path d="M6 2h9l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm8 1.5V8h4.5L14 3.5ZM8 12v6h2v-6H8Zm3.5 2v4h2v-4h-2Zm3.5-3v7h2v-7h-2Z" />,
   conversations: (
     <path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v10.5A1.5 1.5 0 0 1 20 17H9.2l-4.4 3.7A.5.5 0 0 1 4 20.3V17a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5Zm3 4.5v1.8h10V8H7Zm0 3.8v1.8h7v-1.8H7Z" />

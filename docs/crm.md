@@ -180,6 +180,11 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   e data de entrega.
 - `crm_client_satisfaction` (v25) — avaliações de satisfação (0 a 10) com
   comentário, quem registrou e quando.
+- `crm_commission_rules` (v26) — regras de comissão: nome, vendedor (ou
+  todos), serviço (ou todos), modalidade (mensalidades, valores únicos ou
+  ambos), percentual e quantas mensalidades contam. `crm_contracts.status_changed_at`
+  (v26) — quando o contrato deixou de ser vigente (os já cancelados ou
+  encerrados receberam a data da última atualização).
 - `crm_proposal_templates` e `crm_settings` (v24) — modelos de proposta e o
   desconto máximo sem autorização (`proposal_discount_limit`).
 - `crm_files` (v23) — documentos e anexos: o arquivo (`content`, até 4 MB,
@@ -525,6 +530,29 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — financeiro comercial e comissões (schema v26)
+
+- **Tela Financeiro** (especificação, item 10; Gestão, para quem vê valores
+  de contrato): para o período escolhido, valor vendido (oportunidades
+  ganhas), nova receita mensal e receita de serviços pontuais (contratos
+  vendidos), receita recorrente de hoje e contratos ativos, o contratado para
+  os próximos 12 meses (mensalidades até o fim de cada contrato), o previsto
+  no funil (valor das oportunidades abertas × probabilidade), descontos das
+  propostas aprovadas, cancelamentos (e a receita mensal que deixa de entrar),
+  o perdido no funil, as parcelas previstas dos próximos 6 meses (por mês, com
+  cada contrato) e as comissões por contrato e por vendedor. Planilha e PDF
+  (auditados). O Comercial vê só os números dele.
+- **Regras de comissão** (Gestor e Administrador): por vendedor, serviço e
+  modalidade; vale a mais específica (vendedor, depois serviço, depois
+  modalidade). Mensalidades: percentual × valor mensal × número de
+  mensalidades; valores únicos: percentual × valor. Sem regra, a comissão é
+  zero. O vendedor de um contrato é o responsável comercial (ou o dono da
+  oportunidade ganha, ou do cliente); contrato cancelado não gera comissão.
+- É gerencial: o CRM calcula com os contratos e propostas, não fatura nem
+  paga.
+- Banco v26: `crm_commission_rules`, `crm_contracts.status_changed_at`.
+- Testes: `finance-api` e `finance-e2e`; o teste de banco confere a v26.
 
 ### Evolução v1.0 — contratos e operação (schema v25)
 

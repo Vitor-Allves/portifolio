@@ -124,7 +124,12 @@ Execução agendada pronta (`/api/cron/automations`), mas desligada até haver
   PDF para assinatura; "Formalizar contrato" na proposta aprovada registra a
   venda, cria o cliente e o contrato e começa o onboarding; aba Operação do
   cliente com checklist de onboarding (8 itens), entregáveis e satisfação.
-- [ ] 7. Financeiro e comissões
+- [x] 7. Financeiro e comissões — tela Financeiro (Gestão): valor vendido,
+  nova receita mensal, serviços pontuais, receita recorrente e contratos
+  ativos, contratado para 12 meses, previsto no funil (ponderado), descontos,
+  cancelamentos, perdido no funil, parcelas dos próximos 6 meses e comissões
+  por contrato e por vendedor, com planilha/PDF; regras de comissão por
+  vendedor, serviço e modalidade (a mais específica vale).
 - [ ] 8. Automações, agendamento, indicadores
 - [ ] 9. Relatórios, Intelligence, LGPD
 - [ ] 10. Documentação e testes finais

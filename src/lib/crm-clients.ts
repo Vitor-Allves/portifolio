@@ -679,7 +679,7 @@ export async function updateClient(s: CrmSession, id: string, patch: ClientPatch
         const endedOn = parseDateOnly(patch.endedOn, "Data de encerramento") ?? todayBr();
         set("ended_on", endedOn);
         set("end_reason", reason);
-        const c = await q.query(`UPDATE crm_contracts SET status = 'encerrado', updated_at = now() WHERE client_id = $1 AND status = 'vigente'`, [id]);
+        const c = await q.query(`UPDATE crm_contracts SET status = 'encerrado', status_changed_at = now(), updated_at = now() WHERE client_id = $1 AND status = 'vigente'`, [id]);
         closed = c.rowCount ?? 0;
         await q.query(`UPDATE crm_companies SET status = 'ex_cliente', updated_at = now() WHERE id = $1`, [cur.company_id]);
       } else if (cur.status === "encerrado") {
@@ -780,7 +780,8 @@ export async function updateContract(s: CrmSession, clientId: string, contractId
     if (after.notes !== before.notes) changes.push({ field: "Observações do contrato", from: null, to: null });
     if (changes.length === 0) return null;
     await q.query(
-      `UPDATE crm_contracts SET services = $2, starts_on = $3, ends_on = $4, value_cents = $5, billing = $6, status = $7, notes = $8, updated_at = now() WHERE id = $1`,
+      `UPDATE crm_contracts SET services = $2, starts_on = $3, ends_on = $4, value_cents = $5, billing = $6, status = $7, notes = $8,
+              status_changed_at = CASE WHEN status IS DISTINCT FROM $7 THEN now() ELSE status_changed_at END, updated_at = now() WHERE id = $1`,
       [contractId, after.services, after.startsOn, after.endsOn, after.valueCents, after.billing, after.status, after.notes]
     );
     await q.query(`UPDATE crm_clients SET updated_at = now() WHERE id = $1`, [clientId]);

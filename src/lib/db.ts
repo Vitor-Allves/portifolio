@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -1450,6 +1450,33 @@ async function ensureSchema(): Promise<void> {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_client_satisfaction_idx ON crm_client_satisfaction (client_id, created_at DESC)`);
     await done(25);
+  }
+
+  if (current < 26) {
+    // v26 — Evolução v1.0 (financeiro comercial, item 10): commission rules
+    // (new, empty) and when a contract left "vigente" (for the cancellations of
+    // a period). Contracts already cancelled or ended take their last update
+    // as that date — the best one recorded.
+    await db.query(`ALTER TABLE crm_contracts ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ`);
+    await db.query(`UPDATE crm_contracts SET status_changed_at = updated_at WHERE status <> 'vigente' AND status_changed_at IS NULL`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_commission_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        -- NULL = every salesperson / any service / both modalities
+        user_id TEXT REFERENCES internal_users (id) ON DELETE CASCADE,
+        service TEXT,
+        billing TEXT CHECK (billing IN ('mensal', 'unico')),
+        percent NUMERIC(5, 2) NOT NULL CHECK (percent >= 0 AND percent <= 100),
+        -- monthly part: how many monthly payments count
+        months SMALLINT NOT NULL DEFAULT 1 CHECK (months BETWEEN 1 AND 36),
+        archived_at TIMESTAMPTZ,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await done(26);
   }
 }
 

@@ -54,7 +54,8 @@ export type AuditAction =
   | "crm.proposal_status"
   | "crm.proposal_discount"
   | "crm.proposal_link"
-  | "crm.proposal_settings";
+  | "crm.proposal_settings"
+  | "crm.commission_rule";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

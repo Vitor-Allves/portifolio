@@ -53,6 +53,7 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.proposal_discount": "Autorizou desconto de proposta",
   "crm.proposal_link": "Mudou o link de proposta",
   "crm.proposal_settings": "Mudou modelos de proposta",
+  "crm.commission_rule": "Mudou regra de comissão",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
