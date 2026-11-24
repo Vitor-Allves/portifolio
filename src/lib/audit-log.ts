@@ -44,7 +44,8 @@ export type AuditAction =
   | "crm.client_update"
   | "crm.contract_change"
   | "crm.report_export"
-  | "crm.goals_change";
+  | "crm.goals_change"
+  | "crm.intelligence_link";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

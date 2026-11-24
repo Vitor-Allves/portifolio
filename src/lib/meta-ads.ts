@@ -5,7 +5,11 @@
 // Setup guide: docs/meta-ads-setup.md
 
 const GRAPH_API_VERSION = "v21.0";
-const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+// Automated tests only (tests/run.sh): META_GRAPH_BASE_URL points at a fake
+// Graph server. Ignored on Vercel, so the token can never be sent anywhere
+// but Meta.
+const GRAPH_API_ORIGIN = (!process.env.VERCEL && process.env.META_GRAPH_BASE_URL) || "https://graph.facebook.com";
+const GRAPH_API_BASE = `${GRAPH_API_ORIGIN}/${GRAPH_API_VERSION}`;
 
 // How long a fetched page of data is reused before the Marketing API is hit
 // again. Ad accounts change rarely; insights are typically updated by Meta

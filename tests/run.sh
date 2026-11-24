@@ -47,6 +47,8 @@ reset_db() {
 start_server() {
   stop
   rm -f "$FAKE_GRAPH_DIR"/sent.jsonl "$FAKE_GRAPH_DIR"/ratelimit
+  # Meta Ads answers are cached by URL across runs; start from the fake's current ones.
+  rm -rf .next/cache/fetch-cache
   node tests/fixtures/fake-graph.mjs > "$LOGS/fake-graph.log" 2>&1 &
   GRAPH_PID=$!
   local cmd=(./node_modules/.bin/next start -p "$PORT")
@@ -58,6 +60,9 @@ start_server() {
   WHATSAPP_PHONE_NUMBER_ID="000000" \
   WHATSAPP_BUSINESS_ACCOUNT_ID="waba-test" \
   WHATSAPP_GRAPH_BASE_URL="http://localhost:${FAKE_GRAPH_PORT}" \
+  META_SYSTEM_USER_TOKEN="fake-meta-token" \
+  META_BUSINESS_ID="biz-test" \
+  META_GRAPH_BASE_URL="http://localhost:${FAKE_GRAPH_PORT}" \
   CRON_SECRET="${CRON_SECRET_FOR_TEST:-}" \
     "${cmd[@]}" > "$LOGS/server.log" 2>&1 &
   SERVER_PID=$!
@@ -105,12 +110,14 @@ run_suite() {
     dashboard-reports-e2e) reset_db base campaigns && start_server && node tests/suites/dashboard-reports.e2e.mjs ;;
     goals-api) reset_db base campaigns && start_server && node tests/suites/goals.api.mjs ;;
     goals-e2e) reset_db base campaigns && start_server && node tests/suites/goals.e2e.mjs ;;
+    media-api) reset_db base campaigns && start_server && node tests/suites/media.api.mjs ;;
+    media-e2e) reset_db base campaigns && start_server && node tests/suites/media.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

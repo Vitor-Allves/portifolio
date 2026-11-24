@@ -67,6 +67,10 @@ export function clientEventText(e: CrmClientEvent): string {
       const fields = Array.isArray(p.fields) && p.action === "edited" ? `: ${(p.fields as string[]).join(", ").toLowerCase()}` : "";
       return `Acompanhamento de ${str(p.monthLabel)} ${p.action === "edited" ? "atualizado" : "registrado"}${fields}`;
     }
+    case "intelligence":
+      return p.to
+        ? `Ligado ao Legado Intelligence: ${str(p.to)}${p.from ? ` (antes: ${str(p.from)})` : ""}`
+        : `Desligado do Legado Intelligence${p.from ? ` (era ${str(p.from)})` : ""}`;
     default:
       return "";
   }
