@@ -14,6 +14,8 @@ type CatalogApi = {
   options: (kind: OptionKind, keep?: string | null) => CrmOption[];
   /** Label of an option (archived ones included); the code itself when unknown. */
   label: (kind: OptionKind, id: string | null | undefined) => string;
+  /** Color of an option of a colored list (task types, priorities); gray when unknown. */
+  color: (kind: OptionKind, id: string | null | undefined) => TagColor;
   tag: (id: string) => CrmTag | undefined;
   /** Active tags grouped by category, in order. */
   tagGroups: { id: string; label: string; tags: CrmTag[] }[];
@@ -37,6 +39,7 @@ export function CrmCatalogProvider({ initial, children }: { initial: CrmCatalog;
       options: (kind, keep) =>
         catalog.options.filter((o) => o.kind === kind && (!o.archived || (keep != null && o.id === keep))).sort((a, b) => a.sort - b.sort),
       label: (kind, id) => (id ? byKey.get(`${kind}:${id}`)?.label ?? id : ""),
+      color: (kind, id) => (id ? byKey.get(`${kind}:${id}`)?.color ?? "cinza" : "cinza"),
       tag: (id) => tagById.get(id),
       tagGroups: TAG_CATEGORIES.map((c) => ({
         id: c.id,
@@ -64,6 +67,17 @@ export const TAG_TONE: Record<TagColor, string> = {
   roxo: "bg-crm-violet/10 text-crm-violet border-crm-violet/25",
   turquesa: "bg-crm-chart-2/10 text-crm-chart-2 border-crm-chart-2/30",
   cinza: "bg-crm-sunken text-crm-dim border-crm-line",
+};
+
+/** Solid swatch per color (a dot next to an option, the color picker). */
+export const TAG_DOT: Record<TagColor, string> = {
+  azul: "bg-crm-accent",
+  verde: "bg-crm-green",
+  amarelo: "bg-crm-amber",
+  vermelho: "bg-crm-red",
+  roxo: "bg-crm-violet",
+  turquesa: "bg-crm-chart-2",
+  cinza: "bg-crm-line-strong",
 };
 
 export function TagChip({ tag, onRemove, title, small }: { tag: CrmTag; onRemove?: () => void; title?: string; small?: boolean }) {

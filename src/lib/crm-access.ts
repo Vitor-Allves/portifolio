@@ -21,6 +21,7 @@ import {
 } from "./crm-permissions";
 import type { StaffRole } from "./session-scope";
 import { requireOptionId } from "./crm-options";
+import { TASK_RECORD_OWNER } from "./crm-tasks";
 import { generatePassword, hashPassword } from "./password";
 import { claimUsernameTx } from "./username-registry";
 import { EMPTY_PERMISSIONS } from "./client-permissions";
@@ -82,18 +83,42 @@ export async function requireContact(s: CrmSession, contactId: string): Promise<
   return { ownerId: rows[0].owner_id };
 }
 
-async function requireChild(s: CrmSession, table: "crm_deals" | "crm_tasks", id: string, label: string) {
+/** The opportunity's contact and owner, after checking this session can see its contact. */
+export async function requireDeal(s: CrmSession, id: string): Promise<{ contactId: string; ownerId: string | null }> {
   const db = await getDb();
   const { rows } = await db.query<{ contact_id: string; owner_id: string | null; contact_owner: string | null }>(
-    `SELECT x.contact_id, x.owner_id, c.owner_id AS contact_owner FROM ${table} x JOIN crm_contacts c ON c.id = x.contact_id WHERE x.id = $1`,
+    `SELECT x.contact_id, x.owner_id, c.owner_id AS contact_owner FROM crm_deals x JOIN crm_contacts c ON c.id = x.contact_id WHERE x.id = $1`,
     [id]
   );
-  if (!rows[0] || !canSee(s, rows[0].contact_owner)) throw new CrmNotFoundError(`${label} não encontrada.`);
+  if (!rows[0] || !canSee(s, rows[0].contact_owner)) throw new CrmNotFoundError("Oportunidade não encontrada.");
   return { contactId: rows[0].contact_id, ownerId: rows[0].owner_id };
 }
 
-export const requireDeal = (s: CrmSession, id: string) => requireChild(s, "crm_deals", id, "Oportunidade");
-export const requireTask = (s: CrmSession, id: string) => requireChild(s, "crm_tasks", id, "Tarefa");
+/** The task's contact (if any) and owner, after checking this session can see the record it is on (see TASK_RECORD_OWNER). */
+export async function requireTask(s: CrmSession, id: string): Promise<{ contactId: string | null; ownerId: string | null }> {
+  const db = await getDb();
+  const { rows } = await db.query<{ contact_id: string | null; owner_id: string | null; record_owner: string | null }>(
+    `SELECT t.contact_id, t.owner_id, ${TASK_RECORD_OWNER} AS record_owner
+     FROM crm_tasks t LEFT JOIN crm_contacts c ON c.id = t.contact_id LEFT JOIN crm_companies co ON co.id = t.company_id
+     WHERE t.id = $1`,
+    [id]
+  );
+  if (!rows[0] || !canSee(s, rows[0].record_owner)) throw new CrmNotFoundError("Tarefa não encontrada.");
+  return { contactId: rows[0].contact_id, ownerId: rows[0].owner_id };
+}
+
+/**
+ * A company a task can be put on: every profile sees every company, but a
+ * task on one that is in someone else's carteira would be invisible to a
+ * Comercial who created it — so it is refused, as with contacts.
+ */
+export async function requireCompanyForTask(s: CrmSession, companyId: string): Promise<{ ownerId: string | null }> {
+  const db = await getDb();
+  const { rows } = await db.query<{ owner_id: string | null }>(`SELECT owner_id FROM crm_companies WHERE id = $1`, [companyId]);
+  if (!rows[0]) throw new CrmNotFoundError("Empresa não encontrada.");
+  if (!canSee(s, rows[0].owner_id)) throw new CrmForbiddenError("Essa empresa está na carteira de outra pessoa.");
+  return { ownerId: rows[0].owner_id };
+}
 
 /** WhatsApp media is only served to someone who can see the conversation it belongs to. */
 export async function requireMedia(s: CrmSession, mediaId: string): Promise<void> {

@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from "react";
 import {
   STAGE_REQUIREMENTS,
+  TASK_REMINDERS_ALL_DAY,
+  TASK_REMINDERS_TIMED,
   formatBRL,
   isClosedStage,
   stageLabel,
@@ -114,7 +116,21 @@ function DealEditor({ deal, send }: { deal: CrmDeal; send: Send }) {
   );
 }
 
-function PendingTask({ task, now, send, deals, readOnly }: { task: CrmTask; now: number; send: Send; deals: CrmDeal[]; readOnly: boolean }) {
+function PendingTask({
+  task,
+  now,
+  send,
+  deals,
+  readOnly,
+  onOpenTask,
+}: {
+  task: CrmTask;
+  now: number;
+  send: Send;
+  deals: CrmDeal[];
+  readOnly: boolean;
+  onOpenTask?: (taskId: string) => void;
+}) {
   const { label } = useCatalog();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState("");
@@ -143,9 +159,16 @@ function PendingTask({ task, now, send, deals, readOnly }: { task: CrmTask; now:
           </span>
           <span className="block text-[11.5px] text-crm-dim truncate">
             {label("task_kind", task.kind)}
+            {task.priority !== "media" ? ` · ${label("priority", task.priority)}` : ""}
+            {task.status === "em_andamento" ? " · em andamento" : ""}
             {deal ? ` · ${deal.title}` : ""}
           </span>
         </button>
+        {onOpenTask && (
+          <button type="button" onClick={() => onOpenTask(task.id)} aria-label={`Detalhes: ${task.title}`} className={`${CRM_LINK_BTN} !text-[11.5px] shrink-0`}>
+            Detalhes
+          </button>
+        )}
         <span className={`text-[12px] font-medium whitespace-nowrap ${TASK_STATE_TONE[state]}`}>{taskDueLabel(task.dueAt, task.allDay, now)}</span>
         <OwnerAvatar name={task.ownerName} />
       </div>
@@ -196,7 +219,10 @@ function NewTaskForm({
   const [time, setTime] = useState("");
   const [ownerId, setOwnerId] = useState(defaultOwnerId);
   const [dealId, setDealId] = useState(defaultDealId ?? "");
+  const [priority, setPriority] = useState("media");
+  const [reminder, setReminder] = useState("");
   const [result, setResult] = useState("");
+  const reminderChoices: readonly { minutes: number; label: string }[] = time ? TASK_REMINDERS_TIMED : TASK_REMINDERS_ALL_DAY;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -206,12 +232,17 @@ function NewTaskForm({
       kind,
       title,
       ownerId,
-      ...(mode === "registrar" ? { done: true, result } : { dueDate: date || null, dueTime: date ? time || null : null }),
+      priority,
+      ...(mode === "registrar"
+        ? { done: true, result }
+        : { dueDate: date || null, dueTime: date ? time || null : null, reminder: date && reminder !== "" ? Number(reminder) : null }),
     });
     if (ok) {
       setTitle("");
       setDate("");
       setTime("");
+      setReminder("");
+      setPriority("media");
       setResult("");
     }
   }
@@ -248,9 +279,35 @@ function NewTaskForm({
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={mode === "agendar" ? "O que fazer (ex.: ligar para fechar)" : "O que foi feito"} aria-label="Título da tarefa" className={`${CRM_INPUT} sm:col-span-2`} />
       </div>
       {mode === "agendar" ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Data da tarefa" className={CRM_INPUT} />
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} disabled={!date} aria-label="Horário da tarefa" className={CRM_INPUT} />
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => {
+              setTime(e.target.value);
+              const list: readonly { minutes: number }[] = e.target.value ? TASK_REMINDERS_TIMED : TASK_REMINDERS_ALL_DAY;
+              if (reminder !== "" && !list.some((r) => String(r.minutes) === reminder)) setReminder("");
+            }}
+            disabled={!date}
+            aria-label="Horário da tarefa"
+            className={CRM_INPUT}
+          />
+          <select value={date ? reminder : ""} onChange={(e) => setReminder(e.target.value)} disabled={!date} aria-label="Lembrete da tarefa" className={CRM_INPUT}>
+            <option value="">Sem lembrete</option>
+            {reminderChoices.map((r) => (
+              <option key={r.minutes} value={String(r.minutes)}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Prioridade da tarefa" className={CRM_INPUT}>
+            {options("priority").map((p) => (
+              <option key={p.id} value={p.id}>
+                Prioridade {p.label.toLowerCase()}
+              </option>
+            ))}
+          </select>
           <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} aria-label="Responsável pela tarefa" className={CRM_INPUT}>
             <option value="">Sem responsável</option>
             {team.map((m) => (
@@ -287,6 +344,7 @@ export default function CrmDealsTasksTab({
   onSelectDeal,
   now,
   onReload,
+  onOpenTask,
 }: {
   detail: CrmContactDetail;
   /** Profiles that can't touch the funnel (Marketing) see opportunities and tasks without editing them. */
@@ -298,6 +356,7 @@ export default function CrmDealsTasksTab({
   now: number;
   /** Refetch the contact (and the board) after a change. */
   onReload: () => Promise<void>;
+  onOpenTask?: (taskId: string) => void;
 }) {
   const { label } = useCatalog();
   const [error, setError] = useState<string | null>(null);
@@ -419,7 +478,7 @@ export default function CrmDealsTasksTab({
         ) : (
           <ul className="space-y-1.5">
             {pending.map((t) => (
-              <PendingTask key={t.id} task={t} now={now} send={send} deals={detail.deals} readOnly={readOnly} />
+              <PendingTask key={t.id} task={t} now={now} send={send} deals={detail.deals} readOnly={readOnly} onOpenTask={onOpenTask} />
             ))}
           </ul>
         )}
