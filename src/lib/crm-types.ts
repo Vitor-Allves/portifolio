@@ -2,19 +2,41 @@
 // routes) and its client components — nothing here touches process.env or
 // the database, so it's safe to import from either side.
 
-export const CRM_STAGES = [
-  { id: "novo", label: "Novo" },
-  { id: "conversa", label: "Em conversa" },
-  { id: "reuniao", label: "Reunião agendada" },
-  { id: "proposta", label: "Proposta enviada" },
-  { id: "ganho", label: "Ganho" },
-  { id: "perdido", label: "Perdido" },
-] as const;
+import { DEFAULT_OPTIONS, stageMeta, type CrmCatalog } from "./crm-catalog";
 
-export type CrmStage = (typeof CRM_STAGES)[number]["id"];
+/**
+ * The funnel's stages as shipped (evolução v1.0, v21). The real list — names,
+ * order, probability, stages added or archived by the Administrador — lives
+ * in Personalização (crm_options kind "stage"); screens read it from the
+ * catalog and the server validates against it.
+ */
+export const CRM_STAGES: readonly { id: string; label: string }[] = DEFAULT_OPTIONS.stage.map((s) => ({ id: s.id, label: s.label }));
 
+/** A stage code (any stage on the list, including ones the Administrador created). */
+export type CrmStage = string;
+
+/** Shape of a stage code; whether it is on the list is checked against the catalog. */
 export function isCrmStage(value: unknown): value is CrmStage {
-  return CRM_STAGES.some((s) => s.id === value);
+  return typeof value === "string" && /^[a-z0-9_]{1,40}$/.test(value);
+}
+
+/** Labels the screens learned from the catalog (client only — the server passes the catalog). */
+const stageNames = new Map<string, string>(CRM_STAGES.map((s) => [s.id, s.label]));
+export function registerStageLabels(list: { id: string; label: string }[]): void {
+  for (const s of list) stageNames.set(s.id, s.label);
+}
+
+/** The funnel's stages in order (active ones; `keep` adds the records' archived stages), with probability and kind. */
+export function stagesOf(
+  catalog: CrmCatalog,
+  keep?: string | readonly string[] | null
+): { id: string; label: string; probability: number; outcome: "open" | "won" | "lost"; archived: boolean }[] {
+  const kept = new Set(typeof keep === "string" ? [keep] : (keep ?? []));
+  const list = catalog.options.filter((o) => o.kind === "stage").sort((a, b) => a.sort - b.sort);
+  const src = list.length ? list : CRM_STAGES.map((s, i) => ({ ...s, kind: "stage" as const, sort: i, archived: false, meta: DEFAULT_OPTIONS.stage[i].meta ?? {} }));
+  return src
+    .filter((o) => !o.archived || kept.has(o.id))
+    .map((o) => ({ id: o.id, label: o.label, archived: o.archived, ...stageMeta(o) }));
 }
 
 // Origens, tipos de tarefa e motivos de perda moved to the database in v9
@@ -25,8 +47,9 @@ export type CrmSource = string;
 export type CrmTaskKind = string;
 export type CrmLostReason = string;
 
-export function stageLabel(id: string): string {
-  return CRM_STAGES.find((s) => s.id === id)?.label ?? id;
+export function stageLabel(id: string, catalog?: CrmCatalog | null): string {
+  const fromCatalog = catalog?.options.find((o) => o.kind === "stage" && o.id === id)?.label;
+  return fromCatalog ?? stageNames.get(id) ?? id;
 }
 
 export function isClosedStage(stage: string): boolean {
@@ -36,11 +59,15 @@ export function isClosedStage(stage: string): boolean {
 /**
  * Exigência que cresce com a etapa: the first registration stays quick, and
  * the funnel asks for more as the negotiation advances. The server enforces
- * it on every move made by a person (automatic moves only go to "Em
- * conversa"); the screens use the same list to ask before moving.
+ * it on every move made by a person (automatic moves only go to "Primeiro
+ * contato"); the screens use the same list to ask before moving. Stages the
+ * Administrador creates ask for nothing extra.
  */
 export const STAGE_REQUIREMENTS: Partial<Record<CrmStage, readonly CrmStageRequirement[]>> = {
+  elaboracao: ["service"],
   proposta: ["service", "value"],
+  negociacao: ["service", "value"],
+  aprovacao: ["service", "value"],
   ganho: ["service", "negotiated", "wonReason"],
 };
 export type CrmStageRequirement = "service" | "value" | "negotiated" | "wonReason";
@@ -65,6 +92,20 @@ export function missingForStage(
 /** "serviço, valor estimado e motivo do ganho" */
 export function joinPt(items: string[]): string {
   return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} e ${items[items.length - 1]}`;
+}
+
+/** Potencial comercial de um lead (evolução v1.0, item 2.1). */
+export const CRM_POTENTIALS = [
+  { id: "alto", label: "Alto" },
+  { id: "medio", label: "Médio" },
+  { id: "baixo", label: "Baixo" },
+] as const;
+export type CrmPotential = (typeof CRM_POTENTIALS)[number]["id"];
+export function isCrmPotential(v: unknown): v is CrmPotential {
+  return CRM_POTENTIALS.some((p) => p.id === v);
+}
+export function potentialLabel(v: string | null | undefined): string {
+  return CRM_POTENTIALS.find((p) => p.id === v)?.label ?? "";
 }
 
 /** Situação de uma tarefa (fixed list; done_at / canceled_at keep when and who). */
@@ -237,6 +278,8 @@ export type CrmContactCard = {
   consentStatus: CrmConsentStatus;
   /** Set when the lead asked not to be contacted — campaigns must skip them. */
   optedOutAt: string | null;
+  /** LGPD: when the personal data was anonymized at the titular's request (evolução v1.0). */
+  anonymizedAt: string | null;
   archivedAt: string | null;
   createdAt: string;
   /** Tags on the contact (crm_tags.id); labels and colors come from the catalog. */
@@ -248,6 +291,12 @@ export type CrmContactCard = {
   returnAt: string | null;
   /** Decisor na empresa. */
   isDecisionMaker: boolean;
+  /** Evolução v1.0: telefone além do WhatsApp (fixo, outro número). */
+  altPhone: string | null;
+  /** Potencial comercial do lead. */
+  potential: CrmPotential | null;
+  /** Necessidade identificada (texto livre). */
+  need: string | null;
   /** Latest message, note or finished task — whichever came last. */
   lastInteractionAt: string | null;
   /** Earliest pending task. */
@@ -308,7 +357,18 @@ export type CrmEventKind =
   /** Written by an automation (Fase 3): payload { automation, text }. */
   | "automation"
   /** Atendimento of the conversation (Fase 4): payload { action: assumed|takeover|transferred|ended, from, to }. */
-  | "attendance";
+  | "attendance"
+  /** Solicitação de transferência (evolução v1.0): payload { action: requested|aprovada|recusada|cancelada, from, to, reason, note, requestedBy }. */
+  | "transfer"
+  /** Diagnóstico comercial saved (evolução v1.0): payload { version, diagnosisId, dealId, need }. */
+  | "diagnosis"
+  /** A document attached or archived (evolução v1.0): payload { action: attached|archived, fileId, name }. */
+  | "file"
+  | "proposal"
+  /** Mensagem agendada (evolução v1.0): payload { action: scheduled|canceled|sent|failed, id, sendAt, kind, templateName, error }. */
+  | "scheduled_message"
+  /** LGPD (evolução v1.0): payload { action: anonymized }. */
+  | "lgpd";
 
 export type CrmEvent = {
   id: string;
@@ -346,6 +406,15 @@ export type CrmDeal = {
   createdAt: string;
   /** The active client this won opportunity became a contract of (Fase 5). */
   clientId: string | null;
+  /** Probabilidade de fechamento (%): the opportunity's own, else its stage's (evolução). */
+  probability: number;
+  /** true when the probability was set on the opportunity itself. */
+  probabilityOwn: boolean;
+  /** Tabulação of a closed opportunity: group, result (won), who closed it, return date (futuro). */
+  closeGroup: "positivo" | "negativo" | "sem_conversao" | "futuro" | null;
+  wonResult: "venda_realizada" | "proposta_aprovada" | null;
+  closedByName: string | null;
+  returnOn: string | null;
 };
 
 export type CrmTaskSummary = { id: string; kind: CrmTaskKind; title: string; dueAt: string | null; allDay: boolean };
@@ -414,6 +483,30 @@ export type CrmContactDetail = CrmContactCard & {
   tasks: CrmTask[];
   /** How each tag got here (manual, importação, campanha, automação), by whom and when. */
   tagLinks: { tagId: string; via: "manual" | "importacao" | "campanha" | "automacao"; byName: string | null; at: string }[];
+  /** Evolução v1.0: true when the viewer may see the lead but not its WhatsApp conversation (someone else's lead). */
+  conversationHidden?: boolean;
+  /** The open transfer request on this lead, if any. */
+  pendingTransfer?: CrmTransferInfo | null;
+};
+
+/** A transfer request as the screens show it (see crm-transfers.ts). */
+export type CrmTransferInfo = {
+  id: string;
+  contactId: string;
+  contactName: string;
+  company: string | null;
+  fromOwnerId: string | null;
+  fromOwnerName: string | null;
+  toOwnerId: string | null;
+  toOwnerName: string;
+  reason: string;
+  status: "pendente" | "aprovada" | "recusada" | "cancelada";
+  requestedById: string | null;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
 };
 
 /** "R$ 1.500,50" / "1500.5" / 1500.5 → centavos. Empty → null. Throws a pt-BR message on garbage. */
@@ -459,6 +552,9 @@ export type CrmCompanyRow = {
   state: string | null;
   address: string | null;
   website: string | null;
+  /** Evolução v1.0: the company's own phone and e-mail. */
+  phone: string | null;
+  email: string | null;
   notes: string | null;
   /** Responsável pela conta. */
   ownerId: string | null;
@@ -558,7 +654,7 @@ export type CrmTeamMember = { id: string; name: string };
 export type CrmDashboardMetrics = {
   newLeads: number;
   newDeals: number;
-  /** Opportunities that entered "Reunião agendada" / "Proposta enviada" in the period. */
+  /** Opportunities that entered "Proposta enviada" in the period (meetings: Reunião tasks scheduled in it). */
   meetings: number;
   proposals: number;
   wonCount: number;
@@ -572,6 +668,12 @@ export type CrmDashboardMetrics = {
   /** Mean days from opening to winning. */
   avgCycleDays: number | null;
   tasksDone: number;
+  /** Contacts someone on the team worked on in the period (message, finished task, a person's record in the history). */
+  workedLeads: number;
+  /** Contacts with an opportunity closed (won or lost) in the period. */
+  finishedContacts: number;
+  /** Proposals approved in the period (proposals module). */
+  proposalsApproved: number;
 };
 
 export type CrmDashboard = {
@@ -597,6 +699,8 @@ export type CrmDashboard = {
   series: { start: string; label: string; newLeads: number; won: number }[];
   lossReasons: { reason: CrmLostReason | "sem_motivo"; count: number; valueCents: number }[];
   sources: { source: CrmSource; newLeads: number; won: number; wonValueCents: number }[];
+  /** Por serviço (null = not informed): new leads by service of interest; won opportunities by their service. */
+  services: { service: string | null; newLeads: number; won: number; wonValueCents: number }[];
   team: {
     ownerId: string | null;
     name: string;
@@ -677,6 +781,15 @@ export type CrmProductivityNumbers = {
   tasksDone: number;
   /** Right now, not in the period. */
   tasksOverdue: number;
+  /** Leads trabalhados in the period (by the lead's owner). */
+  worked: number;
+  /** Concluded Follow-up / Retorno comercial tasks. */
+  followUps: number;
+  proposalsApproved: number;
+  /** Won value ÷ won count; null without sales. */
+  avgTicketCents: number | null;
+  /** Right now: leads they're responsible for. */
+  assigned: number;
   /** Contacts they wrote to on WhatsApp (campaigns don't count). */
   conversations: number;
   messagesSent: number;
@@ -913,6 +1026,25 @@ export type CrmContract = {
   /** Days until it ends (Brasília), for a vigente contract with an end date; negative = already ended. */
   daysLeft: number | null;
   createdAt: string;
+  /** Evolução v1.0 (item 8): the contract's number and extra details. */
+  number: number;
+  proposalId: string | null;
+  proposalNumber: number | null;
+  /** The one-time part of a monthly contract (from a proposal); hidden like valueCents. */
+  oneTimeCents: number | null;
+  paymentTerms: string | null;
+  dueDay: number | null;
+  termMonths: number | null;
+  renewal: string | null;
+  cancellationRules: string | null;
+  salesOwnerId: string | null;
+  /** The sales owner, or the won opportunity's owner when none was set. */
+  salesOwnerName: string | null;
+  opsOwnerId: string | null;
+  opsOwnerName: string | null;
+  signedFileId: string | null;
+  signedFileName: string | null;
+  signedOn: string | null;
 };
 
 export type CrmClientRow = {
@@ -943,7 +1075,7 @@ export type CrmClientRow = {
 
 export type CrmClientEvent = {
   id: string;
-  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report" | "intelligence";
+  kind: "created" | "edited" | "status" | "contract_added" | "contract_edited" | "note" | "report" | "intelligence" | "onboarding" | "deliverable" | "satisfaction" | "contract_details";
   payload: Record<string, unknown>;
   userName: string | null;
   createdAt: string;

@@ -9,7 +9,7 @@ import { listBoardDeals } from "@/lib/crm-deals";
 import { listTasks } from "@/lib/crm-tasks";
 import { getCatalog } from "@/lib/crm-options";
 import { isWhatsAppConfigured } from "@/lib/whatsapp";
-import { crmSessionFor, needsTotpSetup, visibleTo, type CrmSession } from "@/lib/crm-access";
+import { conversationsOf, crmSessionFor, maskConversations, needsTotpSetup, visibleTo, type CrmSession } from "@/lib/crm-access";
 import CrmApp from "@/components/crm/CrmApp";
 import { CRM_SIDEBAR_COOKIE, CRM_THEME_COOKIE, parseCrmTheme } from "@/components/crm/crm-theme";
 
@@ -20,14 +20,15 @@ export const metadata: Metadata = {
 
 async function loadBoard(session: CrmSession) {
   const mine = visibleTo(session);
-  const [deals, tasks, inbox, team, quickReplies, catalog] = await Promise.all([
+  const [allDeals, tasks, inbox, team, quickReplies, catalog] = await Promise.all([
     listBoardDeals(mine),
     listTasks({ status: "pending", owner: "all", visibleTo: mine }),
-    listUnreadContacts(mine),
+    listUnreadContacts(conversationsOf(session)),
     listTeam(),
     listQuickReplies(),
     getCatalog(),
   ]);
+  const deals = await maskConversations(session, allDeals);
   return { deals, tasks, inbox, team, quickReplies, catalog };
 }
 

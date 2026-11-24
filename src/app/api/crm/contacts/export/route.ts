@@ -4,7 +4,7 @@ import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
 import { requireCap } from "@/lib/crm-access";
 import { contactFiltersFromSearch, listContactsForExport } from "@/lib/crm";
 import { nextTasksByContact } from "@/lib/crm-tasks";
-import { CRM_CONSENT, formatPhone, stageLabel, temperatureLabel } from "@/lib/crm-types";
+import { potentialLabel, CRM_CONSENT, formatPhone, stageLabel, temperatureLabel } from "@/lib/crm-types";
 import { getCatalog } from "@/lib/crm-options";
 import { rowsToCsv } from "@/lib/csv";
 
@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       "Nome", "WhatsApp", "E-mail", "Empresa", "Cargo", "Segmento", "Cidade", "Origem", "Indicado por",
       "Etapa", "Responsável", "Consentimento", "Descadastrado", "Próxima tarefa", "Data da próxima tarefa", "Cadastrado em", "Etiquetas",
       "Temperatura", "Serviço de interesse", "Retorno previsto", "Última interação", "Decisor",
+      "Outro telefone", "Potencial comercial", "Necessidade identificada",
     ];
     const rows = contacts.map((c) => [
       c.name,
@@ -53,6 +54,9 @@ export async function GET(req: NextRequest) {
       c.returnAt ? c.returnAt.split("-").reverse().join("/") : "",
       day(c.lastInteractionAt),
       c.isDecisionMaker ? "Sim" : "",
+      c.altPhone ?? "",
+      potentialLabel(c.potential),
+      c.need ?? "",
     ]);
     await writeAudit({
       actorUserId: actor.userId,

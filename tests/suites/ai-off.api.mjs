@@ -26,7 +26,7 @@ r = await analysis(vitor, { kind: "dashboard", from: "2026-10-01", to: "2026-10-
 ok(r.status === 200 && r.body.analysis.facts[0].items.find((i) => i.label === "Leads cadastrados").value === "4 (antes: 1)", "the Painel's summary uses the Painel's numbers");
 r = await analysis(joao, { kind: "dashboard", from: "2026-10-01", to: "2026-10-31", owner: "u-vitor" });
 ok(r.body.analysis.subtitle.includes("João") && r.body.analysis.facts.find((f) => f.title === "Por pessoa").items.map((i) => i.label).join() === "João", "a Comercial's summary is only his own");
-ok((await analysis(joao, { kind: "lead", contactId: "c1" })).status === 404, "a Comercial can't summarize someone else's lead");
+ok((await analysis(joao, { kind: "lead", contactId: "c1" })).status === 403, "a Comercial can't summarize someone else's lead (he sees it, but doesn't work on it)");
 ok((await analysis(vitor, { kind: "nope" })).status === 400 && (await analysis(vitor, { kind: "client", clientId: "x", month: "2026-13" })).status === 400, "invalid requests refused");
 
 await closeDb();

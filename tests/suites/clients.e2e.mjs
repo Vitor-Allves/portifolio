@@ -93,11 +93,14 @@ const mp = m.getByRole("dialog", { name: "Cliente Ribeiro Odonto" });
 await mp.getByText("Seu perfil não vê os valores dos contratos.").waitFor();
 ok((await mp.getByText(/R\$/).count()) === 0 && (await mp.getByLabel("Situação do cliente").isDisabled()), "…contracts without values, read-only");
 
-// ---- Comercial: only theirs ----
+// ---- Comercial: sees the team's clients, read-only (evolução v1.0) ----
 const { page: j } = await login(browser, "joao", { errors });
 await go(j, "Clientes ativos");
-await j.getByText("Nenhum cliente ativo ainda").waitFor();
-ok(true, "João doesn't see Vitor's client");
+await j.getByRole("table", { name: "Clientes ativos" }).getByRole("button", { name: "Ribeiro Odonto" }).click();
+const jp = j.getByRole("dialog", { name: "Cliente Ribeiro Odonto" });
+await jp.getByLabel("Situação do cliente").waitFor();
+ok((await jp.getByLabel("Situação do cliente").isDisabled()) && (await jp.getByRole("button", { name: "+ Novo contrato" }).count()) === 0, "João sees Vitor's client, read-only");
+await jp.getByRole("button", { name: "Fechar painel" }).click();
 
 // ---- phone + dark ----
 const { page: p } = await login(browser, "vitor", { width: 390, height: 844, dark: true, errors });

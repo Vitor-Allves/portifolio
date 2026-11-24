@@ -27,6 +27,9 @@ const pairs = [
   ["deals", d.current.newDeals],
   ["meetings", d.current.meetings],
   ["proposals", d.current.proposals],
+  ["approved", d.current.proposalsApproved],
+  ["worked", d.current.workedLeads],
+  ["finished", d.current.finishedContacts],
   ["won", d.current.wonCount],
   ["lost", d.current.lostCount],
   ["tasksDone", d.current.tasksDone],
@@ -69,7 +72,10 @@ let r = await records(vitor, "recurring");
 ok(r.kind === "client" && r.rows[0].id === rib && r.rows[0].valueCents === 350000, "…its list opens the client");
 d = await dash(maria);
 ok(d.recurring.clients === 1 && d.recurring.monthlyCents === null && (await records(maria, "recurring")).rows[0].valueCents === null, "Marketing sees the client, not the values");
-ok((await dash(joao)).recurring.clients === 0, "João: none of his clients");
+ok((await dash(joao)).recurring.clients === 1, "João sees the team's general numbers (evolução v1.0)");
+ok((await dash(joao, "&owner=u-joao")).recurring.clients === 0, "…and his own: none of his clients");
+const jt = (await dash(joao, "&owner=u-vitor")).team;
+ok(jt.length === 1 && jt[0].ownerId === "u-joao", "…never another person's numbers, and only his own line per person");
 
 // ---- campanhas ----
 await sql(`INSERT INTO crm_campaigns (id, name, status, started_at) VALUES ('k-dash', 'Novembro', 'concluida', now())`);
@@ -97,7 +103,7 @@ ok(text.includes("Leads cadastrados;4;1") && text.includes("Negócios ganhos;1;1
 ok(text.includes("Faturamento emitido e valor recebido não são controlados pelo CRM"), "…and says what the CRM doesn't track");
 res = await vitor.get(`${BASE}/api/crm/dashboard/export/?${OCT}&what=records&metric=won`);
 text = await res.text();
-ok(res.status() === 200 && text.split("\n").length === 2 && text.includes("Oportunidade;d1;Ana Ribeiro · Ribeiro Odonto;Vitor;Ganho;\"5000,00\""), `the won list as CSV (${text.split("\n")[1]})`);
+ok(res.status() === 200 && text.split("\n").length === 2 && text.includes("Oportunidade;d1;Ana Ribeiro · Ribeiro Odonto;Vitor;Venda fechada;\"5000,00\""), `the won list as CSV (${text.split("\n")[1]})`);
 ok((await joao.get(`${BASE}/api/crm/dashboard/export/?${OCT}&what=summary`)).status() === 403, "a Comercial can't export");
 ok((await maria.get(`${BASE}/api/crm/dashboard/export/?${OCT}&what=summary`)).status() === 200, "Marketing can");
 ok((await sql(`SELECT count(*) FROM audit_log WHERE action = 'crm.report_export'`)) === "3", "every export is in the audit trail");

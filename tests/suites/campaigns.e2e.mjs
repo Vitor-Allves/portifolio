@@ -21,6 +21,8 @@ async function open(username, { width = 1440, height = 900, dark = false } = {})
   page.on("console", (m) => m.type() === "error" && !/400|403|404|409|502/.test(m.text()) && errors.push(`${username}: ${m.text()}`));
   await page.goto(`${BASE}/crm/`);
   await page.getByRole("heading", { level: 1, name: "Painel" }).waitFor();
+  // Clicks before React takes over the page are lost: wait for the Painel's numbers (as login() in helpers.mjs does).
+  await page.getByRole("region", { name: "Indicadores do período" }).waitFor();
   return page;
 }
 const nav = (p) => p.getByRole("navigation", { name: "Seções do CRM" });

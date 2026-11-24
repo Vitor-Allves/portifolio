@@ -11,6 +11,7 @@ import { getDb, withTransaction } from "./db";
 import { writeAudit } from "./audit-log";
 import { CrmConflictError, CrmForbiddenError, CrmInputError, CrmNotFoundError, brDate, cleanText, escapeLike, iso, parseDateOnly } from "./crm-core";
 import { requireCap, visibleTo, type CrmSession } from "./crm-access";
+import { seedOnboarding } from "./crm-onboarding-seed";
 import { canAssignOwner, type CrmCapabilities } from "./crm-permissions";
 import { optionLabel, requireOptionId } from "./crm-options";
 import {
@@ -161,6 +162,9 @@ export async function listClients(s: CrmSession, f: ClientFilters): Promise<{ cl
 }
 
 const canSee = (s: ClientActor, ownerId: string | null) => s.caps.seeAllLeads || ownerId === null || ownerId === s.userId;
+/** Changing a client (or creating one from an opportunity): someone else's only with "interagir em leads de outras pessoas". */
+const canAct = (s: ClientActor, ownerId: string | null) => canSee(s, ownerId) && (s.caps.actOnAllLeads || ownerId === null || ownerId === s.userId);
+const NOT_YOURS = "Este cliente é de outra pessoa: você pode consultar, mas só o responsável (ou um Gestor) altera. Peça a transferência.";
 
 type ContractDbRow = {
   id: string;
@@ -176,13 +180,37 @@ type ContractDbRow = {
   deal_title: string | null;
   days_left: number | null;
   created_at: Date;
+  number: number;
+  proposal_id: string | null;
+  proposal_number: number | null;
+  one_time_cents: string | null;
+  payment_terms: string | null;
+  due_day: number | null;
+  term_months: number | null;
+  renewal: string | null;
+  cancellation_rules: string | null;
+  sales_owner_id: string | null;
+  sales_owner_name: string | null;
+  ops_owner_id: string | null;
+  ops_owner_name: string | null;
+  signed_file_id: string | null;
+  signed_file_name: string | null;
+  signed_on: string | null;
 };
 
 const CONTRACT_SELECT = `
   SELECT k.id, k.client_id, k.services, k.starts_on::text AS starts_on, k.ends_on::text AS ends_on, k.value_cents, k.billing, k.status,
          k.notes, k.deal_id, d.title AS deal_title, k.created_at,
-         CASE WHEN k.status = 'vigente' AND k.ends_on IS NOT NULL THEN k.ends_on - ${TODAY_SQL} END AS days_left
-  FROM crm_contracts k LEFT JOIN crm_deals d ON d.id = k.deal_id`;
+         CASE WHEN k.status = 'vigente' AND k.ends_on IS NOT NULL THEN k.ends_on - ${TODAY_SQL} END AS days_left,
+         k.number, k.proposal_id, p.number AS proposal_number, k.one_time_cents, k.payment_terms, k.due_day, k.term_months, k.renewal, k.cancellation_rules,
+         k.sales_owner_id, COALESCE(su.name, du.name) AS sales_owner_name, k.ops_owner_id, ou.name AS ops_owner_name,
+         k.signed_file_id, f.name AS signed_file_name, k.signed_on::text AS signed_on
+  FROM crm_contracts k LEFT JOIN crm_deals d ON d.id = k.deal_id
+  LEFT JOIN crm_proposals p ON p.id = k.proposal_id
+  LEFT JOIN internal_users su ON su.id = k.sales_owner_id
+  LEFT JOIN internal_users du ON du.id = d.owner_id
+  LEFT JOIN internal_users ou ON ou.id = k.ops_owner_id
+  LEFT JOIN crm_files f ON f.id = k.signed_file_id`;
 
 function mapContract(r: ContractDbRow, showValues: boolean): CrmContract {
   return {
@@ -199,6 +227,22 @@ function mapContract(r: ContractDbRow, showValues: boolean): CrmContract {
     dealTitle: r.deal_title,
     daysLeft: r.days_left === null ? null : Number(r.days_left),
     createdAt: iso(r.created_at)!,
+    number: r.number,
+    proposalId: r.proposal_id,
+    proposalNumber: r.proposal_number,
+    oneTimeCents: showValues && r.one_time_cents !== null ? Number(r.one_time_cents) : null,
+    paymentTerms: r.payment_terms,
+    dueDay: r.due_day,
+    termMonths: r.term_months,
+    renewal: r.renewal,
+    cancellationRules: r.cancellation_rules,
+    salesOwnerId: r.sales_owner_id,
+    salesOwnerName: r.sales_owner_name,
+    opsOwnerId: r.ops_owner_id,
+    opsOwnerName: r.ops_owner_name,
+    signedFileId: r.signed_file_id,
+    signedFileName: r.signed_file_name,
+    signedOn: r.signed_on,
   };
 }
 
@@ -293,7 +337,7 @@ export async function listClientSuggestions(s: CrmSession): Promise<CrmClientSug
 
 // ---------- writing ----------
 
-async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind"], payload: Record<string, unknown>, s: ClientActor): Promise<void> {
+export async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind"], payload: Record<string, unknown>, s: ClientActor): Promise<void> {
   await q.query(`INSERT INTO crm_client_events (id, client_id, kind, payload, user_id, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [
     randomUUID(),
     clientId,
@@ -305,7 +349,7 @@ async function addClientEvent(q: Q, clientId: string, kind: CrmClientEvent["kind
 }
 
 /** Someone active in the CRM, or null for "sem responsável". */
-async function requireActiveUser(q: Q, id: string | null): Promise<{ id: string; name: string } | null> {
+export async function requireActiveUser(q: Q, id: string | null): Promise<{ id: string; name: string } | null> {
   if (!id) return null;
   const { rows } = await q.query<{ id: string; name: string }>(`SELECT id, name FROM internal_users WHERE id = $1 AND revoked_at IS NULL`, [id]);
   if (!rows[0]) throw new CrmInputError("Escolha um responsável ativo no CRM.");
@@ -472,6 +516,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
       );
       deal = rows[0] ?? null;
       if (!deal || !canSee(s, deal.contact_owner)) throw new CrmNotFoundError("Oportunidade não encontrada.");
+      if (!canAct(s, deal.owner_id ?? deal.contact_owner)) throw new CrmForbiddenError("Esta oportunidade é de outra pessoa: só o responsável (ou um Gestor) a torna cliente.");
       if (deal.client_id) return { id: deal.client_id, created: false, companyName: null as string | null };
       if (deal.stage !== "ganho") throw new CrmInputError("Só uma oportunidade ganha vira cliente.");
       if (!deal.company_id) throw new CrmInputError(`Vincule ${deal.contact_name} a uma empresa antes: o cliente é sempre uma empresa.`);
@@ -488,6 +533,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
     );
     const company = co.rows[0];
     if (!company || (!deal && !canSee(s, company.owner_id))) throw new CrmNotFoundError("Empresa não encontrada.");
+    if (!deal && !canAct(s, company.owner_id)) throw new CrmForbiddenError(`${company.name} está na carteira de outra pessoa.`);
     if (company.archived) throw new CrmInputError(`${company.name} está arquivada.`);
 
     const dealValues = (base: ContractValues): ContractValues =>
@@ -505,7 +551,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
     if (existing.rows[0]) {
       const cl = existing.rows[0];
       if (!deal) throw new CrmConflictError(`${company.name} já é cliente.`);
-      if (!canSee(s, cl.owner_id)) throw new CrmForbiddenError(`${company.name} já é cliente, na carteira de outra pessoa.`);
+      if (!canAct(s, cl.owner_id)) throw new CrmForbiddenError(`${company.name} já é cliente, na carteira de outra pessoa.`);
       const base = dealValues({ services: [], startsOn: todayBr(), endsOn: null, valueCents: null, billing: "mensal", status: "vigente", notes: null });
       const k = await readContract(q, s, { ...(input.contract ?? {}), value: undefined }, base);
       if (k.status === "vigente" && cl.status === "encerrado") throw new CrmInputError(`${company.name} está encerrado como cliente. Reative-o antes de registrar um contrato vigente.`);
@@ -548,6 +594,8 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
       { via: deal ? "oportunidade" : "empresa", dealTitle: deal?.title ?? null, status: clientStatusLabel(status), owner: owner?.name ?? null, startedOn },
       s
     );
+    // Evolução v1.0 (item 9): a client in onboarding starts with the checklist.
+    if (status === "onboarding") await seedOnboarding(q, id, owner?.id ?? null);
     if (deal || input.contract) {
       const base = dealValues({ services: [], startsOn: startedOn, endsOn: null, valueCents: null, billing: "mensal", status: "vigente", notes: null });
       // From an opportunity the value is the negotiated one; a form may adjust it only with the right to see values.
@@ -561,7 +609,7 @@ export async function createClientTx(q: Q, s: ClientActor, input: ClientInput): 
 type ClientLock = { id: string; company_id: string; company_name: string; owner_id: string | null; owner_name: string | null; status: string; started_on: string | null; notes: string | null };
 
 /** The client, locked, after checking this person may edit it. */
-async function lockClient(q: Q, s: CrmSession, id: string): Promise<ClientLock> {
+export async function lockClient(q: Q, s: CrmSession, id: string): Promise<ClientLock> {
   requireCap(s, "editClients");
   const { rows } = await q.query<ClientLock>(
     `SELECT cl.id, cl.company_id, co.name AS company_name, cl.owner_id, u.name AS owner_name, cl.status, cl.started_on::text AS started_on, cl.notes
@@ -571,6 +619,7 @@ async function lockClient(q: Q, s: CrmSession, id: string): Promise<ClientLock> 
   );
   const r = rows[0];
   if (!r || !canSee(s, r.owner_id)) throw new CrmNotFoundError("Cliente não encontrado.");
+  if (!canAct(s, r.owner_id)) throw new CrmForbiddenError(NOT_YOURS);
   return r;
 }
 
@@ -630,7 +679,7 @@ export async function updateClient(s: CrmSession, id: string, patch: ClientPatch
         const endedOn = parseDateOnly(patch.endedOn, "Data de encerramento") ?? todayBr();
         set("ended_on", endedOn);
         set("end_reason", reason);
-        const c = await q.query(`UPDATE crm_contracts SET status = 'encerrado', updated_at = now() WHERE client_id = $1 AND status = 'vigente'`, [id]);
+        const c = await q.query(`UPDATE crm_contracts SET status = 'encerrado', status_changed_at = now(), updated_at = now() WHERE client_id = $1 AND status = 'vigente'`, [id]);
         closed = c.rowCount ?? 0;
         await q.query(`UPDATE crm_companies SET status = 'ex_cliente', updated_at = now() WHERE id = $1`, [cur.company_id]);
       } else if (cur.status === "encerrado") {
@@ -731,7 +780,8 @@ export async function updateContract(s: CrmSession, clientId: string, contractId
     if (after.notes !== before.notes) changes.push({ field: "Observações do contrato", from: null, to: null });
     if (changes.length === 0) return null;
     await q.query(
-      `UPDATE crm_contracts SET services = $2, starts_on = $3, ends_on = $4, value_cents = $5, billing = $6, status = $7, notes = $8, updated_at = now() WHERE id = $1`,
+      `UPDATE crm_contracts SET services = $2, starts_on = $3, ends_on = $4, value_cents = $5, billing = $6, status = $7, notes = $8,
+              status_changed_at = CASE WHEN status IS DISTINCT FROM $7 THEN now() ELSE status_changed_at END, updated_at = now() WHERE id = $1`,
       [contractId, after.services, after.startsOn, after.endsOn, after.valueCents, after.billing, after.status, after.notes]
     );
     await q.query(`UPDATE crm_clients SET updated_at = now() WHERE id = $1`, [clientId]);

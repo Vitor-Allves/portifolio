@@ -11,7 +11,7 @@ export type CrmAccess = CrmRole | "sem_acesso";
 export const CRM_ACCESS_OPTIONS: { id: CrmAccess; label: string; description: string }[] = [
   { id: "administrador", label: "Administrador", description: "Tudo, inclusive definir o perfil de cada pessoa da equipe." },
   { id: "gestor", label: "Gestor", description: "Vê e mexe em todos os leads, troca responsáveis, importa, exporta e dispara campanhas." },
-  { id: "comercial", label: "Comercial", description: "Vê e trabalha só os próprios leads e os sem responsável." },
+  { id: "comercial", label: "Comercial", description: "Vê todos os leads; trabalha só os seus e os sem responsável; pede ao Gestor a transferência de um lead de outra pessoa." },
   { id: "marketing", label: "Marketing", description: "Cadastra, importa e exporta contatos; monta campanhas para o Gestor disparar; vê o funil sem mexer nele." },
   { id: "sem_acesso", label: "Sem acesso", description: "Não entra no CRM." },
 ];
@@ -38,8 +38,19 @@ export function effectiveCrmAccess(stored: string | null, staffRole: StaffRole):
 }
 
 export type CrmCapabilities = {
-  /** false = only leads they own or that have no owner (Comercial). */
+  /** See every lead, opportunity and history (evolução v1.0: also the Comercial). false = only their own and the unowned. */
   seeAllLeads: boolean;
+  /**
+   * Act on someone else's leads: move or edit their opportunities, edit their
+   * data, write notes, tasks and tags, send messages (evolução v1.0, item 6).
+   * Without it: only on their own and the unowned — the rest is read-only and
+   * a transfer is requested from a Gestor.
+   */
+  actOnAllLeads: boolean;
+  /** See the WhatsApp conversations of other people's leads (without it the messages are hidden). */
+  seeOthersConversations: boolean;
+  /** See each person's productivity, goals and results (Metas e produtividade, the Painel per person, the reports by seller). */
+  seeTeamProductivity: boolean;
   /** Move stages, create/edit opportunities, create/finish tasks. */
   editPipeline: boolean;
   sendWhatsApp: boolean;
@@ -77,10 +88,10 @@ export type CrmCapabilities = {
 };
 
 const CAPS: Record<CrmRole, CrmCapabilities> = {
-  administrador: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true, useAi: true },
-  gestor: { seeAllLeads: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true, useAi: true },
-  comercial: { seeAllLeads: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: false, manageGoals: false, linkIntelligence: false, useAi: false },
-  marketing: { seeAllLeads: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false, exportReports: true, manageGoals: false, linkIntelligence: false, useAi: false },
+  administrador: { seeAllLeads: true, actOnAllLeads: true, seeOthersConversations: true, seeTeamProductivity: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: true, editCampaigns: true, sendCampaigns: true, customize: true, manageAutomations: true, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true, useAi: true },
+  gestor: { seeAllLeads: true, actOnAllLeads: true, seeOthersConversations: true, seeTeamProductivity: true, editPipeline: true, sendWhatsApp: true, assignAnyOwner: true, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: true, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: true, manageGoals: true, linkIntelligence: true, useAi: true },
+  comercial: { seeAllLeads: true, actOnAllLeads: false, seeOthersConversations: false, seeTeamProductivity: false, editPipeline: true, sendWhatsApp: true, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: false, exportContacts: false, manageTeam: false, editCampaigns: false, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: true, seeContractValues: true, exportReports: false, manageGoals: false, linkIntelligence: false, useAi: false },
+  marketing: { seeAllLeads: true, actOnAllLeads: true, seeOthersConversations: true, seeTeamProductivity: true, editPipeline: false, sendWhatsApp: false, assignAnyOwner: false, editContacts: true, archiveContacts: true, importContacts: true, exportContacts: true, manageTeam: false, editCampaigns: true, sendCampaigns: false, customize: false, manageAutomations: false, viewClients: true, editClients: false, seeContractValues: false, exportReports: true, manageGoals: false, linkIntelligence: false, useAi: false },
 };
 
 export type CrmCap = keyof CrmCapabilities;
@@ -104,7 +115,8 @@ export const CRM_PERMISSION_MODULES: {
     id: "contatos",
     label: "Contatos e empresas",
     items: [
-      { cap: "seeAllLeads", action: "Visualizar", label: "Ver todos os leads (sem isso: só os seus e os sem responsável)" },
+      { cap: "seeAllLeads", action: "Visualizar", label: "Ver todos os leads, oportunidades e históricos (sem isso: só os seus e os sem responsável)" },
+      { cap: "actOnAllLeads", action: "Criar e editar", label: "Interagir em leads de outras pessoas: mover, editar, registrar atividades (sem isso: só ver, e pedir a transferência)" },
       { cap: "editContacts", action: "Criar e editar", label: "Cadastrar e editar contatos e empresas, notas, consentimento e etiquetas" },
       { cap: "archiveContacts", action: "Excluir", label: "Arquivar e restaurar contatos (nada é apagado)" },
       { cap: "importContacts", action: "Criar e editar", label: "Importar planilhas e desfazer importações" },
@@ -119,7 +131,14 @@ export const CRM_PERMISSION_MODULES: {
       { cap: "assignAnyOwner", action: "Administrar", label: "Trocar o responsável de qualquer lead (sem isso: só assumir os sem dono e soltar os seus)" },
     ],
   },
-  { id: "conversas", label: "Conversas", items: [{ cap: "sendWhatsApp", action: "Criar e editar", label: "Enviar mensagens pelo WhatsApp" }] },
+  {
+    id: "conversas",
+    label: "Conversas",
+    items: [
+      { cap: "sendWhatsApp", action: "Criar e editar", label: "Enviar mensagens pelo WhatsApp" },
+      { cap: "seeOthersConversations", action: "Visualizar", label: "Ver as conversas de WhatsApp de leads de outras pessoas" },
+    ],
+  },
   {
     id: "campanhas",
     label: "Campanhas",
@@ -134,6 +153,7 @@ export const CRM_PERMISSION_MODULES: {
     items: [
       { cap: "exportReports", action: "Exportar", label: "Exportar o Painel, as listas dos indicadores, as metas e a produtividade (CSV)" },
       { cap: "manageGoals", action: "Criar e editar", label: "Definir as metas do mês da equipe e de cada pessoa" },
+      { cap: "seeTeamProductivity", action: "Visualizar", label: "Ver a produtividade, as metas e os resultados de cada pessoa (sem isso: só os seus e os da equipe toda)" },
     ],
   },
   {
@@ -199,6 +219,11 @@ export function effectiveCapabilities(role: CrmRole, overrides: unknown): CrmCap
   if (!caps.editContacts) {
     caps.archiveContacts = false;
     caps.importContacts = false;
+  }
+  // What can't be seen can't be acted on, nor its conversation read.
+  if (!caps.seeAllLeads) {
+    caps.actOnAllLeads = false;
+    caps.seeOthersConversations = false;
   }
   return caps;
 }

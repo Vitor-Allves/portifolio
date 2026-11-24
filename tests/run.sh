@@ -118,12 +118,31 @@ run_suite() {
     ai-api) reset_db base campaigns && start_server && node tests/suites/ai-off.api.mjs
       local AI_KEY_FOR_TEST="test-only-anthropic-key"; start_server && node tests/suites/ai.api.mjs ;;
     ai-e2e) local AI_KEY_FOR_TEST="test-only-anthropic-key"; reset_db base campaigns && start_server && node tests/suites/ai.e2e.mjs ;;
+    funnel-api) reset_db base campaigns && start_server && node tests/suites/funnel.api.mjs ;;
+    funnel-e2e) reset_db base campaigns && start_server && node tests/suites/funnel.e2e.mjs ;;
+    transfers-api) reset_db base campaigns && start_server && node tests/suites/transfers.api.mjs ;;
+    transfers-e2e) reset_db base campaigns && start_server && node tests/suites/transfers.e2e.mjs ;;
+    cadastro-api) reset_db base campaigns && start_server && node tests/suites/cadastro.api.mjs ;;
+    cadastro-e2e) reset_db base campaigns && start_server && node tests/suites/cadastro.e2e.mjs ;;
+    proposals-api) reset_db base campaigns && start_server && node tests/suites/proposals.api.mjs ;;
+    proposals-e2e) reset_db base campaigns && start_server && node tests/suites/proposals.e2e.mjs ;;
+    operations-api) reset_db base campaigns && start_server && node tests/suites/operations.api.mjs ;;
+    operations-e2e) reset_db base campaigns && start_server && node tests/suites/operations.e2e.mjs ;;
+    finance-api) reset_db base campaigns && start_server && node tests/suites/finance.api.mjs ;;
+    finance-e2e) reset_db base campaigns && start_server && node tests/suites/finance.e2e.mjs ;;
+    automations-ev-api) reset_db base campaigns && start_server && node tests/suites/automations-ev.api.mjs ;;
+    scheduled-messages-api) local CRON_SECRET_FOR_TEST="test-only-cron-secret"; reset_db base campaigns && start_server && node tests/suites/scheduled-messages.api.mjs ;;
+    scheduled-messages-e2e) reset_db base campaigns && start_server && node tests/suites/scheduled-messages.e2e.mjs ;;
+    reports-api) reset_db base campaigns && start_server && node tests/suites/reports.api.mjs ;;
+    reports-e2e) reset_db base campaigns && start_server && node tests/suites/reports.e2e.mjs ;;
+    security-api) reset_db base campaigns && start_server && node tests/suites/security.api.mjs ;;
+    security-e2e) reset_db base campaigns && start_server && node tests/suites/security.e2e.mjs ;;
     *) echo "unknown suite: $name" >&2; exit 1 ;;
   esac
 }
 
 SUITES=("$@")
-[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e regression)
+[ ${#SUITES[@]} -eq 0 ] && SUITES=(schema dashboard-data dashboard-e2e campaigns-api campaigns-e2e catalog-api catalog-e2e fields-api fields-e2e team-api team-e2e access-api access-e2e tasks-api tasks-e2e automations-api automations-e2e conversations-api conversations-e2e campaign-audience-api campaign-audience-e2e clients-api clients-e2e client-followup-api client-followup-e2e dashboard-reports-api dashboard-reports-e2e goals-api goals-e2e media-api media-e2e ai-api ai-e2e funnel-api funnel-e2e transfers-api transfers-e2e cadastro-api cadastro-e2e proposals-api proposals-e2e operations-api operations-e2e finance-api finance-e2e automations-ev-api scheduled-messages-api scheduled-messages-e2e reports-api reports-e2e security-api security-e2e regression)
 for s in "${SUITES[@]}"; do run_suite "$s"; done
 echo
 echo "ALL SUITES PASSED (${SUITES[*]})"

@@ -8,7 +8,7 @@ import {
   sessionMaxAgeSeconds,
 } from "@/lib/analise-session-node";
 import { getDb } from "@/lib/db";
-import { verifyTotpCode, verifyRecoveryCode } from "@/lib/totp";
+import { matchTotpStep, verifyRecoveryCode } from "@/lib/totp";
 import { consumeRecoveryCode } from "@/lib/internal-users";
 import { writeAudit } from "@/lib/audit-log";
 
@@ -56,7 +56,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: EXPIRED_ERROR }, { status: 401 });
   }
 
-  let ok = verifyTotpCode(row.totp_secret_enc, code);
+  const step = matchTotpStep(row.totp_secret_enc, code);
+  let ok = false;
+  if (step !== null) {
+    // A code is good once: the step must be newer than the last one accepted (atomic, so two
+    // logins racing with the same code can't both pass).
+    const claimed = await db.query(
+      `UPDATE internal_users SET totp_last_step = $2 WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2) RETURNING id`,
+      [row.id, step]
+    );
+    if (claimed.rowCount === 0) {
+      return NextResponse.json({ error: "Este código já foi usado. Espere o próximo código do aplicativo (até 30 segundos)." }, { status: 401 });
+    }
+    ok = true;
+  }
   let usedRecoveryCode = false;
   if (!ok) {
     const idx = verifyRecoveryCode(code, row.totp_recovery_hashes);

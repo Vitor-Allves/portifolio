@@ -16,7 +16,8 @@
 import { getDb } from "./db";
 import { iso } from "./crm-core";
 import { listCampaigns } from "./crm-campaigns";
-import { CRM_STAGES, isCrmStage, type CrmDashboard, type CrmDashboardMetrics, type CrmDashboardRecord, type CrmTeamMember } from "./crm-types";
+import { listStages } from "./crm-options";
+import { isCrmStage, type CrmDashboard, type CrmDashboardMetrics, type CrmDashboardRecord, type CrmTeamMember } from "./crm-types";
 
 const TZ = "America/Sao_Paulo";
 const DAY = 86_400_000;
@@ -67,12 +68,44 @@ const SETS = {
   /** Oportunidades abertas no período. */
   deals: (b: B, f: DashboardFilters, from: Date, to: Date) =>
     `FROM ${FROM_DEAL} WHERE c.archived_at IS NULL AND d.created_at >= ${b.p(from)} AND d.created_at < ${b.p(to)}${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}`,
-  /** Ganhas / perdidas no período. */
+  /** Ganhas / perdidas no período. "Perdidas" are the definitive closings without a sale (perda comercial and sem conversão); an oportunidade futura isn't lost. */
   closed: (stage: "ganho" | "perdido") => (b: B, f: DashboardFilters, from: Date, to: Date) =>
-    `FROM ${FROM_DEAL} WHERE c.archived_at IS NULL AND d.stage = '${stage}' AND d.closed_at >= ${b.p(from)} AND d.closed_at < ${b.p(to)}${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}`,
+    `FROM ${FROM_DEAL} WHERE c.archived_at IS NULL AND d.stage = '${stage}' AND d.closed_at >= ${b.p(from)} AND d.closed_at < ${b.p(to)}${
+      stage === "perdido" ? ` AND COALESCE(d.close_group, 'negativo') <> 'futuro'` : ""
+    }${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}`,
+  /** Reuniões no período: tasks of the type Reunião scheduled in it (not canceled). */
+  meetings: (b: B, f: DashboardFilters, from: Date, to: Date) =>
+    `FROM ${FROM_TASK} WHERE (t.contact_id IS NULL OR c.archived_at IS NULL) AND t.canceled_at IS NULL AND t.kind = 'reuniao'
+       AND t.due_at >= ${b.p(from)} AND t.due_at < ${b.p(to)}${ownerIs(b, f, "t.owner_id")}${dims(b, f, "contact")}`,
   /** Tarefas concluídas no período. */
   tasksDone: (b: B, f: DashboardFilters, from: Date, to: Date) =>
     `FROM ${FROM_TASK} WHERE (t.contact_id IS NULL OR c.archived_at IS NULL) AND t.canceled_at IS NULL AND t.done_at >= ${b.p(from)} AND t.done_at < ${b.p(to)}${ownerIs(b, f, "t.owner_id")}${dims(b, f, "contact")}`,
+  /**
+   * Leads trabalhados no período: contatos em que alguém da equipe agiu —
+   * mensagem enviada (campanha não conta), tarefa concluída ou um registro
+   * feito por uma pessoa no histórico (etapa, nota, próxima ação,
+   * oportunidade, proposta, diagnóstico). Automações não contam.
+   */
+  worked: (b: B, f: DashboardFilters, from: Date, to: Date) => {
+    const ps = b.p(from);
+    const pe = b.p(to);
+    return `FROM ${FROM_CONTACT} WHERE c.archived_at IS NULL AND (
+        EXISTS (SELECT 1 FROM crm_messages m WHERE m.contact_id = c.id AND m.direction = 'out' AND m.sent_by IS NOT NULL AND m.campaign_id IS NULL
+                  AND m.created_at >= ${ps} AND m.created_at < ${pe})
+        OR EXISTS (SELECT 1 FROM crm_tasks tw WHERE tw.contact_id = c.id AND tw.canceled_at IS NULL AND tw.done_at >= ${ps} AND tw.done_at < ${pe})
+        OR EXISTS (SELECT 1 FROM crm_events ev WHERE ev.contact_id = c.id AND ev.user_id IS NOT NULL
+                     AND ev.kind IN ('stage', 'note', 'next_action', 'deal', 'proposal', 'diagnosis') AND ev.created_at >= ${ps} AND ev.created_at < ${pe})
+      )${ownerIs(b, f, "c.owner_id")}${dims(b, f, "contact")}`;
+  },
+  /** Contatos finalizados no período: com uma oportunidade encerrada (ganha ou perdida, inclusive oportunidade futura). */
+  finished: (b: B, f: DashboardFilters, from: Date, to: Date) =>
+    `FROM ${FROM_CONTACT} WHERE c.archived_at IS NULL AND EXISTS (
+       SELECT 1 FROM crm_deals d WHERE d.contact_id = c.id AND d.stage IN ('ganho', 'perdido') AND d.closed_at >= ${b.p(from)} AND d.closed_at < ${b.p(to)}${ownerIs(b, f, "d.owner_id")}
+     )${dims(b, f, "contact")}`,
+  /** Propostas aprovadas no período (pelo link ou registradas pela equipe); o responsável é o da oportunidade. */
+  approved: (b: B, f: DashboardFilters, from: Date, to: Date) =>
+    `FROM crm_proposals p JOIN (${FROM_DEAL}) ON d.id = p.deal_id
+     WHERE c.archived_at IS NULL AND p.status = 'aprovada' AND p.decided_at >= ${b.p(from)} AND p.decided_at < ${b.p(to)}${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}`,
   /** Abertas agora. */
   open: (b: B, f: DashboardFilters) =>
     `FROM ${FROM_DEAL} WHERE c.archived_at IS NULL AND d.stage NOT IN ('ganho', 'perdido')${ownerIs(b, f, "d.owner_id")}${dims(b, f, "deal")}${stageIs(b, f)}`,
@@ -96,7 +129,7 @@ const SETS = {
   },
 };
 
-/** Opportunities that entered Reunião / Proposta in the period (or were opened straight in it). Legacy events without an opportunity count once per contact. */
+/** Opportunities that entered Proposta enviada in the period (or were opened straight in it). Legacy events without an opportunity count once per contact. */
 function stageReached(b: B, f: DashboardFilters, from: Date, to: Date) {
   return `
     SELECT DISTINCT COALESCE(e.payload->>'dealId', 'c:' || e.contact_id) AS k, e.contact_id, e.payload->>'dealId' AS deal_id,
@@ -120,13 +153,10 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
     const sql = make(b);
     return db.query(sql, b.values);
   };
-  const [leads, deals, stages, won, lost, tasks] = await Promise.all([
+  const [leads, deals, stages, won, lost, tasks, meetingTasks, worked, finished, approved] = await Promise.all([
     run((b) => `SELECT count(*) AS n ${SETS.leads(b, f, s, e)}`),
     run((b) => `SELECT count(*) AS n ${SETS.deals(b, f, s, e)}`),
-    run(
-      (b) => `SELECT count(DISTINCT x.k) FILTER (WHERE x.stage = 'reuniao') AS meetings, count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals
-              FROM (${stageReached(b, f, s, e)}) x`
-    ),
+    run((b) => `SELECT count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals FROM (${stageReached(b, f, s, e)}) x`),
     run(
       (b) => `SELECT count(*) AS n,
                      -- a won opportunity is worth its negotiated value (else the estimate)
@@ -137,6 +167,10 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
     ),
     run((b) => `SELECT count(*) AS n, COALESCE(sum(d.value_cents), 0) AS value ${SETS.closed("perdido")(b, f, s, e)}`),
     run((b) => `SELECT count(*) AS n ${SETS.tasksDone(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.meetings(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.worked(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.finished(b, f, s, e)}`),
+    run((b) => `SELECT count(*) AS n ${SETS.approved(b, f, s, e)}`),
   ]);
   const w = won.rows[0];
   const wonN = n(w.n);
@@ -144,7 +178,7 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
   return {
     newLeads: n(leads.rows[0].n),
     newDeals: n(deals.rows[0].n),
-    meetings: n(stages.rows[0].meetings),
+    meetings: n(meetingTasks.rows[0].n),
     proposals: n(stages.rows[0].proposals),
     wonCount: wonN,
     wonValueCents: n(w.value),
@@ -154,6 +188,9 @@ async function metrics(from: string, to: string, f: DashboardFilters): Promise<C
     avgTicketCents: n(w.valued) > 0 ? Math.round(n(w.value) / n(w.valued)) : null,
     avgCycleDays: w.cycle === null ? null : Math.round(Number(w.cycle) * 10) / 10,
     tasksDone: n(tasks.rows[0].n),
+    workedLeads: n(worked.rows[0].n),
+    finishedContacts: n(finished.rows[0].n),
+    proposalsApproved: n(approved.rows[0].n),
   };
 }
 
@@ -203,9 +240,12 @@ export async function getDashboard(
     const sql = make(b);
     return db.query<T>(sql, b.values);
   };
-  const sourceOptions = await db.query<{ id: string }>(`SELECT id FROM crm_options WHERE kind = 'source' ORDER BY sort, lower(label)`);
+  const [sourceOptions, stageList] = await Promise.all([
+    db.query<{ id: string }>(`SELECT id FROM crm_options WHERE kind = 'source' ORDER BY sort, lower(label)`),
+    listStages(db),
+  ]);
 
-  const [current, previous, open, overdue, today, stalled, closedByStage, leadDays, wonDays, losses, sourceLeads, sourceWon, people, lastActivity, mrr, campaigns] =
+  const [current, previous, open, overdue, today, stalled, closedByStage, leadDays, wonDays, losses, sourceLeads, sourceWon, people, lastActivity, mrr, campaigns, serviceLeads, serviceWon] =
     await Promise.all([
       metrics(from, to, f),
       metrics(previousFrom, previousTo, f),
@@ -254,7 +294,7 @@ export async function getDashboard(
                 (SELECT COALESCE(sum(value_cents), 0) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage NOT IN ('ganho', 'perdido')) AS open_value,
                 (SELECT count(*) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'ganho' AND d.closed_at >= ${ps} AND d.closed_at < ${pe}) AS won,
                 (SELECT COALESCE(sum(COALESCE(negotiated_cents, value_cents)), 0) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'ganho' AND d.closed_at >= ${ps} AND d.closed_at < ${pe}) AS won_value,
-                (SELECT count(*) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'perdido' AND d.closed_at >= ${ps} AND d.closed_at < ${pe}) AS lost,
+                (SELECT count(*) FROM d WHERE d.owner_id IS NOT DISTINCT FROM o.owner_id AND d.stage = 'perdido' AND COALESCE(d.close_group, 'negativo') <> 'futuro' AND d.closed_at >= ${ps} AND d.closed_at < ${pe}) AS lost,
                 (SELECT count(*) FROM t WHERE t.owner_id IS NOT DISTINCT FROM o.owner_id AND t.done_at >= ${ps} AND t.done_at < ${pe}) AS tasks_done,
                 (SELECT count(*) FROM t WHERE t.owner_id IS NOT DISTINCT FROM o.owner_id AND t.done_at IS NULL AND t.due_at IS NOT NULL
                    AND ((t.due_at AT TIME ZONE '${TZ}')::date < (now() AT TIME ZONE '${TZ}')::date
@@ -270,14 +310,24 @@ export async function getDashboard(
         ? run<{ n: string; value: string }>((b) => `SELECT count(*) AS n, COALESCE(sum(x.monthly), 0) AS value FROM (${mrrClients(b, f)}) x`)
         : Promise.resolve(null),
       viewer.seeCampaigns ? listCampaigns() : Promise.resolve(null),
+      // Por serviço: the lead's service of interest; a won opportunity's own service (else its lead's).
+      run<{ service: string | null; count: string }>((b) => `SELECT c.service_interest AS service, count(*) AS count ${SETS.leads(b, f, s, e)} GROUP BY 1`),
+      run<{ service: string | null; count: string; value: string }>(
+        (b) => `SELECT COALESCE(d.service, c.service_interest) AS service, count(*) AS count, COALESCE(sum(COALESCE(d.negotiated_cents, d.value_cents)), 0) AS value
+                ${SETS.closed("ganho")(b, f, s, e)} GROUP BY 1`
+      ),
     ]);
 
   const openBy = new Map(open.rows.map((r) => [r.stage, r]));
   const closedBy = new Map(closedByStage.rows.map((r) => [r.stage, r]));
-  const funnel = CRM_STAGES.map((st) => {
-    const r = (st.id === "ganho" || st.id === "perdido" ? closedBy : openBy).get(st.id);
-    return { stage: st.id, count: n(r?.count), valueCents: n(r?.value) };
-  });
+  // The funnel in the Personalização order; an archived stage only shows while it still has opportunities.
+  const funnel = stageList
+    .map((st) => {
+      const r = (st.id === "ganho" || st.id === "perdido" ? closedBy : openBy).get(st.id);
+      return { stage: st.id, count: n(r?.count), valueCents: n(r?.value), archived: st.archived };
+    })
+    .filter((x) => !x.archived || x.count > 0)
+    .map(({ archived: _archived, ...x }) => x);
 
   const bucketOf = (day: string) => {
     let idx = 0;
@@ -305,6 +355,14 @@ export async function getDashboard(
     .map((id) => ({ source: id, newLeads: leadsBy.get(id) ?? 0, won: n(wonBy.get(id)?.count), wonValueCents: n(wonBy.get(id)?.value) }))
     .filter((x) => x.newLeads > 0 || x.won > 0)
     .sort((a, b) => (sourceOrder.get(a.source) ?? 999) - (sourceOrder.get(b.source) ?? 999) || a.source.localeCompare(b.source));
+
+  const svcLeads = new Map(serviceLeads.rows.map((r) => [r.service ?? "", n(r.count)]));
+  const svcWon = new Map(serviceWon.rows.map((r) => [r.service ?? "", r]));
+  // Most leads first; "não informado" ("") last.
+  const services = [...new Set([...svcLeads.keys(), ...svcWon.keys()])]
+    .map((id) => ({ service: id || null, newLeads: svcLeads.get(id) ?? 0, won: n(svcWon.get(id)?.count), wonValueCents: n(svcWon.get(id)?.value) }))
+    .filter((x) => x.newLeads > 0 || x.won > 0)
+    .sort((a, b) => (a.service === null ? 1 : 0) - (b.service === null ? 1 : 0) || b.newLeads - a.newLeads || b.won - a.won || (a.service ?? "").localeCompare(b.service ?? ""));
 
   const peopleBy = new Map(people.rows.map((r) => [r.owner_id, r]));
   const lastBy = new Map(lastActivity.rows.map((r) => [r.user_id, iso(r.at)]));
@@ -369,6 +427,7 @@ export async function getDashboard(
     series,
     lossReasons,
     sources,
+    services,
     team: teamRows,
   };
 }
@@ -384,8 +443,30 @@ export type OwnerMetrics = {
   tasksDone: number;
   /** Right now. */
   tasksOverdue: number;
+  /** Leads trabalhados (by the lead's owner). */
+  worked: number;
+  /** Follow-ups: concluded tasks of the types Follow-up and Retorno comercial. */
+  followUps: number;
+  proposalsApproved: number;
+  /** Right now: leads (not archived) they're responsible for. */
+  assigned: number;
 };
-const NO_METRICS: OwnerMetrics = { leads: 0, meetings: 0, proposals: 0, wonCount: 0, wonValueCents: 0, lostCount: 0, tasksDone: 0, tasksOverdue: 0 };
+const NO_METRICS: OwnerMetrics = {
+  leads: 0,
+  meetings: 0,
+  proposals: 0,
+  wonCount: 0,
+  wonValueCents: 0,
+  lostCount: 0,
+  tasksDone: 0,
+  tasksOverdue: 0,
+  worked: 0,
+  followUps: 0,
+  proposalsApproved: 0,
+  assigned: 0,
+};
+/** Task types that count as a follow-up. */
+const FOLLOW_UP_KINDS = ["follow_up", "retorno_comercial"];
 
 /**
  * The Painel's numbers of a period split by responsável (lead / opportunity /
@@ -402,16 +483,21 @@ export async function ownerMetrics(from: string, to: string, only: string | null
     const sql = make(b);
     return db.query<{ owner: string | null; n?: string; value?: string; meetings?: string; proposals?: string }>(sql, b.values);
   };
-  const [leads, stages, won, lost, done, overdue] = await Promise.all([
+  const [leads, stages, won, lost, done, overdue, meetingTasks, worked, followUps, approved, assigned] = await Promise.all([
     run((b) => `SELECT c.owner_id AS owner, count(*) AS n ${SETS.leads(b, f, s, e)} GROUP BY 1`),
     run(
-      (b) => `SELECT x.owner, count(DISTINCT x.k) FILTER (WHERE x.stage = 'reuniao') AS meetings, count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals
+      (b) => `SELECT x.owner, count(DISTINCT x.k) FILTER (WHERE x.stage = 'proposta') AS proposals
               FROM (${stageReached(b, f, s, e)}) x GROUP BY 1`
     ),
     run((b) => `SELECT d.owner_id AS owner, count(*) AS n, COALESCE(sum(COALESCE(d.negotiated_cents, d.value_cents)), 0) AS value ${SETS.closed("ganho")(b, f, s, e)} GROUP BY 1`),
     run((b) => `SELECT d.owner_id AS owner, count(*) AS n ${SETS.closed("perdido")(b, f, s, e)} GROUP BY 1`),
     run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.tasksDone(b, f, s, e)} GROUP BY 1`),
     run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.pendingTasks("overdue")(b, f)} GROUP BY 1`),
+    run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.meetings(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT c.owner_id AS owner, count(*) AS n ${SETS.worked(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT t.owner_id AS owner, count(*) AS n ${SETS.tasksDone(b, f, s, e)} AND t.kind = ANY(${b.p(FOLLOW_UP_KINDS)}) GROUP BY 1`),
+    run((b) => `SELECT d.owner_id AS owner, count(*) AS n ${SETS.approved(b, f, s, e)} GROUP BY 1`),
+    run((b) => `SELECT c.owner_id AS owner, count(*) AS n FROM crm_contacts c WHERE c.archived_at IS NULL${ownerIs(b, f, "c.owner_id")} GROUP BY 1`),
   ]);
   const out = new Map<string | null, OwnerMetrics>();
   const of = (owner: string | null) => {
@@ -420,10 +506,8 @@ export async function ownerMetrics(from: string, to: string, only: string | null
     return m;
   };
   for (const r of leads.rows) of(r.owner).leads = n(r.n);
-  for (const r of stages.rows) {
-    of(r.owner).meetings = n(r.meetings);
-    of(r.owner).proposals = n(r.proposals);
-  }
+  for (const r of stages.rows) of(r.owner).proposals = n(r.proposals);
+  for (const r of meetingTasks.rows) of(r.owner).meetings = n(r.n);
   for (const r of won.rows) {
     of(r.owner).wonCount = n(r.n);
     of(r.owner).wonValueCents = n(r.value);
@@ -431,6 +515,10 @@ export async function ownerMetrics(from: string, to: string, only: string | null
   for (const r of lost.rows) of(r.owner).lostCount = n(r.n);
   for (const r of done.rows) of(r.owner).tasksDone = n(r.n);
   for (const r of overdue.rows) of(r.owner).tasksOverdue = n(r.n);
+  for (const r of worked.rows) of(r.owner).worked = n(r.n);
+  for (const r of followUps.rows) of(r.owner).followUps = n(r.n);
+  for (const r of approved.rows) of(r.owner).proposalsApproved = n(r.n);
+  for (const r of assigned.rows) of(r.owner).assigned = n(r.n);
   return out;
 }
 
@@ -458,6 +546,9 @@ export const DASHBOARD_METRICS = [
   "deals",
   "meetings",
   "proposals",
+  "approved",
+  "worked",
+  "finished",
   "won",
   "lost",
   "tasksDone",
@@ -540,9 +631,14 @@ export async function listDashboardRecords(
       order = "at, id";
       break;
     case "meetings":
+      kind = "task";
+      sql = `SELECT t.id, t.contact_id, t.company_id, t.title, COALESCE(c.name, co.name) AS detail, u.name AS owner_name, NULL::bigint AS value_cents, t.due_at AS at
+             ${withOwner(SETS.meetings(b, f, s, e), "LEFT JOIN internal_users u ON u.id = t.owner_id")}`;
+      order = "at DESC, id";
+      break;
     case "proposals": {
       // One row per key: the opportunity, or (legacy, before opportunities) the contact.
-      const stage = metric === "meetings" ? "reuniao" : "proposta";
+      const stage = "proposta";
       sql = `SELECT DISTINCT ON (x.k) COALESCE(x.deal_id, x.contact_id) AS id, x.contact_id, COALESCE(dd.title, cc.name) AS title, dd.stage,
                     cc.name AS contact_name, NULL::text AS company_name, uu.name AS owner_name,
                     dd.value_cents, ev.at
@@ -557,6 +653,24 @@ export async function listDashboardRecords(
       order = "at DESC NULLS LAST, id";
       break;
     }
+    case "worked":
+    case "finished":
+      kind = "contact";
+      sql = `SELECT c.id, c.id AS contact_id, c.name AS title, COALESCE(co.name, c.company) AS detail, u.name AS owner_name, NULL::bigint AS value_cents,
+                    ${
+                      metric === "worked"
+                        ? "c.updated_at"
+                        : "(SELECT max(dd.closed_at) FROM crm_deals dd WHERE dd.contact_id = c.id AND dd.stage IN ('ganho', 'perdido'))"
+                    } AS at
+             ${withOwner(metric === "worked" ? SETS.worked(b, f, s, e) : SETS.finished(b, f, s, e), "LEFT JOIN internal_users u ON u.id = c.owner_id")}`;
+      order = "at DESC NULLS LAST, id";
+      break;
+    case "approved":
+      sql = `SELECT d.id, d.contact_id, 'Proposta nº ' || lpad(p.number::text, 4, '0') || ' · ' || p.title AS title, d.stage, c.name AS contact_name,
+                    co.name AS company_name, u.name AS owner_name, p.total_cents AS value_cents, p.decided_at AS at
+             ${withOwner(SETS.approved(b, f, s, e), DEAL_JOIN_OWNER)}`;
+      order = "at DESC, id";
+      break;
     case "tasksDone":
     case "overdue":
     case "today": {
@@ -624,11 +738,11 @@ export async function listDashboardRecords(
 
 // ---------- request parameters (shared by the Painel routes) ----------
 
-type ParamSession = { userId: string; caps: { seeAllLeads: boolean; viewClients: boolean; seeContractValues: boolean; editCampaigns: boolean } };
+type ParamSession = { userId: string; caps: { seeAllLeads: boolean; seeTeamProductivity: boolean; viewClients: boolean; seeContractValues: boolean; editCampaigns: boolean } };
 
 /**
  * ?from&to (Brasília, inclusive, up to a year)&owner=all|<id>&source&segment&stage.
- * A Comercial always gets only their own numbers. Returns an error message
+ * A Comercial gets the team's numbers or their own (any other person reads as their own). Returns an error message
  * instead when the period is invalid.
  */
 export function dashboardParams(
@@ -640,7 +754,8 @@ export function dashboardParams(
   if (!isDay(from) || !isDay(to) || from > to) return { error: "Período inválido." };
   if (Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`) > 366 * DAY) return { error: "Escolha um período de até um ano." };
   const asked = p.get("owner");
-  const ownerId = !s.caps.seeAllLeads ? s.userId : asked && asked !== "all" ? asked : null;
+  // Without "ver a produtividade da equipe" (Comercial): the team's general numbers or their own, never another person's.
+  const ownerId = !s.caps.seeAllLeads ? s.userId : asked && asked !== "all" ? (s.caps.seeTeamProductivity ? asked : s.userId) : null;
   const clean = (v: string | null) => (v && v !== "all" ? v.slice(0, 200) : null);
   return {
     from,

@@ -12,7 +12,10 @@ export async function GET(req: NextRequest) {
   const q = dashboardParams(req.nextUrl.searchParams, actor);
   if ("error" in q) return NextResponse.json({ error: q.error }, { status: 400 });
   try {
-    return NextResponse.json({ dashboard: await getDashboard(q.from, q.to, q.filters, await listTeam(), q.viewer) });
+    // The per-person table: everyone with "ver a produtividade da equipe", else only their own line.
+    const team = (await listTeam()).filter((m) => actor.caps.seeTeamProductivity || m.id === actor.userId);
+    const dashboard = await getDashboard(q.from, q.to, q.filters, team, q.viewer);
+    return NextResponse.json({ dashboard: actor.caps.seeTeamProductivity ? dashboard : { ...dashboard, team: dashboard.team.filter((r) => r.ownerId === actor.userId) } });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/dashboard GET");
   }

@@ -6,11 +6,14 @@
 import { randomUUID } from "crypto";
 import { getDb, withTransaction } from "./db";
 import {
-  CRM_STAGES,
   formatPhone,
   isCrmConsentStatus,
   isCrmStage,
+  stageLabel,
+  isCrmPotential,
   isCrmTemperature,
+  potentialLabel,
+  type CrmPotential,
   isPlausibleEmail,
   temperatureLabel,
   normalizePhone,
@@ -32,9 +35,12 @@ import {
 import { isOptOutText } from "./crm-campaign-rules";
 import { listContactTags, optionLabel, requireOptionId, requireSegment } from "./crm-options";
 import {
+  CrmDuplicateError,
   CrmInputError,
   addEvent,
   brDate,
+  duplicateText,
+  type CrmDuplicateInfo,
   cleanText,
   escapeLike,
   iso,
@@ -80,12 +86,16 @@ type CardRow = {
   consent_at: Date | null;
   opted_out_at: Date | null;
   archived_at: Date | null;
+  anonymized_at: Date | null;
   created_at: Date;
   tag_ids: string[];
   temperature: string | null;
   service_interest: string | null;
   return_at: string | null;
   is_decision_maker: boolean;
+  alt_phone: string | null;
+  potential: string | null;
+  need: string | null;
   last_interaction_at: Date | null;
   task_id: string | null;
   task_kind: string | null;
@@ -107,9 +117,10 @@ const CARD_SELECT = `
          c.source, c.referred_by, c.stage, c.owner_id, u.name AS owner_name,
          c.next_action, c.next_action_at, c.last_message_at, c.last_message_preview, c.last_inbound_at,
          c.unread_count, c.ad_referral, c.stage_changed_at, c.consent_status, c.consent_source, c.consent_at,
-         c.opted_out_at, c.archived_at, c.created_at,
+         c.opted_out_at, c.archived_at, c.anonymized_at, c.created_at,
          ARRAY(SELECT ct.tag_id FROM crm_contact_tags ct WHERE ct.contact_id = c.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids,
          c.temperature, c.service_interest, to_char(c.return_at, 'YYYY-MM-DD') AS return_at, c.is_decision_maker,
+         c.alt_phone, c.potential, c.need,
          -- Última interação: the latest message, note or finished task (GREATEST skips nulls).
          GREATEST(
            c.last_message_at,
@@ -157,12 +168,16 @@ function mapCard(r: CardRow): CrmContactCard {
     consentStatus: isCrmConsentStatus(r.consent_status) ? r.consent_status : "nao_informado",
     optedOutAt: iso(r.opted_out_at),
     archivedAt: iso(r.archived_at),
+    anonymizedAt: iso(r.anonymized_at),
     createdAt: iso(r.created_at)!,
     tagIds: r.tag_ids ?? [],
     temperature: isCrmTemperature(r.temperature) ? r.temperature : null,
     serviceInterest: r.service_interest,
     returnAt: r.return_at,
     isDecisionMaker: r.is_decision_maker,
+    altPhone: r.alt_phone,
+    potential: isCrmPotential(r.potential) ? r.potential : null,
+    need: r.need,
     lastInteractionAt: iso(r.last_interaction_at),
     nextTask:
       r.task_id && r.task_kind
@@ -470,7 +485,8 @@ export async function listConversations(
   const db = await getDb();
   const [list, unread] = await Promise.all([
     db.query<CardRow & { deal_stages: string[]; waiting_since: Date | null }>(
-      `SELECT x.*, ARRAY(SELECT DISTINCT d.stage FROM crm_deals d WHERE d.contact_id = x.id) AS deal_stages, ${WAITING_SINCE} AS waiting_since
+      `SELECT x.*, ARRAY(SELECT d.stage FROM crm_deals d LEFT JOIN crm_options o ON o.kind = 'stage' AND o.id = d.stage
+                          WHERE d.contact_id = x.id GROUP BY d.stage, o.sort ORDER BY o.sort NULLS LAST, d.stage) AS deal_stages, ${WAITING_SINCE} AS waiting_since
        FROM (${CARD_SELECT} ${sql} AND ${extra.join(" AND ")}
              ORDER BY c.last_message_at DESC, c.id DESC LIMIT $${values.length}) x
        ORDER BY x.last_message_at DESC, x.id DESC`,
@@ -478,10 +494,10 @@ export async function listConversations(
     ),
     db.query<{ n: string }>(`SELECT count(*) AS n FROM crm_contacts c ${unreadScope.sql} AND c.unread_count > 0`, unreadScope.values),
   ]);
-  const order = new Map<string, number>(CRM_STAGES.map((st, i) => [st.id, i]));
   const rows = list.rows.slice(0, limit).map((r) => ({
     ...mapCard(r),
-    dealStages: r.deal_stages.filter(isCrmStage).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+    // In the funnel's order (Personalização).
+    dealStages: r.deal_stages.filter(isCrmStage),
     waitingSince: iso(r.waiting_since),
   }));
   const last = rows[rows.length - 1];
@@ -507,28 +523,50 @@ export function parseEmail(value: unknown): string | null {
   return email;
 }
 
-type Queryable = { query: (sql: string, values?: unknown[]) => Promise<{ rows: { id: string; name: string }[] }> };
+/** Telefone além do WhatsApp (fixo, outro celular): free text with digits, kept as typed. */
+function parseAltPhone(v: unknown): string | null {
+  const t = cleanText(v, 40);
+  if (!t) return null;
+  if ((t.match(/\d/g) ?? []).length < 8) throw new CrmInputError("Outro telefone inválido: use DDD e número.");
+  return t;
+}
+function parsePotential(v: unknown): CrmPotential | null {
+  if (v === undefined || v === null || v === "") return null;
+  if (!isCrmPotential(v)) throw new CrmInputError("Potencial comercial inválido.");
+  return v;
+}
 
-/** The contact already using this phone (either spelling of a BR mobile) or e-mail — archived ones included, so an archived lead is restored rather than duplicated. */
-export async function findDuplicate(
-  db: Queryable,
-  phone: string | null,
-  email: string | null,
-  exceptId?: string
-): Promise<{ id: string; name: string; by: "phone" | "email" } | null> {
+type Queryable = { query: (sql: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
+
+/**
+ * The contact already using this phone (either spelling of a BR mobile) or
+ * e-mail — archived ones included, so an archived lead is restored rather
+ * than duplicated — with its owner and situation (evolução v1.0, item 2.2).
+ */
+export async function findDuplicate(db: Queryable, phone: string | null, email: string | null, exceptId?: string): Promise<CrmDuplicateInfo | null> {
+  const select = `SELECT c.id, c.name, u.name AS owner_name, c.stage, c.archived_at IS NOT NULL AS archived
+                  FROM crm_contacts c LEFT JOIN internal_users u ON u.id = c.owner_id`;
+  const info = (r: Record<string, unknown>, by: "phone" | "email"): CrmDuplicateInfo => ({
+    kind: "contact",
+    id: String(r.id),
+    name: String(r.name),
+    by,
+    ownerName: (r.owner_name as string | null) ?? null,
+    situation: r.archived ? "arquivado" : stageLabel(String(r.stage)),
+  });
   if (phone) {
-    const { rows } = await db.query(`SELECT id, name FROM crm_contacts WHERE phone = ANY($1) AND id <> $2 LIMIT 1`, [phoneVariants(phone), exceptId ?? ""]);
-    if (rows[0]) return { ...rows[0], by: "phone" };
+    const { rows } = await db.query(`${select} WHERE c.phone = ANY($1) AND c.id <> $2 LIMIT 1`, [phoneVariants(phone), exceptId ?? ""]);
+    if (rows[0]) return info(rows[0], "phone");
   }
   if (email) {
-    const { rows } = await db.query(`SELECT id, name FROM crm_contacts WHERE lower(email) = $1 AND id <> $2 LIMIT 1`, [email, exceptId ?? ""]);
-    if (rows[0]) return { ...rows[0], by: "email" };
+    const { rows } = await db.query(`${select} WHERE lower(c.email) = $1 AND c.id <> $2 LIMIT 1`, [email, exceptId ?? ""]);
+    if (rows[0]) return info(rows[0], "email");
   }
   return null;
 }
 
-export function duplicateMessage(dup: { name: string; by: "phone" | "email" }): string {
-  return `Já existe um contato com esse ${dup.by === "phone" ? "telefone" : "e-mail"}: ${dup.name}.`;
+export function duplicateMessage(dup: CrmDuplicateInfo): string {
+  return duplicateText(dup);
 }
 
 export type NewContactInput = {
@@ -548,6 +586,12 @@ export type NewContactInput = {
   serviceInterest?: unknown;
   returnAt?: unknown;
   isDecisionMaker?: unknown;
+  /** Evolução v1.0: telefone além do WhatsApp, potencial comercial, necessidade identificada. */
+  altPhone?: unknown;
+  /** Set by the route, only for who may authorize a second negotiation with a company (Gestor). */
+  allowParallel?: boolean;
+  potential?: unknown;
+  need?: unknown;
   /** Open an opportunity in "Novo" for this lead (default true). */
   createDeal?: unknown;
   dealTitle?: unknown;
@@ -571,7 +615,7 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
 
   return withTransaction(async (client) => {
     const dup = await findDuplicate(client, phone, email);
-    if (dup) throw new CrmInputError(duplicateMessage(dup));
+    if (dup) throw new CrmDuplicateError(duplicateMessage(dup), dup);
     const source: CrmSource = await requireOptionId(client, "source", input.source === undefined || input.source === "" ? "outro" : input.source);
     const serviceInterest =
       input.serviceInterest === undefined || input.serviceInterest === null || input.serviceInterest === ""
@@ -583,8 +627,8 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
     await client.query(
       `INSERT INTO crm_contacts (id, phone, name, email, job_title, company_id, segment, city, source, referred_by,
                                  consent_status, consent_source, consent_at, owner_id,
-                                 temperature, service_interest, return_at, is_decision_maker)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+                                 temperature, service_interest, return_at, is_decision_maker, alt_phone, potential, need)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
       [
         id,
         phone,
@@ -605,6 +649,9 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
         serviceInterest,
         returnAt,
         input.isDecisionMaker === true,
+        parseAltPhone(input.altPhone),
+        parsePotential(input.potential),
+        cleanText(input.need, 1000),
       ]
     );
     await addEvent(client, id, "created", { via: "manual" }, actor);
@@ -613,7 +660,15 @@ export async function createContact(input: NewContactInput, actor: CrmActor): Pr
     if (input.createDeal !== false) {
       await createDealTx(
         client,
-        { contactId: id, title: input.dealTitle, value: input.dealValue, ownerId: ownerId ?? "", service: serviceInterest ?? undefined },
+        {
+          contactId: id,
+          title: input.dealTitle,
+          value: input.dealValue,
+          ownerId: ownerId ?? "",
+          service: serviceInterest ?? undefined,
+          checkParallel: true,
+          allowParallel: input.allowParallel === true,
+        },
         actor
       );
     }
@@ -643,6 +698,9 @@ export type ContactPatch = {
   serviceInterest?: unknown;
   returnAt?: unknown;
   isDecisionMaker?: unknown;
+  altPhone?: unknown;
+  potential?: unknown;
+  need?: unknown;
 };
 
 const FIELD_LABEL: Record<string, string> = {
@@ -660,6 +718,9 @@ const FIELD_LABEL: Record<string, string> = {
   service_interest: "Serviço de interesse",
   return_at: "Retorno previsto",
   is_decision_maker: "Decisor",
+  alt_phone: "Outro telefone",
+  potential: "Potencial comercial",
+  need: "Necessidade identificada",
 };
 
 /** Applies whatever fields are present; every meaningful change lands in the contact's history. false = no such contact. */
@@ -713,7 +774,7 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
         nextEmail !== current.email ? nextEmail : null,
         id
       );
-      if (dup) throw new CrmInputError(duplicateMessage(dup));
+      if (dup) throw new CrmDuplicateError(duplicateMessage(dup), dup);
       if (patch.phone !== undefined) {
         change("phone", current.phone, nextPhone);
         set("phone", nextPhone);
@@ -750,6 +811,17 @@ export async function updateContact(id: string, patch: ContactPatch, actor: CrmA
       change("return_at", brDate(current.return_at_day), brDate(next));
       set("return_at", next);
     }
+    if (patch.altPhone !== undefined) {
+      const next = parseAltPhone(patch.altPhone);
+      change("alt_phone", current.alt_phone, next);
+      set("alt_phone", next);
+    }
+    if (patch.potential !== undefined) {
+      const next = parsePotential(patch.potential);
+      change("potential", potentialLabel(current.potential) || null, potentialLabel(next) || null);
+      set("potential", next);
+    }
+    text("need", "need", 1000);
     if (patch.isDecisionMaker !== undefined) {
       const next = patch.isDecisionMaker === true;
       if (next !== current.is_decision_maker) {
@@ -915,7 +987,7 @@ export async function recordOutbound(
  * a Brazilian mobile) or creates it, saves the message once (WhatsApp
  * retries deliveries, so a repeated wa_message_id is ignored), bumps the
  * unread counter and reopens the 24h window. A lead still in "Novo" that
- * answers a message the team sent moves to "Em conversa" on its own; an
+ * answers a message the team sent moves to "Primeiro contato" (code conversa) on its own; an
  * archived lead that writes again comes back to the board.
  */
 export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { contactId: string; phone: string } | null }> {
@@ -970,7 +1042,7 @@ export async function recordInbound(msg: InboundMessage): Promise<{ optedOut: { 
       await addEvent(client, contactId, "restored", { auto: true }, null);
     }
 
-    // A lead answering the team: its opportunities still in "Novo" move to "Em conversa".
+    // A lead answering the team: its opportunities still in "Novo lead" move to "Primeiro contato".
     if (!isNew) {
       const fresh = await client.query<{ id: string }>(`SELECT id FROM crm_deals WHERE contact_id = $1 AND stage = 'novo'`, [contactId]);
       if (fresh.rows.length > 0) {

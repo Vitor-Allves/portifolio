@@ -9,6 +9,7 @@ import { getDb, withTransaction } from "./db";
 import { requireSegment } from "./crm-options";
 import {
   BR_STATES,
+  CRM_COMPANY_STATUSES,
   companyKey,
   formatCnpj,
   isCrmCompanyStatus,
@@ -19,7 +20,7 @@ import {
 } from "./crm-types";
 import { listContactsPage } from "./crm";
 import { listDealsForContacts } from "./crm-deals";
-import { CrmInputError, cleanText, escapeLike, iso, parseCnpj, type CrmActor } from "./crm-core";
+import { CrmDuplicateError, CrmInputError, cleanText, duplicateText, escapeLike, iso, parseCnpj, type CrmActor, type CrmDuplicateInfo } from "./crm-core";
 
 type CompanyRow = {
   id: string;
@@ -31,6 +32,8 @@ type CompanyRow = {
   state: string | null;
   address: string | null;
   website: string | null;
+  phone: string | null;
+  email: string | null;
   notes: string | null;
   owner_id: string | null;
   owner_name: string | null;
@@ -46,7 +49,7 @@ type CompanyRow = {
 };
 
 const COMPANY_SELECT = `
-  SELECT co.id, co.name, co.legal_name, co.cnpj, co.segment, co.city, co.state, co.address, co.website, co.notes,
+  SELECT co.id, co.name, co.legal_name, co.cnpj, co.segment, co.city, co.state, co.address, co.website, co.phone, co.email, co.notes,
          co.owner_id, ou.name AS owner_name, co.status, co.created_at,
          ARRAY(SELECT ct.tag_id FROM crm_company_tags ct WHERE ct.company_id = co.id ORDER BY ct.applied_at, ct.tag_id) AS tag_ids,
          (SELECT json_agg(json_build_object('id', dm.id, 'name', dm.name) ORDER BY lower(dm.name))
@@ -72,6 +75,8 @@ function mapCompany(r: CompanyRow): CrmCompanyRow {
     state: r.state,
     address: r.address,
     website: r.website,
+    phone: r.phone,
+    email: r.email,
     notes: r.notes,
     ownerId: r.owner_id,
     ownerName: r.owner_name,
@@ -183,6 +188,8 @@ export type CompanyInput = {
   state?: unknown;
   address?: unknown;
   website?: unknown;
+  phone?: unknown;
+  email?: unknown;
   notes?: unknown;
   ownerId?: unknown;
   status?: unknown;
@@ -208,10 +215,37 @@ function parseStatus(value: unknown): string | null {
 
 type Q = Pick<PoolClient, "query">;
 
+/** The company's own phone (switchboard, landline): kept as typed, with at least DDD + number. */
+function companyPhone(v: unknown): string | null {
+  const t = cleanText(v, 40);
+  if (!t) return null;
+  if ((t.match(/\d/g) ?? []).length < 8) throw new CrmInputError("Telefone da empresa inválido: use DDD e número.");
+  return t;
+}
+function companyEmail(v: unknown): string | null {
+  const t = cleanText(v, 160)?.toLowerCase() ?? null;
+  if (t && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) throw new CrmInputError("E-mail da empresa inválido.");
+  return t;
+}
+
+/** The company already using this name or CNPJ, with its owner and situation (evolução v1.0, item 2.2). */
+export async function companyDuplicate(client: Q, by: "name" | "cnpj", value: string, exceptId: string | null): Promise<CrmDuplicateInfo | null> {
+  const { rows } = await client.query<{ id: string; name: string; owner_name: string | null; status: string | null; archived: boolean }>(
+    `SELECT co.id, co.name, u.name AS owner_name, co.status, co.archived_at IS NOT NULL AS archived
+     FROM crm_companies co LEFT JOIN internal_users u ON u.id = co.owner_id
+     WHERE ${by === "name" ? "co.name_key" : "co.cnpj"} = $1 AND co.id IS DISTINCT FROM $2 LIMIT 1`,
+    [value, exceptId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const status = CRM_COMPANY_STATUSES.find((x) => x.id === r.status)?.label ?? null;
+  return { kind: "company", id: r.id, name: r.name, by, ownerName: r.owner_name, situation: r.archived ? "arquivada" : status };
+}
+
 async function requireUniqueCnpj(client: Q, cnpj: string | null, exceptId: string | null) {
   if (!cnpj) return;
-  const dup = await client.query<{ name: string }>(`SELECT name FROM crm_companies WHERE cnpj = $1 AND id IS DISTINCT FROM $2`, [cnpj, exceptId]);
-  if (dup.rows[0]) throw new CrmInputError(`O CNPJ ${formatCnpj(cnpj)} já está cadastrado na empresa "${dup.rows[0].name}".`);
+  const dup = await companyDuplicate(client, "cnpj", cnpj, exceptId);
+  if (dup) throw new CrmDuplicateError(`O CNPJ ${formatCnpj(cnpj)} já está cadastrado: ${duplicateText(dup).replace(/^Já existe uma empresa com esse CNPJ: /, "")}`, dup);
 }
 
 async function requireUser(client: Q, ownerId: string | null) {
@@ -228,15 +262,15 @@ export async function createCompany(input: CompanyInput, actor: CrmActor): Promi
   const status = input.status === undefined ? "prospeccao" : parseStatus(input.status);
   const ownerId = typeof input.ownerId === "string" && input.ownerId ? input.ownerId : null;
   return withTransaction(async (client) => {
-    const dup = await client.query<{ name: string }>(`SELECT name FROM crm_companies WHERE name_key = $1`, [companyKey(name)]);
-    if (dup.rows[0]) throw new CrmInputError(`Essa empresa já está cadastrada como "${dup.rows[0].name}".`);
+    const dup = await companyDuplicate(client, "name", companyKey(name), null);
+    if (dup) throw new CrmDuplicateError(duplicateText(dup), dup);
     await requireUniqueCnpj(client, cnpj, null);
     await requireSegment(client, cleanText(input.segment, 80));
     await requireUser(client, ownerId);
     const id = randomUUID();
     await client.query(
-      `INSERT INTO crm_companies (id, name, name_key, legal_name, cnpj, segment, city, state, address, website, notes, owner_id, status, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      `INSERT INTO crm_companies (id, name, name_key, legal_name, cnpj, segment, city, state, address, website, notes, owner_id, status, created_by, phone, email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         id,
         name,
@@ -252,6 +286,8 @@ export async function createCompany(input: CompanyInput, actor: CrmActor): Promi
         ownerId,
         status,
         actor?.userId ?? null,
+        companyPhone(input.phone),
+        companyEmail(input.email),
       ]
     );
     return id;
@@ -292,6 +328,8 @@ export async function updateCompany(id: string, patch: CompanyInput): Promise<bo
     if (patch.state !== undefined) set("state", parseState(patch.state));
     if (patch.address !== undefined) set("address", cleanText(patch.address, 240));
     if (patch.website !== undefined) set("website", cleanWebsite(patch.website));
+    if (patch.phone !== undefined) set("phone", companyPhone(patch.phone));
+    if (patch.email !== undefined) set("email", companyEmail(patch.email));
     if (patch.notes !== undefined) set("notes", cleanText(patch.notes, 2000));
     if (patch.status !== undefined) set("status", parseStatus(patch.status));
     if (patch.ownerId !== undefined) {

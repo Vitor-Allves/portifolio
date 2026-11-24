@@ -104,7 +104,8 @@ await sql(`UPDATE internal_users SET account_ids = '{act_111}' WHERE id = 'u-mar
 m = (await media(maria, rib)).body.media;
 ok(m.blocked === null && m.latest.totals.impressions === 150000 && m.latest.totals.spend === null && m.latest.totals.cpc === null && m.latest.campaigns.every((c) => c.spend === null), "with access: the numbers, but no money (no \"ver valores\")");
 ok(!m.canLink && !m.canSync && (await sync(maria, rib)).status === 403, "Marketing doesn't sync");
-ok((await media(joao, rib)).status === 404, "a Comercial doesn't see someone else's client");
+m = (await media(joao, rib)).body.media;
+ok(m && !m.canSync && (await sync(joao, rib)).status === 403, "a Comercial sees someone else's client's numbers but doesn't sync them");
 await link(vitor, padaria, "ca-sol");
 m = (await media(joao, padaria)).body.media;
 ok(m.link.label === "Clínica Sol" && m.blocked && !m.canSync, "his own client, linked to accounts outside his Intelligence access: blocked");

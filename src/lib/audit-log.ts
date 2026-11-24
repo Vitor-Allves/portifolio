@@ -46,7 +46,18 @@ export type AuditAction =
   | "crm.report_export"
   | "crm.goals_change"
   | "crm.intelligence_link"
-  | "crm.ai_request";
+  | "crm.ai_request"
+  | "crm.transfer_request"
+  | "crm.transfer_decision"
+  | "crm.proposal_change"
+  | "crm.proposal_send"
+  | "crm.proposal_status"
+  | "crm.proposal_discount"
+  | "crm.proposal_link"
+  | "crm.proposal_settings"
+  | "crm.commission_rule"
+  | "crm.lgpd_export"
+  | "crm.lgpd_anonymize";
 
 export type AuditActorKind = "admin" | "client" | "system";
 

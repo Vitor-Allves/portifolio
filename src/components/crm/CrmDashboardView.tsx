@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CRM_STAGES,
   formatBRL,
   stageLabel,
   type CrmDashboard,
@@ -78,6 +77,9 @@ const METRIC_TITLE: Record<string, string> = {
   deals: "Oportunidades abertas no período",
   meetings: "Reuniões agendadas no período",
   proposals: "Propostas enviadas no período",
+  approved: "Propostas aprovadas no período",
+  worked: "Leads trabalhados no período",
+  finished: "Contatos finalizados no período",
   won: "Negócios ganhos no período",
   lost: "Negócios perdidos no período",
   tasksDone: "Tarefas concluídas no período",
@@ -359,7 +361,7 @@ export default function CrmDashboardView({
   onOpenClient?: (clientId: string) => void;
   onOpenTask?: (taskId: string) => void;
 }) {
-  const { label, options } = useCatalog();
+  const { label, options, stages } = useCatalog();
   const [source, setSource] = useState("all");
   const [segment, setSegment] = useState("all");
   const [stage, setStage] = useState("all");
@@ -368,7 +370,7 @@ export default function CrmDashboardView({
   const today = spDate(now);
   const [preset, setPreset] = useState<Preset>("mes");
   const [custom, setCustom] = useState<[string, string]>(() => presetRange("mes", today));
-  const [owner, setOwner] = useState("all");
+  const [owner, setOwner] = useState(seeAll ? "all" : currentUserId);
   const [result, setResult] = useState<{ key: string; data: CrmDashboard | null; error: string | null } | null>(null);
 
   const [from, to] = preset === "custom" ? custom : presetRange(preset, today);
@@ -427,7 +429,11 @@ export default function CrmDashboardView({
             ))}
           </select>
         ) : (
-          <span className="text-[12px] px-3 py-1.5 rounded-full border border-crm-line text-crm-dim">Seus números</span>
+          // Evolução v1.0: the team's general numbers or one's own (never another person's).
+          <select value={owner === "all" ? "all" : currentUserId} onChange={(e) => setOwner(e.target.value)} aria-label="Responsável" className={CRM_FILTER}>
+            <option value={currentUserId}>Seus números</option>
+            <option value="all">Toda a equipe</option>
+          </select>
         )}
         <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Origem" className={CRM_FILTER}>
           <option value="all">Todas as origens</option>
@@ -447,7 +453,7 @@ export default function CrmDashboardView({
         </select>
         <select value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Etapa" className={CRM_FILTER} title="A etapa vale para o funil e as oportunidades abertas e paradas">
           <option value="all">Todas as etapas</option>
-          {CRM_STAGES.map((st) => (
+          {stages().map((st) => (
             <option key={st.id} value={st.id}>
               {st.label}
             </option>
@@ -497,9 +503,18 @@ export default function CrmDashboardView({
           {c && p && (
             <section aria-label="Indicadores do período" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
               <Tile label="Novos leads" value={String(c.newLeads)} now={c.newLeads} before={p.newLeads} note={vs} onOpen={() => setRecords("leads")} />
+              <Tile
+                label="Leads trabalhados"
+                value={String(c.workedLeads)}
+                now={c.workedLeads}
+                before={p.workedLeads}
+                note="mensagem, tarefa ou registro"
+                onOpen={() => setRecords("worked")}
+              />
               <Tile label="Novas oportunidades" value={String(c.newDeals)} now={c.newDeals} before={p.newDeals} onOpen={() => setRecords("deals")} />
-              <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} onOpen={() => setRecords("meetings")} />
+              <Tile label="Reuniões agendadas" value={String(c.meetings)} now={c.meetings} before={p.meetings} note="tarefas do tipo Reunião" onOpen={() => setRecords("meetings")} />
               <Tile label="Propostas enviadas" value={String(c.proposals)} now={c.proposals} before={p.proposals} onOpen={() => setRecords("proposals")} />
+              <Tile label="Propostas aprovadas" value={String(c.proposalsApproved)} now={c.proposalsApproved} before={p.proposalsApproved} onOpen={() => setRecords("approved")} />
               <Tile
                 label="Ganhos"
                 value={String(c.wonCount)}
@@ -516,6 +531,14 @@ export default function CrmDashboardView({
                 goodWhenUp={false}
                 note={c.lostValueCents > 0 ? brl(c.lostValueCents) : null}
                 onOpen={() => setRecords("lost")}
+              />
+              <Tile
+                label="Contatos finalizados"
+                value={String(c.finishedContacts)}
+                now={c.finishedContacts}
+                before={p.finishedContacts}
+                note="com oportunidade encerrada"
+                onOpen={() => setRecords("finished")}
               />
               <Tile label="Conversão" value={pct(c.conversion)} now={c.conversion} before={p.conversion} note="ganhos ÷ fechados" />
               <Tile label="Ticket médio" value={brl(c.avgTicketCents)} now={c.avgTicketCents} before={p.avgTicketCents} />
@@ -605,6 +628,20 @@ export default function CrmDashboardView({
                   rows={d.sources.map((s) => ({
                     key: s.source,
                     label: label("source", s.source),
+                    value: s.newLeads,
+                    figure: `${s.newLeads} lead${s.newLeads === 1 ? "" : "s"} · ${s.won} ganho${s.won === 1 ? "" : "s"}${s.wonValueCents > 0 ? ` (${brl(s.wonValueCents)})` : ""}`,
+                  }))}
+                />
+              )}
+            </Card>
+            <Card title="Por serviço">
+              {d.services.length === 0 ? (
+                <p className="text-[12.5px] text-crm-dim">Nenhum lead novo nem venda no período.</p>
+              ) : (
+                <HBars
+                  rows={d.services.map((s) => ({
+                    key: s.service ?? "sem_servico",
+                    label: s.service ? label("service", s.service) : "Serviço não informado",
                     value: s.newLeads,
                     figure: `${s.newLeads} lead${s.newLeads === 1 ? "" : "s"} · ${s.won} ganho${s.won === 1 ? "" : "s"}${s.wonValueCents > 0 ? ` (${brl(s.wonValueCents)})` : ""}`,
                   }))}

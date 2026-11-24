@@ -37,12 +37,13 @@ async function requireOwner(q: Q, ownerId: unknown): Promise<{ id: string | null
  * pending tasks) to `to`, writing one history entry per contact and per
  * opportunity whose owner actually changed. Returns what moved.
  */
-async function moveContacts(
+export async function moveContacts(
   client: Q,
   contactIds: string[],
   to: { id: string | null; name: string | null },
   opts: { deals: boolean; tasks: boolean },
-  actor: CrmSession
+  actor: CrmSession,
+  via: "carteira" | "transferencia" = "carteira"
 ): Promise<PortfolioCounts> {
   const by = [actor.userId, actor.userName];
   const contacts = await client.query(
@@ -52,10 +53,10 @@ async function moveContacts(
        UPDATE crm_contacts c SET owner_id = $2, updated_at = now() FROM moved WHERE c.id = moved.id RETURNING c.id, moved.owner_id AS old
      )
      INSERT INTO crm_events (id, contact_id, kind, payload, user_id, user_name)
-     SELECT gen_random_uuid()::text, upd.id, 'owner', jsonb_build_object('from', ou.name, 'to', $3::text, 'via', 'carteira'), $4, $5
+     SELECT gen_random_uuid()::text, upd.id, 'owner', jsonb_build_object('from', ou.name, 'to', $3::text, 'via', $6::text), $4, $5
      FROM upd LEFT JOIN internal_users ou ON ou.id = upd.old
      RETURNING contact_id`,
-    [contactIds, to.id, to.name, ...by]
+    [contactIds, to.id, to.name, ...by, via]
   );
   await afterOwnersAssigned(client, contacts.rows.map((r: { contact_id: string }) => ({ contactId: r.contact_id, ownerId: to.id })), actor, true);
   let deals = 0;
@@ -70,9 +71,9 @@ async function moveContacts(
        )
        INSERT INTO crm_events (id, contact_id, kind, payload, user_id, user_name)
        SELECT gen_random_uuid()::text, upd.contact_id, 'owner',
-              jsonb_build_object('from', ou.name, 'to', $3::text, 'dealId', upd.id, 'dealTitle', upd.title, 'via', 'carteira'), $4, $5
+              jsonb_build_object('from', ou.name, 'to', $3::text, 'dealId', upd.id, 'dealTitle', upd.title, 'via', $6::text), $4, $5
        FROM upd LEFT JOIN internal_users ou ON ou.id = upd.old`,
-      [contactIds, to.id, to.name, ...by]
+      [contactIds, to.id, to.name, ...by, via]
     );
     deals = r.rowCount ?? 0;
   }

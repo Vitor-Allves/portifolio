@@ -34,12 +34,13 @@ ok(rows.every((r) => r.caps === null || JSON.stringify(r.caps) === JSON.stringif
 // ---- exceptions enforced on the server ----
 const exportUrl = `${BASE}/api/crm/contacts/export/`;
 ok((await comercial.get(exportUrl)).status() === 403, "Comercial can't export (profile)");
-let r = await json(await admin.patch(person("u-joao"), { data: { permissions: { exportContacts: true, seeAllLeads: true, manageTeam: true } } }));
+ok((await json(await comercial.patch(`${BASE}/api/crm/contacts/c1/`, { data: { jobTitle: "Sócia" } }))).status === 403, "João sees Vitor's lead (Ana) but can't edit it (profile)");
+let r = await json(await admin.patch(person("u-joao"), { data: { permissions: { exportContacts: true, actOnAllLeads: true, seeAllLeads: true, manageTeam: true } } }));
 ok(r.status === 200, "Administrador grants João exceptions");
 ok((await comercial.get(exportUrl)).status() === 200, "…João now exports");
-ok((await comercial.get(`${BASE}/api/crm/contacts/c1/`)).status() === 200, "…and sees Vitor's lead (Ana)");
+ok((await json(await comercial.patch(`${BASE}/api/crm/contacts/c1/`, { data: { jobTitle: "Sócia" } }))).status === 200, "…and works on Vitor's lead (Ana)");
 ok((await comercial.get(team)).status() === 403, "…but managing the team can't be granted as an exception");
-ok((await sql(`SELECT crm_permissions::text FROM internal_users WHERE id = 'u-joao'`)) === '{"seeAllLeads": true, "exportContacts": true}', "only the real exceptions are stored");
+ok((await sql(`SELECT crm_permissions::text FROM internal_users WHERE id = 'u-joao'`)) === '{"actOnAllLeads": true, "exportContacts": true}', "only the real exceptions are stored (seeAllLeads is already the Comercial's)");
 const audit = await sql(`SELECT metadata::text FROM audit_log WHERE action = 'crm.permission_change' AND target_id = 'u-joao' ORDER BY created_at DESC LIMIT 1`);
 ok(audit.includes('"to"') && audit.includes("exportContacts"), `permission change in the audit trail (${audit})`);
 ok((await json(await admin.patch(person("u-vitor"), { data: { permissions: { editPipeline: false } } }))).status === 200, "Vitor (Gestor) loses funnel editing");
@@ -95,7 +96,7 @@ ok((await ninaApi.get(`${BASE}/api/crm/deals/`)).status() === 200, "…and uses 
 const intel = await ninaApi.get(`${BASE}/intelligence/`, { maxRedirects: 0 });
 ok(intel.status() >= 300 && intel.status() < 400 && (intel.headers().location ?? "").includes("/crm"), "the Intelligence home sends a CRM-only login to the CRM");
 const ninaContacts = (await json(await ninaApi.get(`${BASE}/api/crm/contacts/?page=1&pageSize=100`))).body.rows.map((c) => c.id);
-ok(!ninaContacts.includes("c1") && ninaContacts.includes("c5"), "as Comercial she sees only her own and unowned leads");
+ok(ninaContacts.includes("c1") && ninaContacts.includes("c5"), "as Comercial she sees every lead (evolução v1.0)");
 await sql(`UPDATE crm_contacts SET owner_id = '${nina}' WHERE id = 'c5'`);
 
 // New temporary password and deactivation: CRM-only logins only, never oneself.

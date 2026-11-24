@@ -67,6 +67,18 @@ export function clientEventText(e: CrmClientEvent): string {
       const fields = Array.isArray(p.fields) && p.action === "edited" ? `: ${(p.fields as string[]).join(", ").toLowerCase()}` : "";
       return `Acompanhamento de ${str(p.monthLabel)} ${p.action === "edited" ? "atualizado" : "registrado"}${fields}`;
     }
+    case "onboarding":
+      return p.action === "started" ? "Checklist de onboarding iniciado" : `Onboarding: ${str(p.label)} ${p.action === "done" ? "concluído" : "reaberto"}`;
+    case "deliverable": {
+      const st = (v: unknown) => ({ pendente: "Pendente", em_andamento: "Em andamento", entregue: "Entregue", cancelado: "Cancelado" })[str(v)] ?? str(v);
+      return p.action === "created"
+        ? `Novo entregável: ${str(p.title)}${p.dueOn ? ` · prazo ${str(p.dueOn).split("-").reverse().join("/")}` : ""}`
+        : `Entregável ${str(p.title)}: ${st(p.from)} → ${st(p.to)}`;
+    }
+    case "satisfaction":
+      return `Satisfação: nota ${String(p.score)}${p.comment ? ` — ${str(p.comment)}` : ""}`;
+    case "contract_details":
+      return `Contrato nº ${String(p.contractNumber ?? "").padStart(4, "0")} formalizado a partir da proposta nº ${String(p.proposalNumber ?? "").padStart(4, "0")}`;
     case "intelligence":
       return p.to
         ? `Ligado ao Legado Intelligence: ${str(p.to)}${p.from ? ` (antes: ${str(p.from)})` : ""}`

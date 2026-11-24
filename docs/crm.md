@@ -42,7 +42,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   pode ter várias. Desde a v10: serviço (`service`), valor negociado
   (`negotiated_cents`, o que vale um negócio ganho), origem própria
   (`source`, começa com a do contato), temperatura própria (vazia = a do
-  contato), motivo e detalhe do ganho (`won_reason`, `won_note`).
+  contato), motivo e detalhe do ganho (`won_reason`, `won_note`). Desde a
+  v21: probabilidade própria (`probability`, vazia = a da etapa) e a
+  tabulação do encerramento — grupo (`close_group`: positivo, negativo,
+  sem_conversao, futuro), resultado da venda (`won_result`), quem encerrou
+  (`closed_by`, `closed_by_name`) e, para oportunidade futura, a data de
+  retomar (`return_on`).
 - `crm_tasks` — tarefas e atividades: tipo (lista de Personalização), título,
   data/hora (`all_day` = sem horário), responsável, oportunidade, conclusão
   com resultado, cancelamento. Desde a v13: descrição, prioridade
@@ -53,8 +58,10 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   empresa, ou atividade interna (sem contato nem empresa).
 - `crm_task_events` (v13) — o histórico de cada tarefa: criada, editada
   (quais campos), reagendada, responsável trocado, mudança de situação.
-- `crm_automations` (v14) — as dez automações da especificação: situação
-  (ativa, pausada, desativada — todas começam desativadas), parâmetros
+- `crm_automations` (v14, v27) — as dezesseis automações (dez da Fase 3,
+  seis da evolução v1.0): situação (ativa, pausada, desativada — todas
+  começam desativadas, menos "Transferência solicitada" e "Proposta
+  aprovada", que só dão os avisos que o CRM já dava), parâmetros
   ajustáveis (`config`: prazo, responsável, tipo de tarefa, prioridade,
   dias, lembrete...; o padrão fica no código, `crm-automation-defs.ts`) e a
   última verificação diária. `crm_automation_runs` — uma linha por execução
@@ -138,6 +145,59 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   departamento (`crm_department`, da lista Departamentos). Desde a v11.
 - `crm_imports` — cada importação de planilha (quem, quando, contagens, se foi
   desfeita). `crm_quick_replies` — respostas rápidas.
+- `crm_contacts.alt_phone`, `potential` (alto/médio/baixo) e `need`
+  (necessidade identificada); `crm_companies.phone` e `email` (v23).
+- `crm_diagnostics` (v23) — o diagnóstico comercial do lead: uma linha por
+  versão (`version` 1, 2, 3...; nada é sobrescrito), os campos em `data`
+  (JSON), a oportunidade a que se refere (opcional), quem fez e quando.
+- `crm_proposals` (v24) — propostas: número (`number`, sequência
+  `crm_proposal_number_seq`), oportunidade/lead/empresa, situação (em
+  elaboração, enviada, visualizada, em negociação, aprovada, recusada,
+  expirada, cancelada), versão atual e versão enviada, totais (mensal, único,
+  total, % de desconto), desconto autorizado (quem, quanto, quando), emissão
+  e validade, link público (`share_token`) e datas de envio, visualização e
+  decisão. O responsável comercial é o da oportunidade.
+- `crm_proposal_versions` (v24) — o conteúdo de cada versão (JSON: textos,
+  serviços, valores, condições, cliente) e a impressão digital (`content_hash`,
+  SHA-256 do conteúdo); motivo e diferenças da versão anterior; `sent_at`
+  marca a versão enviada, que nunca mais muda.
+- `crm_proposal_events` (v24) — a linha do tempo da proposta: criada,
+  alterada, nova versão, enviada (canal), aberta pelo cliente (IP e
+  navegador), link criado/renovado/desativado, PDF, situação.
+- `crm_proposal_approvals` (v24) — aprovações e recusas: versão, nome,
+  e-mail, documento, comentário, impressão digital do conteúdo, se veio do
+  cliente pelo link (IP, navegador) ou foi registrada pela equipe (quem).
+- `crm_contracts` (v25, colunas novas): `number` (sequência
+  `crm_contract_number_seq`), `proposal_id`, `one_time_cents` (parte única de
+  um contrato mensal vindo de proposta), `payment_terms`, `due_day`,
+  `term_months`, `renewal` (automática, negociada, sem renovação),
+  `cancellation_rules`, `sales_owner_id`, `ops_owner_id`, `signed_file_id`
+  (um documento do cliente em `crm_files`) e `signed_on`.
+- `crm_client_onboarding` (v25) — o checklist de onboarding do cliente (um
+  item por etapa: reunião inicial, briefing, documentação, acessos,
+  materiais, responsáveis, cronograma, início da execução), com responsável,
+  prazo, quem concluiu e quando.
+- `crm_client_deliverables` (v25) — entregáveis: o quê, serviço, contrato,
+  responsável, prazo, situação (pendente, em andamento, entregue, cancelado)
+  e data de entrega.
+- `crm_client_satisfaction` (v25) — avaliações de satisfação (0 a 10) com
+  comentário, quem registrou e quando.
+- `crm_scheduled_messages` (v27) — mensagens de WhatsApp agendadas: texto
+  livre ou modelo aprovado (nome, idioma, campos), contato, horário, quem
+  agendou, situação (`pendente` → `enviando` → `enviada` ou `falhou`, com o
+  motivo; ou `cancelada`, com quem cancelou) e o id da mensagem no WhatsApp.
+- `crm_commission_rules` (v26) — regras de comissão: nome, vendedor (ou
+  todos), serviço (ou todos), modalidade (mensalidades, valores únicos ou
+  ambos), percentual e quantas mensalidades contam. `crm_contracts.status_changed_at`
+  (v26) — quando o contrato deixou de ser vigente (os já cancelados ou
+  encerrados receberam a data da última atualização).
+- `crm_proposal_templates` e `crm_settings` (v24) — modelos de proposta e o
+  desconto máximo sem autorização (`proposal_discount_limit`).
+- `crm_files` (v23) — documentos e anexos: o arquivo (`content`, até 4 MB,
+  conferido no banco), nome, tipo, tamanho, `sha256`, quem enviou e quando;
+  pertence a exatamente um lead, empresa ou cliente ativo (e, no lead,
+  opcionalmente a uma oportunidade). Arquivar marca `archived_at` e quem
+  arquivou; nada é apagado.
 
 ### Regras que o sistema garante
 
@@ -147,9 +207,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
 
   | | Administrador | Gestor | Comercial | Marketing |
   |---|---|---|---|---|
-  | O que vê | tudo | tudo | só os próprios leads e os sem responsável | tudo |
+  | O que vê | tudo | tudo | tudo (desde a evolução v1.0), menos as conversas de WhatsApp de leads de outros | tudo |
+  | Interagir em leads de outras pessoas | sim | sim | não: pede a transferência | sim (dentro do que o perfil faz) |
   | Funil, oportunidades e tarefas | edita | edita | edita os seus | só vê |
   | WhatsApp e respostas rápidas | envia | envia | envia (nos seus) | só vê |
+  | Aprovar transferências | sim | sim | não | não |
+  | Produtividade, metas e relatórios por pessoa | todos | todos | só os seus (e os números gerais da equipe) | todos |
   | Trocar responsável | qualquer um | qualquer um | só assumir sem dono / soltar o seu | não |
   | Contatos, empresas, notas, consentimento, arquivar | sim | sim | nos seus | sim |
   | Importar / desfazer importação | sim | sim | não | sim |
@@ -166,7 +229,9 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   | Trocar responsável em lote (Contatos) | sim | sim | não | não |
   | Transferir a carteira de uma pessoa, encerrar sessões, Auditoria | sim | não | não | não |
 
-  Lead de outra pessoa, para o Comercial, responde como "não encontrado".
+  Lead de outra pessoa, para o Comercial, abre em modo consulta (dados,
+  oportunidades, histórico; sem a conversa); qualquer alteração responde 403
+  e o painel oferece "Pedir transferência para mim".
   O Administrador geral do Intelligence é sempre Administrador do CRM; ninguém
   muda o próprio perfil. Quem nunca teve perfil definido segue o do
   Intelligence (administrador geral/administrador → Administrador, gestor →
@@ -252,6 +317,12 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   partir de julho de 2026). Na importação, um CNPJ já cadastrado liga o
   contato àquela empresa, seja qual for o nome na planilha; nome de empresa
   já cadastrada com outro CNPJ vira erro na linha.
+  Ao recusar, o servidor diz qual é o registro, quem é o responsável e a
+  situação (409); a tela avisa antes de salvar e abre o cadastro existente.
+- **Uma negociação por lead e por empresa:** uma oportunidade nova num lead
+  (ou empresa) que já tem oportunidade aberta de outra pessoa só é criada
+  com autorização explícita do Gestor ou do Administrador, registrada no
+  histórico.
 - **Nada se apaga pela tela:** contato sai do funil por *arquivamento*
   (reversível em Contatos → Arquivados). Um lead arquivado que escreve no
   WhatsApp volta sozinho.
@@ -352,20 +423,41 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   **Interessado** = respondeu e a automação "Resposta de campanha" registrou
   a resposta, ou respondeu e está "quente"; quem pediu para sair depois de
   receber nunca conta.
+- **Etapas do funil (v21):** lista da Personalização (`crm_options`,
+  `kind = 'stage'`), com nome, cor, ordem e probabilidade de fechamento
+  (`meta.probability`). Padrão: Novo lead 5%, Primeiro contato 10%, Em
+  qualificação 20%, Diagnóstico realizado 35%, Proposta em elaboração 45%,
+  Proposta enviada 55%, Em negociação 70%, Aguardando aprovação 85%, Venda
+  fechada 100%, Venda perdida 0%. Os códigos antigos foram mantidos
+  (`novo`, `conversa`, `reuniao`, `proposta`, `ganho`, `perdido`): só o nome
+  mudou, nenhum registro foi regravado. Novo lead, Venda fechada e Venda
+  perdida são fixas (não arquivam; Novo lead fica sempre primeiro e as duas
+  de encerramento, por último); uma etapa só é arquivada sem oportunidades
+  nela. Só o Administrador mexe nas etapas; tudo vai para a auditoria.
 - **Exigência que cresce com a etapa:** o cadastro inicial continua rápido
-  (nada é obrigatório até a proposta). Para ir a *Proposta enviada*, a
-  oportunidade precisa de serviço e valor estimado; para *Ganho*, de
-  serviço, valor negociado e motivo do ganho. O servidor recusa o movimento
-  sem esses dados (a tela pergunta antes de mover) e não deixa apagar um
-  campo que a etapa atual exige. Oportunidades que já estavam nessas etapas
-  antes da v10 continuam como estão. Movimentos automáticos (o lead
-  respondeu → *Em conversa*) não passam pela exigência. Sair de *Ganho*
-  limpa o motivo do ganho. No Painel, negócio ganho vale o valor negociado
-  (ou o estimado, quando não há negociado).
-- **Perda com motivo:** uma oportunidade só vai para *Perdido* com o motivo
-  (sem orçamento, escolheu outra empresa, parou de responder, sem perfil,
-  adiou, outro) e um detalhe opcional. Reabrir limpa o motivo; tudo fica no
-  histórico.
+  (nada é obrigatório até a proposta). *Proposta em elaboração* pede o
+  serviço; *Proposta enviada*, *Em negociação* e *Aguardando aprovação*,
+  serviço e valor estimado; *Venda fechada*, serviço, valor negociado e
+  motivo. Etapas criadas pelo Administrador não pedem nada a mais. O
+  servidor recusa o movimento sem esses dados (a tela pergunta antes de
+  mover) e não deixa apagar um campo que a etapa atual exige. Oportunidades
+  que já estavam nessas etapas antes da v10 continuam como estão. Movimentos
+  automáticos (o lead respondeu → *Primeiro contato*) não passam pela
+  exigência. No Painel, negócio ganho vale o valor negociado (ou o estimado).
+- **Tabulação obrigatória (v21):** encerrar sempre registra quem encerrou e
+  quando. *Venda fechada* pede o resultado (venda realizada ou proposta
+  aprovada), o motivo e uma observação. *Venda perdida* pede o tipo de
+  encerramento — perda comercial, sem conversão (não chegou a negociar) ou
+  oportunidade futura —, o motivo daquele grupo (cada motivo tem o seu
+  grupo, na Personalização) e uma observação; a oportunidade futura pede
+  também a data para retomar e cria a tarefa "Retomar: …" na agenda do
+  responsável. No Painel e nas metas, "perdidos" são as perdas comerciais e
+  os sem conversão (a oportunidade futura não conta como perda); conversão =
+  ganhos ÷ (ganhos + perdidos).
+- **Reabertura com justificativa:** tirar uma oportunidade de Venda fechada
+  ou Venda perdida (inclusive trocar uma pela outra) exige a justificativa,
+  que fica no histórico junto com o encerramento anterior. Reabrir limpa a
+  tabulação da oportunidade.
 - **Horários em Brasília:** tarefas são gravadas no fuso de Brasília (-03:00);
   tarefa "dia todo" fica ao meio-dia para não mudar de dia em nenhum fuso.
 - **Quem vê cada tarefa:** a tarefa segue o registro a que pertence — o
@@ -417,7 +509,18 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
   quando um contrato vigente termina nos próximos X dias (uma vez por data
   de fim); a 9, a partir do dia X do mês, cria a tarefa de atualização para
   cliente em Onboarding ou Ativo sem o acompanhamento do mês (uma por mês).
-  As 8 e 9 rodam na verificação diária, como a 3 e a 6.
+  As 8 e 9 rodam na verificação diária, como a 3 e a 6. Evolução v1.0: as
+  11 (proposta perto do vencimento), 12 (retorno agendado) e 14
+  (oportunidade sem responsável) também rodam na verificação diária; a 13
+  (diagnóstico salvo), a 15 (transferência pedida) e a 16 (proposta
+  aprovada, pelo link ou registrada pela equipe) rodam no evento.
+- **Mensagens agendadas** (`crm-scheduled-messages.ts`): são um envio de
+  quem agendou, só que mais tarde — no horário as regras de envio são
+  conferidas de novo (perfil, responsável, descadastro, janela de 24h para
+  texto livre, atendimento de outra pessoa) e, se alguma falhar, a mensagem
+  não sai e fica "não enviada" com o motivo. Cada uma é reservada antes de
+  sair, então nunca vai duas vezes, e uma interrompida no meio do envio
+  nunca é repetida sozinha.
 - **Situação da tarefa:** cancelada só volta reativada (pendente); concluir
   pede o resultado (opcional). Tudo entra no histórico da tarefa e, quando
   há contato, no histórico do contato.
@@ -444,6 +547,312 @@ WhatsApp está em [`whatsapp-crm-setup.md`](./whatsapp-crm-setup.md).
    trabalhados ficam e são informados.
 
 ## Registro de alterações
+
+### Evolução v1.0 — segurança: 2FA de uso único e LGPD (schema v28)
+
+- **Código 2FA vale uma vez:** o login guarda o último passo de 30 segundos
+  aceito de cada pessoa e recusa o mesmo código (ou um mais antigo), de
+  forma atômica — dois logins com o mesmo código ao mesmo tempo não passam
+  os dois. O código que confirma a configuração do 2FA também não serve para
+  entrar de novo.
+- **Direitos do titular (LGPD)**, no painel do contato (Detalhes e
+  histórico), só para Administrador: **Baixar dados do titular** (um JSON
+  com o contato, mensagens, histórico, oportunidades, tarefas, propostas e
+  aceites, diagnósticos, documentos listados sem o conteúdo, mensagens
+  agendadas, campanhas e transferências) e **Anonimizar** (motivo e senha do
+  Administrador; sem volta): saem nome, telefones, e-mail, cargo, cidade,
+  textos das mensagens, notas e textos livres do histórico, documentos,
+  diagnósticos, mensagens agendadas e avisos; o contato fica arquivado e
+  descadastrado; ficam datas, etapas, valores e quem da equipe fez o quê
+  (os números do CRM continuam batendo) e o aceite de proposta (comprova o
+  contrato). As duas ações vão para a auditoria, sem os dados pessoais. Se
+  a pessoa escrever de novo pelo WhatsApp, entra como um contato novo.
+- Banco v28: `internal_users.totp_last_step`, `crm_contacts.anonymized_at`.
+- Testes: `security-api` (2FA reutilizado recusado; exportar e anonimizar:
+  quem pode, senha, motivo, o que sai, o que fica, histórico, auditoria) e
+  `security-e2e`; o teste de banco confere a v28.
+
+### Evolução v1.0 — relatórios e resultados por origem e anúncio
+
+- **Relatórios** (especificação, itens 14 e 15): além da Tabulação
+  comercial, a seção traz Funil comercial, Vendas por período, Vendas por
+  vendedor, Propostas enviadas e aprovadas, Propostas expiradas, Motivos de
+  perda, Produtividade, Clientes ativos, Contratos próximos do vencimento,
+  Receita recorrente, Comissões, Resultados por origem, Resultados por
+  anúncio (leads de anúncio de clique para o WhatsApp, pelo anúncio que o
+  WhatsApp informa, e o que viraram) e Resultados das campanhas. Cada um tem
+  filtros (período, vendedor, origem ou prazo), resumo, tabela com totais,
+  linha que abre o lead ou o cliente, e planilha e PDF (com "Exportar
+  relatórios"; auditados com o formato).
+- **Mesmos números e mesmas regras do resto do CRM:** as definições do
+  Painel, do Financeiro e da produtividade; sem "ver a produtividade da
+  equipe" (Comercial), só o que é seu, mesmo que peça de outra pessoa;
+  clientes pedem "ver clientes ativos"; sem "ver os valores dos contratos"
+  os valores somem e Receita recorrente e Comissões são recusados;
+  campanhas só para quem edita campanhas; contatos arquivados ficam de fora.
+- Código: `crm-report-catalog.ts` (servidor), `crm-report-catalog-types.ts`,
+  rotas `/api/crm/reports/[id]` e `/api/crm/reports/[id]/export`,
+  `CrmReportTable.tsx`. Sem mudança no banco.
+- Testes: `reports-api` (outubro conferido com o Painel; propostas,
+  clientes, contratos, comissões e anúncios criados agora; permissões;
+  planilha, PDF e auditoria) e `reports-e2e`.
+
+### Evolução v1.0 — indicadores de produtividade
+
+- **Painel** (especificação, item 12): três números novos, cada um com a
+  lista dos registros por trás — **leads trabalhados** (contatos em que
+  alguém da equipe agiu no período: mensagem enviada fora de campanha,
+  tarefa concluída ou registro de uma pessoa no histórico — etapa, nota,
+  próxima ação, oportunidade, proposta, diagnóstico; automações não contam),
+  **contatos finalizados** (com uma oportunidade encerrada, ganha ou
+  perdida) e **propostas aprovadas** (pelo módulo de propostas; abre a
+  oportunidade). Nova seção **Por serviço**: leads novos pelo serviço de
+  interesse e vendas pelo serviço da oportunidade (ou do lead). A planilha
+  do Painel traz os números e a seção novos.
+- **Produtividade por pessoa** (Metas e produtividade): passa a mostrar
+  leads atribuídos (agora), leads trabalhados, follow-ups (tarefas de
+  Follow-up e Retorno comercial concluídas), propostas aprovadas, perdidos e
+  ticket médio, além do que já tinha; a planilha ganha as mesmas colunas (no
+  fim). Os totais da equipe continuam iguais aos do Painel.
+- Sem mudança no banco. Testes: `dashboard-data` (números conferidos à mão),
+  `dashboard-reports-api` (cada número novo = sua lista), `goals-api`
+  (totais da equipe e indicadores individuais) e `automations-ev-api`
+  (propostas aprovadas no Painel e na produtividade).
+
+### Evolução v1.0 — automações 11–16 e mensagens agendadas (schema v27)
+
+- **Seis automações novas** (especificação, item 7), no mesmo motor, com
+  prazos, responsáveis e ações configuráveis na tela Automações:
+  11 proposta perto do vencimento (aviso ao responsável, uma vez por data de
+  validade); 12 retorno agendado (tarefa na data combinada com o contato,
+  se ele não tiver tarefa pendente); 13 diagnóstico realizado (tarefa do
+  próximo passo — "Preparar a proposta"); 14 oportunidade sem responsável
+  (aviso a quem for escolhido ou aos Gestores e Administradores, uma vez por
+  oportunidade); 15 transferência solicitada (aviso a quem aprova e, se
+  marcado, ao responsável atual); 16 proposta aprovada (aviso ao
+  responsável e, se marcado, aos Gestores; tarefa de formalização opcional).
+  A 15 e a 16 começam ligadas porque assumem os avisos que o CRM já dava ao
+  pedir transferência e ao aprovar proposta (a tarefa da 16 começa
+  desligada); um Administrador pode desligá-las. "Encaminhamento para
+  operação após fechamento" já é a automação 7 (cliente em onboarding) e o
+  "Formalizar contrato" da proposta. Nenhuma automação envia mensagem.
+- **Mensagens agendadas** (item 11): na conversa, "Agendar" leva o texto (ou,
+  com a janela de 24h fechada, um modelo aprovado) para sair na data e hora
+  escolhidas, até 30 dias à frente e até 10 por contato. Aviso quando o
+  horário passa da janela de 24h. A conversa mostra uma linha com as
+  agendadas e as que não saíram; o detalhe abre com "Ver", com Cancelar. No
+  horário, tudo o que vale para um envio é conferido de novo: quem agendou
+  continua ativo e com "enviar WhatsApp", o lead continua sendo dele (ou
+  sem responsável), o contato não se descadastrou, texto livre só com a
+  janela aberta e ninguém mais assumiu a conversa. Se algo mudou, a
+  mensagem não sai: fica "não enviada" com o motivo, no histórico do lead e
+  num aviso no sino de quem agendou. Contato descadastrado não recebe
+  mensagem agendada.
+- **Quem envia no horário:** `GET /api/cron/scheduled-messages` (protegida
+  por `CRON_SECRET`, para um agendamento frequente na Vercel), a verificação
+  diária (`/api/cron/automations`) e, entre uma e outra, o próprio CRM: a
+  consulta do sino (uma vez por minuto em cada CRM aberto) confere as
+  vencidas depois de responder (`after()` do Next.js), no máximo a cada 20
+  segundos por instância. Cada mensagem é reservada (`enviando`) por um
+  único envio antes de sair, então nunca vai duas vezes; uma que ficou
+  "enviando" por mais de 10 minutos (o processo caiu no meio) vira "não
+  enviada" e não é reenviada sozinha, porque pode ter saído.
+- Banco v27: as seis automações em `crm_automations` (as duas ligadas só se
+  ninguém tiver mexido nelas) e `crm_scheduled_messages`.
+- Testes: `automations-ev-api`, `scheduled-messages-api` e
+  `scheduled-messages-e2e`; `automations-api`/`automations-e2e` contam 16
+  regras; o teste de banco confere a v27 (escolha anterior de um
+  Administrador mantida).
+
+### Evolução v1.0 — financeiro comercial e comissões (schema v26)
+
+- **Tela Financeiro** (especificação, item 10; Gestão, para quem vê valores
+  de contrato): para o período escolhido, valor vendido (oportunidades
+  ganhas), nova receita mensal e receita de serviços pontuais (contratos
+  vendidos), receita recorrente de hoje e contratos ativos, o contratado para
+  os próximos 12 meses (mensalidades até o fim de cada contrato), o previsto
+  no funil (valor das oportunidades abertas × probabilidade), descontos das
+  propostas aprovadas, cancelamentos (e a receita mensal que deixa de entrar),
+  o perdido no funil, as parcelas previstas dos próximos 6 meses (por mês, com
+  cada contrato) e as comissões por contrato e por vendedor. Planilha e PDF
+  (auditados). O Comercial vê só os números dele.
+- **Regras de comissão** (Gestor e Administrador): por vendedor, serviço e
+  modalidade; vale a mais específica (vendedor, depois serviço, depois
+  modalidade). Mensalidades: percentual × valor mensal × número de
+  mensalidades; valores únicos: percentual × valor. Sem regra, a comissão é
+  zero. O vendedor de um contrato é o responsável comercial (ou o dono da
+  oportunidade ganha, ou do cliente); contrato cancelado não gera comissão.
+- É gerencial: o CRM calcula com os contratos e propostas, não fatura nem
+  paga.
+- Banco v26: `crm_commission_rules`, `crm_contracts.status_changed_at`.
+- Testes: `finance-api` e `finance-e2e`; o teste de banco confere a v26.
+
+### Evolução v1.0 — contratos e operação (schema v25)
+
+- **Contrato completo** (especificação, item 8): número, cliente e empresa,
+  proposta de origem, serviços, valor (mensal e parte única), condições de
+  pagamento, dia de vencimento, início, prazo de vigência (o vencimento é
+  calculado), renovação, regras de cancelamento, responsáveis comercial e
+  operacional e o documento assinado (um dos documentos do cliente, com a
+  data). No cartão do contrato: "Detalhes" e "Gerar contrato (PDF)" — um
+  documento com as partes, o objeto (os serviços da proposta aprovada), os
+  valores, a vigência, a renovação, o cancelamento, a proposta de origem com
+  o código de verificação e as linhas de assinatura, para revisar com o
+  jurídico. Os contratos existentes ganharam número pela ordem de criação;
+  nada mais neles mudou. Os alertas de vencimento continuam na automação
+  "Renovação de contrato".
+- **Da proposta ao cliente** (item 9): numa proposta aprovada, "Formalizar
+  contrato" pede o motivo do ganho, o início, o prazo, o dia de vencimento, a
+  renovação, as regras de cancelamento e o responsável operacional; o CRM
+  registra a venda (Venda fechada, resultado "Proposta aprovada", valor da
+  proposta), cria o cliente ativo (ou um contrato novo num cliente que já
+  existe) com os serviços, valores e condições aprovados e começa o
+  onboarding. A proposta passa a apontar para o contrato.
+- **Operação do cliente** (item 9): aba Operação no cliente, com o checklist
+  de onboarding (8 itens, com responsável e prazo; todo cliente novo em
+  Onboarding já começa com ele, os antigos podem começar), os entregáveis
+  (responsável, prazo, situação; atrasados em destaque) e o histórico de
+  satisfação (nota 0–10 e média). Tudo vai para o histórico do cliente;
+  mudar exige poder alterar clientes e o cliente ser seu (ou ser Gestor).
+- Banco v25: colunas novas em `crm_contracts`, `crm_client_onboarding`,
+  `crm_client_deliverables`, `crm_client_satisfaction`.
+- Testes: `operations-api` e `operations-e2e`; o teste de banco confere a v25
+  (numeração dos contratos existentes).
+
+### Evolução v1.0 — propostas e orçamentos (schema v24)
+
+- **Proposta dentro da oportunidade** (especificação, item 3.1): em "Negócio
+  e tarefas", "+ Nova proposta" (de um modelo, ou do serviço e valor da
+  oportunidade). Número sequencial, cliente e empresa da oportunidade,
+  responsável comercial, emissão, validade, vencimento, serviços (do catálogo
+  ou personalizados) com descrição, quantidade, valor unitário, desconto em
+  R$ ou %, cobrança mensal ou única, totais, condições de pagamento,
+  periodicidade, prazo de execução e observações.
+- **Modelos e catálogo** (3.2, 3.3): Personalização → Propostas tem os
+  modelos (apresentação, condições, validade e serviços) e o desconto máximo
+  sem autorização (padrão 10%). Acima dele, a proposta só é enviada depois que
+  um Gestor autoriza (a do próprio Gestor já sai autorizada).
+- **Envio e link** (3.3): o vendedor registra como enviou (link, WhatsApp,
+  e-mail, PDF ou reunião) — o CRM não envia nada sozinho. No primeiro envio
+  nasce o link público `/proposta/<código>` (aleatório; pode ser renovado ou
+  desativado) e a oportunidade passa para "Proposta enviada" se ainda estava
+  antes (o serviço e o valor vêm da proposta quando faltam). PDF com a
+  identidade da Legado, de qualquer versão.
+- **Situações** (3.4): Em elaboração, Enviada, Visualizada, Em negociação,
+  Aprovada, Recusada, Expirada, Cancelada. "Visualizada" só quando a página
+  do link roda num navegador (a própria página avisa o CRM; pré-visualização
+  de link no WhatsApp/e-mail e a equipe logada não contam). Passada a
+  validade, a enviada vira Expirada sozinha. Aprovada e cancelada são finais.
+- **Versões** (3.5): enquanto a versão atual não foi enviada, é um rascunho
+  editado no lugar. Depois de enviada (ou recusada/expirada), qualquer
+  alteração vira a versão seguinte, com o motivo obrigatório e a lista do que
+  mudou (valores antes e depois, serviços incluídos, alterados e retirados,
+  descontos), quem e quando. A anterior fica guardada e tem PDF.
+- **Aprovação digital** (3.6): no link, o cliente aprova (nome, e-mail,
+  documento opcional, "li e aprovo") ou recusa. Fica registrado: versão,
+  impressão digital do conteúdo aprovado, data, IP e navegador; a página
+  mostra a aprovação depois. Se a proposta mudou enquanto ele lia, a resposta
+  é recusada e ele recarrega. A equipe pode registrar uma aprovação ou recusa
+  que veio por outro meio (com a descrição). A aprovação não substitui o
+  contrato. O responsável (e, na aprovação, os Gestores) recebe aviso no sino.
+- **Permissões:** quem vê o lead vê as propostas; criar, alterar, enviar e
+  registrar respostas só quem trabalha na oportunidade (o Comercial nas suas;
+  Marketing não). Tudo vai para o histórico do lead, para a linha do tempo da
+  proposta e para a auditoria (`crm.proposal_*`).
+- Banco v24: `crm_proposals`, `crm_proposal_versions`, `crm_proposal_events`,
+  `crm_proposal_approvals`, `crm_proposal_templates`, `crm_settings`.
+- Testes: `proposals-api` e `proposals-e2e`; o teste de banco confere a v24.
+
+### Evolução v1.0 — cadastros, duplicidade, diagnóstico e documentos (schema v23)
+
+- **Campos novos** (especificação, item 2.1): no lead, outro telefone,
+  potencial comercial e necessidade identificada (no formulário de novo
+  contato, no painel e na exportação); na empresa, telefone e e-mail.
+- **Duplicidade** (item 2.2): o formulário de novo contato avisa, enquanto é
+  preenchido, que o WhatsApp, o e-mail ou a empresa já existem, com o
+  responsável e a situação, e abre o cadastro existente. Ao salvar, o
+  servidor confere de novo: WhatsApp, e-mail, nome da empresa (sem acento,
+  maiúsculas ou "Ltda") e CNPJ repetidos respondem 409 com o registro
+  encontrado (antes era 400 só com o texto). Lead arquivado também conta.
+- **Segunda negociação** (item 2.2): criar uma oportunidade para um lead, ou
+  para alguém da mesma empresa, que já está em negociação aberta com outra
+  pessoa é recusado. O Gestor (ou Administrador) pode autorizar
+  explicitamente ("Autorizar a segunda negociação e criar"); a autorização
+  fica no histórico ("segunda negociação ... autorizada por ..."). O
+  Comercial pode criar só o contato, sem oportunidade, ou pedir a
+  transferência.
+- **Diagnóstico comercial** (item 2.3): em "Negócio e tarefas", o formulário
+  com necessidade, problema, objetivo, serviços atuais, investimento atual,
+  orçamento, urgência, decisor, objeções, concorrentes e próximos passos.
+  Cada vez que é salvo vira uma versão nova; as anteriores ficam para
+  consulta. Só quem trabalha no lead (e pode editar o funil) salva; quem vê
+  o lead lê.
+- **Documentos e anexos** (item 2.1 e base do item 8): no lead (Detalhes e
+  histórico), na empresa e no cliente ativo. PDF, Word, Excel, PowerPoint,
+  imagens (JPEG, PNG, WebP), texto e CSV, até 4 MB; o tipo é conferido pelo
+  conteúdo, não só pelo nome. Baixar só para quem vê o registro, sempre como
+  download e sem cache; anexar e arquivar só para quem trabalha no registro.
+  Anexar e arquivar ficam no histórico do lead.
+- **Catálogo de serviços** (item 3.2): cada serviço da Personalização tem
+  escopo, valor de referência, cobrança (mensal ou único), prazo e
+  condições — o ponto de partida das propostas. Mudanças nesses detalhes
+  (e na probabilidade das etapas ou no grupo de tabulação dos motivos)
+  ficam na auditoria.
+- Banco v23: colunas novas em `crm_contacts` e `crm_companies`,
+  `crm_diagnostics` e `crm_files`.
+- Testes: `cadastro-api` e `cadastro-e2e`; o teste de banco confere a v23.
+
+### Evolução v1.0 — visibilidade compartilhada e transferências (schema v22)
+
+- **O Comercial vê tudo e trabalha no que é seu** (especificação, item 6):
+  contatos, empresas, oportunidades, clientes, tarefas e históricos de toda a
+  equipe ficam visíveis; mexer num lead de outra pessoa (mover, editar,
+  notas, tarefas, etiquetas, mensagens, clientes) é recusado no servidor. As
+  conversas de WhatsApp de leads de outros continuam fechadas.
+- **Permissões novas** (Usuários e permissões, com exceção por pessoa):
+  "Interagir em leads de outras pessoas", "Ver as conversas de WhatsApp de
+  leads de outras pessoas" e "Ver a produtividade, as metas e os resultados de
+  cada pessoa". Administrador, Gestor e Marketing têm as três; o Comercial,
+  nenhuma (e passa a ter "ver todos os leads").
+- **Solicitação de transferência:** no painel do lead, "Pedir transferência
+  para mim" (lead de outra pessoa) ou "Passar este lead para outra pessoa"
+  (lead seu), sempre com o motivo; Gestor e Administrador são avisados no
+  sino, aprovam ou recusam (recusa com motivo) no próprio lead ou em Gestão →
+  Transferências. Aprovar passa o lead, as oportunidades abertas e as tarefas
+  pendentes; nada é aplicado se o lead mudou de mãos depois do pedido. Quem
+  pediu, de quem para quem, por quê, quem decidiu e quando ficam no
+  histórico do lead e na auditoria (`crm.transfer_request`,
+  `crm.transfer_decision`).
+- **Painel do Comercial:** escolhe entre os seus números e os da equipe
+  (nunca os de outra pessoa); a tabela por pessoa, as metas, a produtividade e
+  o relatório de tabulação mostram só a linha dele.
+- Banco v22: `crm_transfer_requests` (um pedido pendente por lead).
+- Testes: `transfers-api` e `transfers-e2e`; os testes de acesso existentes
+  passaram a conferir "vê, mas não mexe".
+
+### Evolução v1.0 — funil configurável, tabulação e relatório de tabulação (schema v21)
+
+- **Funil de 10 etapas** editável na Personalização (nome, cor, ordem,
+  probabilidade, criar e arquivar), com os códigos antigos mantidos. O
+  quadro, os filtros, o Painel, as campanhas e as exportações leem a lista.
+- **Probabilidade** por etapa e própria da oportunidade (campo na aba
+  Negócio; vazio = a da etapa); aparece no card e no topo de cada coluna.
+- **Tabulação obrigatória** ao encerrar e **reabertura com justificativa**
+  (ver "Regras que o sistema garante"); motivos de encerramento com grupo
+  (16 motivos da especificação; os seis antigos renomeados só onde ninguém
+  tinha renomeado).
+- **Relatórios → Tabulação comercial:** por grupo, motivo e vendedor, com a
+  lista dos encerramentos; filtros de período, vendedor, origem, serviço,
+  grupo e motivo; planilha (CSV) e PDF com a identidade da Legado
+  (`src/lib/crm-pdf.ts`), com a permissão "Exportar relatórios" e registro na
+  auditoria. O Comercial vê só os próprios encerramentos.
+- **Painel:** "Reuniões agendadas" passa a contar as tarefas do tipo Reunião
+  do período (não existe mais a etapa "Reunião agendada").
+- Banco v21: `crm_options.meta`, etapas e motivos semeados,
+  `crm_deals.probability`, `won_result`, `close_group`, `closed_by`,
+  `closed_by_name`, `return_on` (encerramentos antigos recebem o grupo do
+  motivo registrado; nada é inventado).
+- Testes: `funnel-api` e `funnel-e2e`; `schema` cobre v20 → v21.
 
 ### Especificação-mestra v1.0 — Fase 7, entrega 2: assistente de IA
 

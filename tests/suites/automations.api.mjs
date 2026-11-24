@@ -27,7 +27,11 @@ const sentBefore = fakeGraphSent().length;
 ok((await vitor.get(`${BASE}/api/crm/automations/`)).status() === 403, "only the Administrador sees the automations");
 ok((await vitor.patch(`${BASE}/api/crm/automations/novo_lead/`, { data: { status: "ativa" } })).status() === 403, "…or changes them");
 let r = await json(await admin.get(`${BASE}/api/crm/automations/`));
-ok(r.body.automations.length === 10 && r.body.automations.every((a) => a.status === "desativada"), "ten automations, all off");
+ok(r.body.automations.length === 16, "sixteen automations (the ten of Fase 3 + six of the evolução)");
+ok(
+  r.body.automations.filter((a) => a.status === "ativa").map((a) => a.id).sort().join() === "proposta_aprovada,transferencia_solicitada",
+  "all off, except the two that only give the notices the CRM already gave (transfer requested, proposal approved)"
+);
 ok(r.body.schedule.configured === true, "the daily check is set up (this server has a test CRON_SECRET)");
 ok(r.body.automations.find((a) => a.id === "proposta_enviada").config.dueDays === 3, "defaults filled in (follow-up in 3 days)");
 

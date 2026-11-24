@@ -2,20 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from "react";
 import {
-  CRM_STAGES,
   CRM_TEMPERATURES,
   formatBRL,
   isClosedStage,
   parseMoneyToCents,
   type CrmContactCard,
   type CrmDealCard,
-  type CrmLostReason,
   type CrmQuickReply,
   type CrmStage,
   type CrmTask,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CRM_BTN_PRIMARY, CRM_INPUT, STAGE_DOT, taskKindIcon } from "./crm-styles";
+import { CRM_BTN_PRIMARY, CRM_INPUT, taskKindIcon } from "./crm-styles";
 import { CRM_SIDEBAR_COOKIE, type CrmTheme } from "./crm-theme";
 import CrmWelcome from "./CrmWelcome";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
@@ -33,14 +31,14 @@ import CrmContactsView from "./CrmContactsView";
 import CrmCompaniesView from "./CrmCompaniesView";
 import CrmCompanyPanel from "./CrmCompanyPanel";
 import CrmImportDialog from "./CrmImportDialog";
-import CrmLostDialog from "./CrmLostDialog";
+import CrmLostDialog, { type CrmCloseFields } from "./CrmLostDialog";
 import CrmStageDialog, { needsStageDialog, type CrmStageFields } from "./CrmStageDialog";
 import { TemperatureChip } from "./crm-fields";
 import CrmTasksView from "./CrmTasksView";
 import CrmSettingsView from "./CrmSettingsView";
 import CrmAuditView from "./CrmAuditView";
 import { CrmCatalogProvider, TagChips, useCatalog } from "./crm-catalog-context";
-import type { CrmCatalog } from "@/lib/crm-catalog";
+import { closeGroupLabel, type CrmCatalog } from "@/lib/crm-catalog";
 import CrmAgendaView from "./CrmAgendaView";
 import CrmTaskDialog, { type TaskDialogTarget, type TaskDraft } from "./CrmTaskDialog";
 import CrmReminderBell from "./CrmReminderBell";
@@ -49,6 +47,11 @@ import CrmClientsView from "./CrmClientsView";
 import CrmClientPanel, { type ClientTab } from "./CrmClientPanel";
 import CrmFollowUpView from "./CrmFollowUpView";
 import CrmGoalsView from "./CrmGoalsView";
+import CrmReportsView from "./CrmReportsView";
+import CrmTransfersView from "./CrmTransfers";
+import CrmProposalsView from "./CrmProposalsView";
+import CrmFinanceView from "./CrmFinanceView";
+import CrmProposalPanel from "./CrmProposalPanel";
 
 type CrmAppProps = {
   initialDeals: CrmDealCard[];
@@ -206,6 +209,11 @@ function DealCard({
           {deal.stage !== "ganho" && deal.negotiatedCents !== null && (
             <span className="text-crm-dim tabular-nums">negociado {formatBRL(deal.negotiatedCents)}</span>
           )}
+          {!closed && (
+            <span className="text-crm-dim tabular-nums" title={deal.probabilityOwn ? "Probabilidade de fechamento (definida na oportunidade)" : "Probabilidade de fechamento (da etapa)"}>
+              {deal.probability}%
+            </span>
+          )}
           {deal.service && <span className="text-crm-dim truncate max-w-full">{label("service", deal.service)}</span>}
           {deal.expectedCloseAt && !closed && <span className="text-crm-faint">previsão {shortDate(deal.expectedCloseAt)}</span>}
         </p>
@@ -228,8 +236,9 @@ function DealCard({
       )}
 
       {deal.stage === "perdido" && deal.lostReason && (
-        <p className="mt-1.5 text-[11.5px] text-crm-red truncate">
-          {label("lost_reason", deal.lostReason)}
+        <p className={`mt-1.5 text-[11.5px] truncate ${deal.closeGroup === "futuro" ? "text-crm-amber" : "text-crm-red"}`}>
+          {closeGroupLabel(deal.closeGroup)}: {label("lost_reason", deal.lostReason)}
+          {deal.closeGroup === "futuro" && deal.returnOn ? ` · retomar em ${deal.returnOn.split("-").reverse().join("/")}` : ""}
           {deal.lostNote ? ` · ${deal.lostNote}` : ""}
         </p>
       )}
@@ -292,6 +301,7 @@ function CrmAppInner({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const isWide = useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [proposalId, setProposalId] = useState<string | null>(null);
   // Clientes ativos: the client panel (shown when no contact or company panel is on top of it).
   const [clientId, setClientId] = useState<{ id: string; tab?: ClientTab; month?: string } | null>(null);
   // The task form, over whatever is open (new task, or one being edited).
@@ -312,8 +322,8 @@ function CrmAppInner({
   const [selected, setSelected] = useState<Selection | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [dropStage, setDropStage] = useState<CrmStage | null>(null);
-  const [lostPending, setLostPending] = useState<{ dealId: string; title: string } | null>(null);
-  const [stagePending, setStagePending] = useState<{ deal: CrmDealCard; stage: "proposta" | "ganho" } | null>(null);
+  const [lostPending, setLostPending] = useState<{ dealId: string; title: string; reopening: boolean } | null>(null);
+  const [stagePending, setStagePending] = useState<{ deal: CrmDealCard; stage: CrmStage } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [celebration, setCelebration] = useState<{ name: string; mascot: "titanWin" | "legacyWin" } | null>(null);
@@ -365,6 +375,8 @@ function CrmAppInner({
     setClientId({ id, ...opts });
   }, []);
 
+  // The board's columns: the funnel as set in Personalização, plus an archived stage while cards are still in it.
+  const columns = useMemo(() => catalog.stages(deals.map((d) => d.stage)), [catalog, deals]);
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
@@ -393,14 +405,16 @@ function CrmAppInner({
   const dueCount = useMemo(
     () =>
       tasks.filter((t) => {
+        // Who works only on their own leads counts only their own tasks.
+        if (!caps.actOnAllLeads && t.ownerId !== currentUserId) return false;
         const s = taskState(t.dueAt, t.allDay, now);
         return s === "overdue" || s === "today";
       }).length,
-    [tasks, now]
+    [tasks, now, caps.actOnAllLeads, currentUserId]
   );
   const unread = inbox.reduce((sum, c) => sum + c.unreadCount, 0);
 
-  async function patchStage(dealId: string, body: { stage: CrmStage; lostReason?: CrmLostReason; lostNote?: string } & CrmStageFields) {
+  async function patchStage(dealId: string, body: { stage: CrmStage } & Partial<CrmCloseFields> & CrmStageFields) {
     const before = deals;
     const deal = before.find((d) => d.id === dealId);
     const at = new Date().toISOString();
@@ -441,10 +455,11 @@ function CrmAppInner({
   function moveTo(dealId: string, stage: CrmStage) {
     const deal = deals.find((d) => d.id === dealId);
     if (!deal || deal.stage === stage) return;
-    // Losing a deal always records why — the dialog asks before the move;
-    // "Proposta enviada" and "Ganho" ask for what the stage requires.
-    if (stage === "perdido") setLostPending({ dealId, title: deal.title });
-    else if ((stage === "proposta" || stage === "ganho") && needsStageDialog(deal, stage)) setStagePending({ deal, stage });
+    // Closing always goes through the tabulação (the dialogs ask before the
+    // move); reopening asks for the justification; other stages ask for what
+    // they require.
+    if (stage === "perdido") setLostPending({ dealId, title: deal.title, reopening: isClosedStage(deal.stage) });
+    else if (needsStageDialog(deal, stage)) setStagePending({ deal, stage });
     else void patchStage(dealId, { stage });
   }
 
@@ -483,6 +498,7 @@ function CrmAppInner({
         sections={[
           "dashboard",
           "board",
+          "proposals",
           "conversations",
           "tasks",
           "agenda",
@@ -491,6 +507,9 @@ function CrmAppInner({
           ...(caps.editCampaigns ? (["campaigns"] as const) : []),
           ...(caps.viewClients ? (["clients", "followup"] as const) : []),
           "goals",
+          ...(caps.editPipeline || caps.assignAnyOwner ? (["transfers"] as const) : []),
+          ...(caps.seeContractValues ? (["finance"] as const) : []),
+          "reports",
           ...(caps.customize ? (["settings"] as const) : []),
           ...(caps.manageAutomations ? (["automations"] as const) : []),
           ...(caps.manageTeam ? (["team", "audit"] as const) : []),
@@ -652,7 +671,7 @@ function CrmAppInner({
           <CrmDashboardView
             team={team}
             currentUserId={currentUserId}
-            seeAll={caps.seeAllLeads}
+            seeAll={caps.seeTeamProductivity}
             version={dataVersion}
             now={now}
             canExport={caps.exportReports}
@@ -690,6 +709,7 @@ function CrmAppInner({
                   onNewTask={newTask}
                   tasksVersion={tasksVersion}
                   onOpenClient={openClient}
+                  onOpenProposal={setProposalId}
                 />
               ) : null
             }
@@ -720,11 +740,48 @@ function CrmAppInner({
         ) : view === "goals" ? (
           <CrmGoalsView
             currentUserId={currentUserId}
-            seeAll={caps.seeAllLeads}
+            seeAll={caps.seeTeamProductivity}
             canEdit={caps.manageGoals}
             canExport={caps.exportReports}
             version={dataVersion}
             now={now}
+          />
+        ) : view === "proposals" ? (
+          <CrmProposalsView team={team} seeAll={caps.seeAllLeads} version={dataVersion} onOpen={setProposalId} />
+        ) : view === "transfers" ? (
+          <CrmTransfersView
+            currentUserId={currentUserId}
+            canDecide={caps.assignAnyOwner}
+            version={dataVersion}
+            onOpenContact={(id) => openContact(id)}
+            onChanged={() => {
+              setDataVersion((v) => v + 1);
+              void refresh();
+            }}
+          />
+        ) : view === "finance" ? (
+          <CrmFinanceView
+            team={team}
+            currentUserId={currentUserId}
+            seeAll={caps.seeTeamProductivity}
+            canExport={caps.exportReports}
+            canManageRules={caps.manageGoals}
+            version={dataVersion}
+            now={now}
+          />
+        ) : view === "reports" ? (
+          <CrmReportsView
+            team={team}
+            currentUserId={currentUserId}
+            seeAll={caps.seeTeamProductivity}
+            canExport={caps.exportReports}
+            version={dataVersion}
+            now={now}
+            onOpenContact={(id) => openContact(id, "negocio")}
+            onOpenClient={caps.viewClients ? (id) => openClient(id) : undefined}
+            viewClients={caps.viewClients}
+            seeContractValues={caps.viewClients && caps.seeContractValues}
+            seeCampaigns={caps.editCampaigns}
           />
         ) : view === "settings" && caps.customize ? (
           <CrmSettingsView />
@@ -744,6 +801,7 @@ function CrmAppInner({
             currentUserId={currentUserId}
             now={now}
             canComplete={caps.editPipeline}
+            onlyOwn={!caps.actOnAllLeads}
             version={dataVersion}
             onOpenContact={(id, tab) => openContact(id, tab)}
             onOpenTask={openTask}
@@ -769,7 +827,7 @@ function CrmAppInner({
                   <p className="crm-display text-[17px] mb-1">Vamos começar?</p>
                   <p className="text-[12.5px] text-crm-dim leading-relaxed">
                     Adicione o primeiro lead em <strong className="text-crm-text">+ Novo contato</strong>. Quem mandar mensagem para o
-                    número de prospecção também aparece aqui sozinho, na coluna Novo.
+                    número de prospecção também aparece aqui sozinho, na coluna Novo lead.
                   </p>
                 </div>
                 <Mascot name="legacyHello" decorative className="h-28 w-auto shrink-0" />
@@ -780,7 +838,7 @@ function CrmAppInner({
               className="flex gap-3 overflow-x-auto pb-4 items-start"
               onDragOver={(e) => {
                 // Dragging a card near the board's edge scrolls it, so the
-                // columns off screen (Ganho, Perdido) can still take the drop.
+                // columns off screen (Venda fechada, Venda perdida) can still take the drop.
                 const el = boardRef.current;
                 if (!el) return;
                 const r = el.getBoundingClientRect();
@@ -788,7 +846,7 @@ function CrmAppInner({
                 else if (e.clientX < r.left + BOARD_EDGE) el.scrollLeft -= BOARD_SCROLL_STEP;
               }}
             >
-              {CRM_STAGES.map((stage) => {
+              {columns.map((stage) => {
                 const items = visible.filter((d) => d.stage === stage.id);
                 const total = items.reduce((sum, d) => sum + (dealWorth(d) ?? 0), 0);
                 return (
@@ -804,17 +862,25 @@ function CrmAppInner({
                       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropStage(null);
                     }}
                     onDrop={(e) => handleDrop(e, stage.id)}
-                    className={`w-[272px] shrink-0 rounded-2xl border transition-colors duration-150 ${
+                    className={`w-[248px] shrink-0 rounded-2xl border transition-colors duration-150 ${
                       dropStage === stage.id ? "border-crm-accent bg-crm-accent/[0.06]" : "border-transparent bg-crm-column"
                     }`}
                   >
                     <header className="px-3.5 pt-3 pb-2">
                       <div className="flex items-center justify-between">
                         <h2 className="flex items-center gap-2 text-[12.5px] font-semibold text-crm-text">
-                          <span className={`h-2 w-2 rounded-full ${STAGE_DOT[stage.id]}`} aria-hidden="true" />
+                          <span className={`h-2 w-2 rounded-full ${catalog.stageDot(stage.id)}`} aria-hidden="true" />
                           {stage.label}
+                          {stage.archived && <span className="text-[10.5px] font-normal text-crm-faint">(arquivada)</span>}
                         </h2>
-                        <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
+                        <span className="flex items-center gap-1.5">
+                          {!isClosedStage(stage.id) && (
+                            <span className="text-[10.5px] text-crm-faint tabular-nums" title={`Probabilidade de fechamento em ${stage.label}`}>
+                              {stage.probability}%
+                            </span>
+                          )}
+                          <span className="text-[11px] font-medium text-crm-dim tabular-nums rounded-full bg-crm-card border border-crm-line px-2 py-0.5">{items.length}</span>
+                        </span>
                       </div>
                       <p className="mt-0.5 pl-4 h-4 text-[11.5px] text-crm-dim tabular-nums" aria-label={`Total em ${stage.label}`}>
                         {total > 0 ? formatBRL(total) : ""}
@@ -827,7 +893,7 @@ function CrmAppInner({
                           key={d.id}
                           deal={d}
                           selected={selected?.contactId === d.contactId && (!selected.dealId || selected.dealId === d.id)}
-                          canDrag={caps.editPipeline}
+                          canDrag={caps.editPipeline && (caps.actOnAllLeads || !d.ownerId || d.ownerId === currentUserId)}
                           now={now}
                           onOpen={(deal) => openContact(deal.contactId, undefined, deal.id)}
                         />
@@ -932,17 +998,41 @@ function CrmAppInner({
           onNewTask={newTask}
           tasksVersion={tasksVersion}
           onOpenClient={openClient}
+          onOpenProposal={setProposalId}
+        />
+      )}
+
+      {proposalId && (
+        <CrmProposalPanel
+          proposalId={proposalId}
+          currentUserId={currentUserId}
+          caps={caps}
+          onClose={() => setProposalId(null)}
+          onChanged={() => {
+            setDataVersion((v) => v + 1);
+            void refresh();
+          }}
+          onOpenContact={(id) => {
+            setProposalId(null);
+            openContact(id, "negocio");
+          }}
+          onOpenClient={(id) => {
+            setProposalId(null);
+            openClient(id);
+          }}
+          team={team}
         />
       )}
 
       {lostPending && (
         <CrmLostDialog
           dealTitle={lostPending.title}
+          reopening={lostPending.reopening}
           onCancel={() => setLostPending(null)}
-          onConfirm={(lostReason, lostNote) => {
+          onConfirm={(fields) => {
             const { dealId } = lostPending;
             setLostPending(null);
-            void patchStage(dealId, { stage: "perdido", lostReason, lostNote });
+            void patchStage(dealId, { stage: "perdido", ...fields });
           }}
         />
       )}
@@ -988,6 +1078,12 @@ function CrmAppInner({
           setNewOpen(false);
           void refresh();
           openContact(id);
+        }}
+        canAuthorizeParallel={caps.assignAnyOwner}
+        onOpenExisting={(d) => {
+          setNewOpen(false);
+          if (d.kind === "company") setCompanyId(d.id);
+          else if (d.kind === "contact") openContact(d.id);
         }}
       />
     </div>

@@ -9,12 +9,12 @@ const nav = (p) => p.getByRole("navigation", { name: "Seções do CRM" });
 // ---- Administrador: grouped menu + Personalização ----
 const { page: a } = await login(browser, "admin", { errors });
 for (const g of ["Visão geral", "Comercial", "Operação", "Administração"]) ok(await nav(a).getByRole("group", { name: g }).isVisible(), `menu group ${g}`);
-ok((await nav(a).getByRole("group", { name: "Comercial" }).getByRole("button").count()) === 5, "Comercial has 5 sections");
+ok((await nav(a).getByRole("group", { name: "Comercial" }).getByRole("button").count()) === 6, "Comercial has 6 sections");
 await go(a, "Personalização");
 await a.getByRole("heading", { level: 1, name: "Personalização" }).waitFor();
 const origens = a.getByRole("list", { name: "Origens" });
 await origens.getByText("Tráfego pago", { exact: true }).waitFor();
-await a.getByLabel("Novo origem").fill("Google Meu Negócio");
+await a.getByLabel("Nova origem").fill("Google Meu Negócio");
 await a.getByRole("button", { name: "Adicionar" }).click();
 await origens.getByText("Google Meu Negócio", { exact: true }).waitFor();
 ok(true, "origem added");
@@ -49,8 +49,18 @@ const dialog = g.getByRole("dialog");
 const origemOptions = await dialog.locator("select").filter({ has: g.locator("option", { hasText: "Tráfego pago" }) }).first().locator("option").allTextContents();
 ok(origemOptions.at(-2) === "Google Meu Negócio" && origemOptions.at(-1) === "Outro" && !origemOptions.includes("Evento"), `new origem moved up one place (before Outro), archived one gone (${origemOptions.join(", ")})`);
 await g.keyboard.press("Escape");
-await go(g, "Contatos");
-await g.getByRole("button", { name: "Ana Ribeiro" }).first().click();
+// Under `next dev` the first compile of a route may reload the page (back to the Painel): try again once.
+for (let attempt = 0; ; attempt++) {
+  await go(g, "Contatos");
+  try {
+    await g.getByRole("button", { name: "Ana Ribeiro" }).first().click({ timeout: 20_000 });
+    break;
+  } catch (err) {
+    if (attempt > 0) throw err;
+    await g.reload();
+    await g.getByRole("region", { name: "Indicadores do período" }).waitFor();
+  }
+}
 const panel = g.getByRole("dialog", { name: "Contato Ana Ribeiro" });
 await panel.getByRole("tab", { name: "Detalhes" }).click();
 await panel.getByLabel("Adicionar etiqueta").selectOption({ label: "Cliente VIP" });

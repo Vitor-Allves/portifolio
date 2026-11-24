@@ -56,13 +56,21 @@ export async function crmSessionFor(userId: string, userName: string, staffRole:
   return { userId, userName, role: access, caps: effectiveCapabilities(access, overrides) };
 }
 
-/** For list queries: the user whose leads (plus unowned ones) a Comercial sees; null = everything. */
+/** For list queries: the user whose leads (plus unowned ones) this session sees; null = everything. */
 export function visibleTo(s: CrmSession): string | null {
   return s.caps.seeAllLeads ? null : s.userId;
 }
 
+/** For conversation lists (Conversas, unread inbox, response times): null = every lead's; else only their own and the unowned. */
+export function conversationsOf(s: CrmSession): string | null {
+  return s.caps.seeAllLeads && s.caps.seeOthersConversations ? null : s.userId;
+}
+
 const DENIED: Record<keyof CrmCapabilities, string> = {
   seeAllLeads: "Seu perfil vê apenas os seus leads.",
+  actOnAllLeads: "Este lead é de outra pessoa: você pode consultar, mas só o responsável mexe nele. Peça a transferência.",
+  seeOthersConversations: "A conversa deste lead é de outra pessoa.",
+  seeTeamProductivity: "Seu perfil vê só os próprios resultados.",
   editPipeline: "Seu perfil não pode alterar o funil nem as tarefas.",
   sendWhatsApp: "Seu perfil não envia mensagens pelo CRM.",
   assignAnyOwner: "Seu perfil não pode trocar o responsável.",
@@ -88,31 +96,66 @@ export function requireCap(s: CrmSession, cap: keyof CrmCapabilities): void {
   if (!s.caps[cap]) throw new CrmForbiddenError(DENIED[cap]);
 }
 
-function canSee(s: CrmSession, ownerId: string | null): boolean {
+/** View: every lead with "ver todos"; else their own and the unowned. */
+export function canSee(s: CrmSession, ownerId: string | null): boolean {
   return s.caps.seeAllLeads || ownerId === null || ownerId === s.userId;
 }
+/** Act (move, edit, write, send): someone else's lead only with "interagir em leads de outras pessoas". */
+export function canAct(s: CrmSession, ownerId: string | null): boolean {
+  return canSee(s, ownerId) && (s.caps.actOnAllLeads || ownerId === null || ownerId === s.userId);
+}
+/** The WhatsApp conversation of a lead: someone else's only with "ver as conversas de outras pessoas". */
+export function canSeeConversation(s: CrmSession, ownerId: string | null): boolean {
+  return canSee(s, ownerId) && (s.caps.seeOthersConversations || ownerId === null || ownerId === s.userId);
+}
 
-/** The contact's owner, after checking this session can see it (an invisible lead reads as not found). */
-export async function requireContact(s: CrmSession, contactId: string): Promise<{ ownerId: string | null }> {
+/**
+ * What a record check is for. "view" = reading it (lists, panels, history);
+ * "act" = changing anything on it. Every check defaults to "act", so a route
+ * that forgets to say stays closed rather than open.
+ */
+export type Access = "view" | "act";
+
+async function refuseAct(ownerId: string | null): Promise<never> {
+  const db = await getDb();
+  const { rows } = await db.query<{ name: string }>(`SELECT name FROM internal_users WHERE id = $1`, [ownerId]);
+  throw new CrmForbiddenError(
+    `Este lead é de ${rows[0]?.name ?? "outra pessoa"}: você pode consultar, mas só o responsável mexe nele. Para trabalhar nele, peça a transferência.`
+  );
+}
+
+/** The contact's owner, after checking this session may view it (an invisible lead reads as not found) and, for "act", work on it. */
+export async function requireContact(s: CrmSession, contactId: string, access: Access = "act"): Promise<{ ownerId: string | null }> {
   const db = await getDb();
   const { rows } = await db.query<{ owner_id: string | null }>(`SELECT owner_id FROM crm_contacts WHERE id = $1`, [contactId]);
   if (!rows[0] || !canSee(s, rows[0].owner_id)) throw new CrmNotFoundError("Contato não encontrado.");
+  if (access === "act" && !canAct(s, rows[0].owner_id)) await refuseAct(rows[0].owner_id);
   return { ownerId: rows[0].owner_id };
 }
 
-/** The opportunity's contact and owner, after checking this session can see its contact. */
-export async function requireDeal(s: CrmSession, id: string): Promise<{ contactId: string; ownerId: string | null }> {
+/**
+ * The opportunity's contact and owner, after checking this session may view
+ * its contact and, for "act", work on it: an opportunity belongs to its own
+ * owner (else its contact's).
+ */
+export async function requireDeal(s: CrmSession, id: string, access: Access = "act"): Promise<{ contactId: string; ownerId: string | null }> {
   const db = await getDb();
   const { rows } = await db.query<{ contact_id: string; owner_id: string | null; contact_owner: string | null }>(
     `SELECT x.contact_id, x.owner_id, c.owner_id AS contact_owner FROM crm_deals x JOIN crm_contacts c ON c.id = x.contact_id WHERE x.id = $1`,
     [id]
   );
   if (!rows[0] || !canSee(s, rows[0].contact_owner)) throw new CrmNotFoundError("Oportunidade não encontrada.");
+  const owner = rows[0].owner_id ?? rows[0].contact_owner;
+  if (access === "act" && !canAct(s, owner)) await refuseAct(owner);
   return { contactId: rows[0].contact_id, ownerId: rows[0].owner_id };
 }
 
-/** The task's contact (if any) and owner, after checking this session can see the record it is on (see TASK_RECORD_OWNER). */
-export async function requireTask(s: CrmSession, id: string): Promise<{ contactId: string | null; ownerId: string | null }> {
+/**
+ * The task's contact (if any) and owner, after checking this session may view
+ * the record it is on (see TASK_RECORD_OWNER) and, for "act", work on it: on
+ * a record they may work on, or a task given to them.
+ */
+export async function requireTask(s: CrmSession, id: string, access: Access = "act"): Promise<{ contactId: string | null; ownerId: string | null }> {
   const db = await getDb();
   const { rows } = await db.query<{ contact_id: string | null; owner_id: string | null; record_owner: string | null }>(
     `SELECT t.contact_id, t.owner_id, ${TASK_RECORD_OWNER} AS record_owner
@@ -121,30 +164,46 @@ export async function requireTask(s: CrmSession, id: string): Promise<{ contactI
     [id]
   );
   if (!rows[0] || !canSee(s, rows[0].record_owner)) throw new CrmNotFoundError("Tarefa não encontrada.");
+  if (access === "act" && rows[0].owner_id !== s.userId && !canAct(s, rows[0].record_owner)) await refuseAct(rows[0].record_owner);
   return { contactId: rows[0].contact_id, ownerId: rows[0].owner_id };
 }
 
 /**
  * A company a task can be put on: every profile sees every company, but a
- * task on one that is in someone else's carteira would be invisible to a
- * Comercial who created it — so it is refused, as with contacts.
+ * task on one that is in someone else's carteira is only for who may work on
+ * it.
  */
 export async function requireCompanyForTask(s: CrmSession, companyId: string): Promise<{ ownerId: string | null }> {
   const db = await getDb();
   const { rows } = await db.query<{ owner_id: string | null }>(`SELECT owner_id FROM crm_companies WHERE id = $1`, [companyId]);
   if (!rows[0]) throw new CrmNotFoundError("Empresa não encontrada.");
-  if (!canSee(s, rows[0].owner_id)) throw new CrmForbiddenError("Essa empresa está na carteira de outra pessoa.");
+  if (!canAct(s, rows[0].owner_id)) throw new CrmForbiddenError("Essa empresa está na carteira de outra pessoa.");
   return { ownerId: rows[0].owner_id };
 }
 
-/** WhatsApp media is only served to someone who can see the conversation it belongs to. */
+/** WhatsApp media is only served to someone who may read the conversation it belongs to. */
 export async function requireMedia(s: CrmSession, mediaId: string): Promise<void> {
   const db = await getDb();
   const { rows } = await db.query<{ owner_id: string | null }>(
     `SELECT c.owner_id FROM crm_messages m JOIN crm_contacts c ON c.id = m.contact_id WHERE m.media_id = $1 LIMIT 1`,
     [mediaId]
   );
-  if (!rows[0] || !canSee(s, rows[0].owner_id)) throw new CrmNotFoundError("Mídia não encontrada.");
+  if (!rows[0] || !canSeeConversation(s, rows[0].owner_id)) throw new CrmNotFoundError("Mídia não encontrada.");
+}
+
+/**
+ * Hides the last message preview of the leads whose conversation this session
+ * may not read (lists: contacts, board cards, company contacts). The rows keep
+ * everything else. `contactId` is read from the row (cards of opportunities
+ * carry it; contact cards use `id`).
+ */
+export async function maskConversations<T extends { lastMessagePreview: string | null; contactId?: string; id: string }>(s: CrmSession, rows: T[]): Promise<T[]> {
+  if (s.caps.seeOthersConversations || rows.length === 0) return rows;
+  const ids = [...new Set(rows.map((r) => r.contactId ?? r.id))];
+  const db = await getDb();
+  const { rows: owners } = await db.query<{ id: string; owner_id: string | null }>(`SELECT id, owner_id FROM crm_contacts WHERE id = ANY($1)`, [ids]);
+  const hidden = new Set(owners.filter((o) => !canSeeConversation(s, o.owner_id)).map((o) => o.id));
+  return rows.map((r) => (hidden.has(r.contactId ?? r.id) ? { ...r, lastMessagePreview: null } : r));
 }
 
 /** Throws unless this session may set the owner `next` on a record currently owned by `current`. `undefined` = not changing it. */

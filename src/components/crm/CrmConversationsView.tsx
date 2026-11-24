@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { CRM_STAGES, stageLabel, type CrmConversation, type CrmResponseStats, type CrmStage, type CrmTeamMember } from "@/lib/crm-types";
-import { CRM_FILTER, CRM_INPUT, CRM_LINK_BTN, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
+import { stageLabel, type CrmConversation, type CrmResponseStats, type CrmStage, type CrmTeamMember } from "@/lib/crm-types";
+import { CRM_FILTER, CRM_INPUT, CRM_LINK_BTN, CRM_SEGMENT_TRACK, crmSegment } from "./crm-styles";
 import { chatTime, initials, minutesLabel, windowLabel } from "./crm-format";
-import { TagChip, useCatalog } from "./crm-catalog-context";
+import { StageDot, TagChip, useCatalog } from "./crm-catalog-context";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
 import { Mascot } from "./crm-brand";
 
@@ -16,7 +16,7 @@ type Result = { key: string; rows: CrmConversation[]; hasMore: boolean; unreadTo
 export function StageTag({ stage }: { stage: CrmStage }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-crm-line bg-crm-sunken px-2 py-0.5 text-[10.5px] font-medium text-crm-dim whitespace-nowrap">
-      <span className={`h-1.5 w-1.5 rounded-full ${STAGE_DOT[stage]}`} aria-hidden="true" />
+      <StageDot stage={stage} className="h-1.5 w-1.5" />
       {stageLabel(stage)}
     </span>
   );
@@ -134,7 +134,7 @@ export default function CrmConversationsView({
 }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const { tagGroups } = useCatalog();
+  const { tagGroups, stages } = useCatalog();
   const [show, setShow] = useState<"all" | "unread" | "waiting">("all");
   const unreadOnly = show === "unread";
   const [stage, setStage] = useState("");
@@ -278,7 +278,7 @@ export default function CrmConversationsView({
               </div>
               <select value={stage} onChange={(e) => changeFilter(() => setStage(e.target.value))} aria-label="Filtrar por etapa" className={`${CRM_FILTER} !text-[12px]`}>
                 <option value="">Todas as etapas</option>
-                {CRM_STAGES.map((s) => (
+                {stages().map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label}
                   </option>

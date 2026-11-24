@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CRM_CONSENT,
-  CRM_STAGES,
+  CRM_POTENTIALS,
   formatBRL,
   formatPhone,
   isClosedStage,
@@ -15,13 +15,16 @@ import {
   type CrmTeamMember,
   type CrmTemplate,
 } from "@/lib/crm-types";
-import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, STAGE_DOT, crmSegment } from "./crm-styles";
+import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, CRM_POPOVER, CRM_SEGMENT_TRACK, crmSegment } from "./crm-styles";
 import { TASK_STATE_TONE, dateTime, initials, shortDate, taskDueLabel, taskState, todaySp, windowLabel } from "./crm-format";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
 import CrmDealsTasksTab from "./CrmDealsTasksTab";
 import type { CrmCapabilities } from "@/lib/crm-permissions";
 import CrmLostDialog from "./CrmLostDialog";
+import { CrmTransferBox } from "./CrmTransfers";
+import CrmFiles from "./CrmFiles";
+import { WON_RESULTS, closeGroupLabel } from "@/lib/crm-catalog";
 import CrmStageDialog, { needsStageDialog } from "./CrmStageDialog";
 import { ServiceSelect, TemperatureChip, TemperatureSelect, brDay } from "./crm-fields";
 import CrmTagsEditor from "./CrmTagsEditor";
@@ -29,6 +32,8 @@ import { SegmentSelect, TagChip, TagChips, useCatalog } from "./crm-catalog-cont
 import type { TaskDraft } from "./CrmTaskDialog";
 import { describeEvent } from "./crm-event-text";
 import CrmAnalysisDialog from "./CrmAnalysisDialog";
+import CrmScheduledMessages, { defaultScheduleValue } from "./CrmScheduledMessages";
+import CrmLgpdBox from "./CrmLgpdBox";
 
 type CrmContactPanelProps = {
   contactId: string;
@@ -50,6 +55,8 @@ type CrmContactPanelProps = {
   embedded?: boolean;
   /** What the viewer's CRM profile allows (the server enforces it too). */
   caps: CrmCapabilities;
+  /** Opens a proposal (Propostas). */
+  onOpenProposal?: (id: string) => void;
   /** Opens a task in the full task form (description, priority, history...). */
   onOpenTask?: (taskId: string) => void;
   /** Opens the task form for a new task (the conversation's "+ Tarefa"). */
@@ -77,6 +84,9 @@ type ContactForm = {
   serviceInterest: string;
   returnAt: string;
   isDecisionMaker: boolean;
+  altPhone: string;
+  potential: string;
+  need: string;
 };
 
 const STATUS_LABEL: Record<string, string> = { sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou" };
@@ -215,7 +225,15 @@ function QuickReplies({
   );
 }
 
-function TemplatePicker({ templatesConfigured, onSend }: { templatesConfigured: boolean; onSend: (t: CrmTemplate, params: string[]) => Promise<void> }) {
+function TemplatePicker({
+  templatesConfigured,
+  onSend,
+  actionLabel = "Enviar modelo",
+}: {
+  templatesConfigured: boolean;
+  onSend: (t: CrmTemplate, params: string[]) => Promise<void>;
+  actionLabel?: string;
+}) {
   const [templates, setTemplates] = useState<CrmTemplate[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [chosen, setChosen] = useState("");
@@ -289,7 +307,7 @@ function TemplatePicker({ templatesConfigured, onSend }: { templatesConfigured: 
         }}
         className={CRM_BTN_PRIMARY}
       >
-        {sending ? "Enviando..." : "Enviar modelo"}
+        {sending ? "Enviando..." : actionLabel}
       </button>
     </div>
   );
@@ -309,26 +327,35 @@ export default function CrmContactPanel({
   initialTab = "conversa",
   currentUserId,
   embedded = false,
-  caps,
+  caps: baseCaps,
   onOpenTask,
   onNewTask,
   tasksVersion = 0,
   onOpenClient,
+  onOpenProposal,
 }: CrmContactPanelProps) {
-  const { label, options, tag: tagById, tagGroups } = useCatalog();
+  const { label, options, tag: tagById, tagGroups, stages, stageDot } = useCatalog();
   const [newDealFromChat, setNewDealFromChat] = useState(false);
   const [busyAttendance, setBusyAttendance] = useState(false);
   const [detail, setDetail] = useState<CrmContactDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Evolução v1.0: someone else's lead is read-only for who can't act on other people's leads (a Comercial).
+  const mayAct = !detail || baseCaps.actOnAllLeads || !detail.ownerId || detail.ownerId === currentUserId;
+  const caps: CrmCapabilities = mayAct
+    ? baseCaps
+    : { ...baseCaps, editPipeline: false, sendWhatsApp: false, editContacts: false, archiveContacts: false, editClients: false, useAi: false };
   const [actionError, setActionError] = useState<string | null>(null);
   const [tab, setTab] = useState<"conversa" | "negocio" | "detalhes">(initialTab);
   const [dealPick, setDealPick] = useState<string | null>(initialDealId);
   const [lostPending, setLostPending] = useState<string | null>(null);
   const [analysisOpen, setAnalysisOpen] = useState(false);
-  const [stagePending, setStagePending] = useState<"proposta" | "ganho" | null>(null);
+  const [stagePending, setStagePending] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  /** Mensagem agendada: null = send now; else the datetime-local value to send at. */
+  const [scheduleAt, setScheduleAt] = useState<string | null>(null);
+  const [scheduledVersion, setScheduledVersion] = useState(0);
   const [note, setNote] = useState("");
   const [form, setForm] = useState<ContactForm | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -399,6 +426,7 @@ export default function CrmContactPanel({
   }
 
   async function send(body: Record<string, unknown>) {
+    if (scheduleAt !== null) return schedule(body);
     setSending(true);
     // Someone else attending: the button says "Assumir e responder", so sending takes the conversation over.
     const res = await fetch(`/api/crm/contacts/${contactId}/messages/`, {
@@ -414,6 +442,31 @@ export default function CrmContactPanel({
     setActionError(null);
     await load();
     onChanged();
+    return true;
+  }
+
+  /** Agendar: the same message, to go out at the chosen time (the server checks every rule again then). */
+  async function schedule(body: Record<string, unknown>) {
+    const at = scheduleAt ? new Date(scheduleAt) : null;
+    if (!at || Number.isNaN(at.getTime())) {
+      setActionError("Escolha a data e a hora do envio.");
+      return false;
+    }
+    setSending(true);
+    const res = await fetch(`/api/crm/contacts/${contactId}/scheduled-messages/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, sendAt: at.toISOString() }),
+    });
+    setSending(false);
+    if (!res.ok) {
+      setActionError(await errorFrom(res, "Não foi possível agendar."));
+      return false;
+    }
+    setActionError(null);
+    setScheduleAt(null);
+    setScheduledVersion((v) => v + 1);
+    await load();
     return true;
   }
 
@@ -484,6 +537,9 @@ export default function CrmContactPanel({
           serviceInterest: detail.serviceInterest ?? "",
           returnAt: detail.returnAt ?? "",
           isDecisionMaker: detail.isDecisionMaker,
+          altPhone: detail.altPhone ?? "",
+          potential: detail.potential ?? "",
+          need: detail.need ?? "",
         }
       : null);
   const edit = (changes: Partial<ContactForm>) => fields && setForm({ ...fields, ...changes });
@@ -576,6 +632,7 @@ export default function CrmContactPanel({
                     )}
                   </div>
                 </div>
+                {mayAct && (
                 <button
                   type="button"
                   onClick={() => setAnalysisOpen(true)}
@@ -585,15 +642,27 @@ export default function CrmContactPanel({
                 >
                   Resumo
                 </button>
+                )}
                 <button type="button" onClick={onClose} aria-label="Fechar painel" className="text-crm-dim hover:text-crm-text text-[20px] leading-none px-1">
                   ×
                 </button>
               </div>
               {analysisOpen && <CrmAnalysisDialog request={{ kind: "lead", contactId }} onClose={() => setAnalysisOpen(false)} />}
+              <CrmTransferBox
+                detail={detail}
+                currentUserId={currentUserId}
+                caps={baseCaps}
+                mayAct={mayAct}
+                team={team}
+                onChanged={() => {
+                  void load();
+                  onChanged();
+                }}
+              />
               {deal ? (
                 <div className="rounded-xl border border-crm-line bg-crm-sunken p-2.5 space-y-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${STAGE_DOT[deal.stage]}`} aria-hidden="true" />
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${stageDot(deal.stage)}`} aria-hidden="true" />
                     {detail.deals.length > 1 ? (
                       <select
                         value={deal.id}
@@ -630,14 +699,14 @@ export default function CrmContactPanel({
                         onChange={async (e) => {
                           const stage = e.target.value;
                           if (stage === "perdido") return setLostPending(deal.id);
-                          if ((stage === "proposta" || stage === "ganho") && needsStageDialog(deal, stage)) return setStagePending(stage);
+                          if (needsStageDialog(deal, stage)) return setStagePending(stage);
                           await patchDeal({ stage });
                         }}
                         aria-label="Etapa da oportunidade"
                         disabled={!caps.editPipeline}
                         className={`${CRM_INPUT} mt-1 !py-1.5 disabled:opacity-70`}
                       >
-                        {CRM_STAGES.map((s) => (
+                        {stages(deal.stage).map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.label}
                           </option>
@@ -662,16 +731,20 @@ export default function CrmContactPanel({
                       </select>
                     </label>
                   </div>
-                  {deal.stage === "ganho" && deal.wonReason && (
+                  {deal.stage === "ganho" && (
                     <p className="text-[11.5px] text-crm-green">
-                      Ganha: {label("won_reason", deal.wonReason)}
+                      {WON_RESULTS.find((r) => r.id === deal.wonResult)?.label ?? "Venda realizada"}
+                      {deal.wonReason ? `: ${label("won_reason", deal.wonReason)}` : ""}
                       {deal.wonNote ? ` · ${deal.wonNote}` : ""}
+                      {deal.closedByName ? <span className="text-crm-faint"> · encerrada por {deal.closedByName}</span> : null}
                     </p>
                   )}
                   {deal.stage === "perdido" && deal.lostReason && (
-                    <p className="text-[11.5px] text-crm-red">
-                      Perdida: {label("lost_reason", deal.lostReason)}
+                    <p className={`text-[11.5px] ${deal.closeGroup === "futuro" ? "text-crm-amber" : "text-crm-red"}`}>
+                      {closeGroupLabel(deal.closeGroup)}: {label("lost_reason", deal.lostReason)}
+                      {deal.closeGroup === "futuro" && deal.returnOn ? ` · retomar em ${brDay(deal.returnOn)}` : ""}
                       {deal.lostNote ? ` · ${deal.lostNote}` : ""}
+                      {deal.closedByName ? <span className="text-crm-faint"> · encerrada por {deal.closedByName}</span> : null}
                     </p>
                   )}
                 </div>
@@ -701,10 +774,11 @@ export default function CrmContactPanel({
               {lostPending && deal && (
                 <CrmLostDialog
                   dealTitle={deal.title}
+                  reopening={deal.stage === "ganho"}
                   onCancel={() => setLostPending(null)}
-                  onConfirm={async (lostReason, lostNote) => {
+                  onConfirm={async (fields) => {
                     setLostPending(null);
-                    await patchDeal({ stage: "perdido", lostReason, lostNote });
+                    await patchDeal({ stage: "perdido", ...fields });
                   }}
                 />
               )}
@@ -760,12 +834,21 @@ export default function CrmContactPanel({
                 now={now}
                 onOpenTask={onOpenTask}
                 startNewDeal={newDealFromChat}
+                canAuthorizeParallel={caps.assignAnyOwner}
+                onOpenProposal={onOpenProposal}
                 clients={onOpenClient && caps.viewClients ? { canCreate: caps.editClients, onOpen: onOpenClient } : undefined}
                 onReload={async () => {
                   await load();
                   onChanged();
                 }}
               />
+            ) : tab === "conversa" && detail.conversationHidden ? (
+              <section aria-label="Conversa" className="flex-1 flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+                <Mascot name="legacyDoubt" decorative className="h-24 w-auto" />
+                <p className="text-[13px] text-crm-dim max-w-sm">
+                  A conversa de WhatsApp deste lead é de {detail.ownerName ?? "outra pessoa"} e fica fechada para você. Os dados, as oportunidades e o histórico comercial estão nas outras abas.
+                </p>
+              </section>
             ) : tab === "conversa" ? (
               <>
                 <section aria-label="Atendimento" className="border-b border-crm-line px-5 py-2 space-y-1.5 text-[12px]">
@@ -875,7 +958,42 @@ export default function CrmContactPanel({
                     </p>
                   ) : !whatsappConfigured ? (
                     <p className="text-[12px] text-crm-dim">O WhatsApp ainda não está conectado — enviar mensagens começa quando o número for ligado ao CRM.</p>
-                  ) : windowOpen && !showTemplates ? (
+                  ) : null}
+                  {caps.sendWhatsApp && detail.phone && whatsappConfigured && (
+                    <>
+                      <CrmScheduledMessages
+                        contactId={detail.id}
+                        refreshKey={`${scheduledVersion}:${detail.messages.length}:${detail.messages.at(-1)?.status ?? ""}`}
+                        canCancel={caps.sendWhatsApp}
+                        onChanged={() => void load()}
+                      />
+                      {scheduleAt !== null && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-crm-line bg-crm-sunken px-3 py-2">
+                          <label htmlFor="crm-schedule-at" className="text-[12px] font-medium text-crm-text">
+                            Enviar em
+                          </label>
+                          <input
+                            id="crm-schedule-at"
+                            type="datetime-local"
+                            value={scheduleAt}
+                            onChange={(e) => setScheduleAt(e.target.value)}
+                            aria-label="Data e hora do envio"
+                            className={`${CRM_INPUT} w-auto max-w-full`}
+                          />
+                          <button type="button" onClick={() => setScheduleAt(null)} className="text-[12px] text-crm-dim hover:text-crm-text">
+                            Não agendar
+                          </button>
+                          {windowOpen && !showTemplates && scheduleAt && detail.lastInboundAt && Date.parse(scheduleAt) > Date.parse(detail.lastInboundAt) + 86_400_000 && (
+                            <p className="basis-full text-[11.5px] text-crm-amber">
+                              A janela de 24h fecha em {dateTime(new Date(Date.parse(detail.lastInboundAt) + 86_400_000).toISOString())}: se o contato não
+                              escrever de novo até lá, a mensagem livre não sai. Para depois disso, agende um modelo aprovado.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {!caps.sendWhatsApp || !detail.phone || !whatsappConfigured ? null : windowOpen && !showTemplates ? (
                     <form onSubmit={sendText} className="space-y-2">
                       <textarea
                         value={text}
@@ -902,12 +1020,17 @@ export default function CrmContactPanel({
                         >
                           Enviar modelo
                         </button>
+                        {scheduleAt === null && !detail.optedOutAt && (
+                          <button type="button" onClick={() => setScheduleAt(defaultScheduleValue())} className={CRM_BTN_OUTLINE}>
+                            Agendar
+                          </button>
+                        )}
                         <button
                           type="submit"
                           disabled={sending || !text.trim()}
                           className={`ml-auto ${CRM_BTN_PRIMARY}`}
                         >
-                          {sending ? "Enviando..." : attendedByOther ? "Assumir e responder" : "Enviar"}
+                          {scheduleAt !== null ? (sending ? "Agendando..." : "Agendar envio") : sending ? "Enviando..." : attendedByOther ? "Assumir e responder" : "Enviar"}
                         </button>
                       </div>
                     </form>
@@ -920,10 +1043,16 @@ export default function CrmContactPanel({
                       )}
                       <TemplatePicker
                         templatesConfigured={templatesConfigured}
+                        actionLabel={scheduleAt !== null ? "Agendar modelo" : "Enviar modelo"}
                         onSend={async (t, params) => {
                           if (await send({ kind: "template", name: t.name, language: t.language, params })) setShowTemplates(false);
                         }}
                       />
+                      {scheduleAt === null && !detail.optedOutAt && (
+                        <button type="button" onClick={() => setScheduleAt(defaultScheduleValue())} className="text-[12px] text-crm-dim hover:text-crm-text">
+                          Agendar o envio do modelo
+                        </button>
+                      )}
                       {windowOpen && (
                         <button type="button" onClick={() => setShowTemplates(false)} className="text-[12px] text-crm-dim hover:text-crm-text">
                           ← Voltar para mensagem livre
@@ -935,6 +1064,7 @@ export default function CrmContactPanel({
               </>
             ) : (
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+                <CrmFiles target={{ contactId: detail.id }} canEdit={caps.editContacts} />
                 <CrmTagsEditor
                   links={detail.tagLinks}
                   endpoint={`/api/crm/contacts/${detail.id}/tags/`}
@@ -945,7 +1075,8 @@ export default function CrmContactPanel({
                   }}
                 />
                 {fields && (
-                  <section className="space-y-2">
+                  // Without "editar contatos" (or on someone else's lead, for a Comercial) the data is shown, not editable.
+                  <fieldset disabled={!caps.editContacts} aria-label="Dados do contato" className="space-y-2 min-w-0 border-0 p-0 m-0 disabled:[&_input]:opacity-75 disabled:[&_select]:opacity-75">
                     <h3 className={CRM_LABEL}>Dados do contato</h3>
                     <input value={fields.name} onChange={(e) => edit({ name: e.target.value })} aria-label="Nome" placeholder="Nome" className={CRM_INPUT} />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -984,7 +1115,24 @@ export default function CrmContactPanel({
                         />
                         Decisor na empresa
                       </label>
+                      <input value={fields.altPhone} onChange={(e) => edit({ altPhone: e.target.value })} inputMode="tel" aria-label="Outro telefone" placeholder="Outro telefone (fixo, recado)" className={CRM_INPUT} />
+                      <select value={fields.potential} onChange={(e) => edit({ potential: e.target.value })} aria-label="Potencial comercial" className={CRM_INPUT}>
+                        <option value="">Potencial comercial</option>
+                        {CRM_POTENTIALS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            Potencial {p.label.toLowerCase()}
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                    <textarea
+                      value={fields.need}
+                      onChange={(e) => edit({ need: e.target.value })}
+                      rows={2}
+                      aria-label="Necessidade identificada"
+                      placeholder="Necessidade identificada (o que o lead precisa resolver)"
+                      className={`${CRM_INPUT} resize-y`}
+                    />
                     {detail.companyId && <p className="text-[11.5px] text-crm-faint">Segmento e cidade ficam na empresa e valem para todos os contatos dela.</p>}
                     <button
                       type="button"
@@ -996,11 +1144,11 @@ export default function CrmContactPanel({
                     >
                       Salvar dados
                     </button>
-                  </section>
+                  </fieldset>
                 )}
 
                 {fields && (
-                  <section className="space-y-2">
+                  <fieldset disabled={!caps.editContacts} aria-label="Consentimento e situação" className="space-y-2 min-w-0 border-0 p-0 m-0">
                     <h3 className={CRM_LABEL}>Consentimento e situação</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <select
@@ -1057,7 +1205,18 @@ export default function CrmContactPanel({
                         </button>
                       )}
                     </div>
-                  </section>
+                  </fieldset>
+                )}
+
+                {caps.manageTeam && (
+                  <CrmLgpdBox
+                    contactId={detail.id}
+                    anonymizedAt={detail.anonymizedAt}
+                    onAnonymized={() => {
+                      void load();
+                      onChanged();
+                    }}
+                  />
                 )}
 
                 {detail.adReferral && (

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { visibleTo } from "@/lib/crm-access";
+import { conversationsOf } from "@/lib/crm-access";
 import { listConversations } from "@/lib/crm";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
         stage: get("stage"),
         unread: p.get("unread") === "1",
         waiting: p.get("waiting") === "1",
-        visibleTo: visibleTo(actor),
+        visibleTo: conversationsOf(actor),
       },
       { before: get("before"), limit: Number(p.get("limit")) || undefined }
     );

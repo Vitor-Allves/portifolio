@@ -8,7 +8,7 @@ import {
   sessionMaxAgeSeconds,
 } from "@/lib/analise-session-node";
 import { getDb } from "@/lib/db";
-import { verifyTotpCode } from "@/lib/totp";
+import { matchTotpStep } from "@/lib/totp";
 import { confirmTotpEnrollment } from "@/lib/internal-users";
 import { writeAudit } from "@/lib/audit-log";
 
@@ -51,11 +51,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: EXPIRED_ERROR }, { status: 401 });
   }
 
-  if (!verifyTotpCode(row.totp_secret_enc, code)) {
+  const step = matchTotpStep(row.totp_secret_enc, code);
+  if (step === null) {
     return NextResponse.json({ error: "Código inválido." }, { status: 401 });
   }
 
   await confirmTotpEnrollment(row.id);
+  // The code that confirmed the setup can't log in again (see login/totp).
+  await db.query(`UPDATE internal_users SET totp_last_step = $2 WHERE id = $1`, [row.id, step]);
   await writeAudit({
     actorUserId: row.id,
     actorLabel: row.name,

@@ -22,8 +22,10 @@ import {
   type CrmDealCard,
   type CrmStage,
 } from "./crm-types";
-import { CrmInputError, addEvent, cleanText, iso, parseTemperature, type CrmActor } from "./crm-core";
-import { optionLabel, requireOptionId } from "./crm-options";
+import { CrmDuplicateError, CrmInputError, addEvent, cleanText, duplicateText, iso, parseTemperature, type CrmActor, type CrmDuplicateInfo } from "./crm-core";
+import { loadStageLabels, optionLabel, requireOptionId } from "./crm-options";
+import { createTaskTx } from "./crm-tasks";
+import { isLostCloseGroup, isWonResult, type LostCloseGroup } from "./crm-catalog";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -50,6 +52,12 @@ type DealRow = {
   won_reason: string | null;
   won_note: string | null;
   client_id: string | null;
+  probability: number | null;
+  stage_probability: string | number | null;
+  won_result: string | null;
+  close_group: string | null;
+  closed_by_name: string | null;
+  return_on: string | null;
 };
 
 // Origin and temperature fall back to the contact's when the opportunity has none of its own.
@@ -57,7 +65,9 @@ const DEAL_COLS = `d.id, d.contact_id, d.title, d.value_cents, d.stage, d.owner_
   d.lost_reason, d.lost_note, d.stage_changed_at, d.closed_at, d.created_at,
   d.service, d.negotiated_cents, d.source AS own_source, d.temperature AS own_temperature,
   cx.source AS contact_source, cx.temperature AS contact_temperature, d.won_reason, d.won_note,
-  (SELECT k.client_id FROM crm_contracts k WHERE k.deal_id = d.id) AS client_id`;
+  (SELECT k.client_id FROM crm_contracts k WHERE k.deal_id = d.id) AS client_id,
+  d.probability, (SELECT so.meta->>'probability' FROM crm_options so WHERE so.kind = 'stage' AND so.id = d.stage) AS stage_probability,
+  d.won_result, d.close_group, d.closed_by_name, d.return_on::text AS return_on`;
 const DEAL_FROM = `crm_deals d JOIN crm_contacts cx ON cx.id = d.contact_id LEFT JOIN internal_users u ON u.id = d.owner_id`;
 
 const cents = (v: string | number | null) => (v === null ? null : Number(v));
@@ -69,7 +79,7 @@ function mapDeal(r: DealRow): CrmDeal {
     title: r.title,
     // BIGINT arrives as a string from pg
     valueCents: r.value_cents === null ? null : Number(r.value_cents),
-    stage: isCrmStage(r.stage) ? r.stage : "novo",
+    stage: r.stage || "novo",
     ownerId: r.owner_id,
     ownerName: r.owner_name,
     expectedCloseAt: iso(r.expected_close_at),
@@ -85,6 +95,12 @@ function mapDeal(r: DealRow): CrmDeal {
     closedAt: iso(r.closed_at),
     createdAt: iso(r.created_at)!,
     clientId: r.client_id ?? null,
+    probability: r.stage === "ganho" ? 100 : r.stage === "perdido" ? 0 : (r.probability ?? (r.stage_probability === null ? 10 : Number(r.stage_probability))),
+    probabilityOwn: r.probability !== null,
+    closeGroup: r.stage === "ganho" ? "positivo" : r.stage === "perdido" ? ((isLostCloseGroup(r.close_group) ? r.close_group : "negativo") as LostCloseGroup) : null,
+    wonResult: r.stage === "ganho" && isWonResult(r.won_result) ? r.won_result : null,
+    closedByName: r.closed_by_name,
+    returnOn: r.return_on,
   };
 }
 
@@ -239,7 +255,46 @@ export type NewDealInput = {
   temperature?: unknown;
   wonReason?: unknown;
   wonNote?: unknown;
+  wonResult?: unknown;
+  probability?: unknown;
+  /** A person opening it (not the system): refuse a second independent negotiation with the same contact or company. */
+  checkParallel?: boolean;
+  /** …unless a Gestor authorizes it (the route sets this only for who may reassign leads). */
+  allowParallel?: boolean;
 };
+
+/**
+ * Evolução v1.0 (item 2.2): an open opportunity someone else (another owner)
+ * already has with this contact or with another contact of its company.
+ */
+export async function parallelNegotiation(
+  client: Pick<PoolClient, "query">,
+  contactId: string,
+  ownerId: string | null
+): Promise<CrmDuplicateInfo | null> {
+  const { rows } = await client.query<{ id: string; title: string; owner_name: string | null; stage: string; same: boolean }>(
+    `SELECT d.id, d.title, u.name AS owner_name, d.stage, c2.id = c.id AS same
+     FROM crm_contacts c
+     JOIN crm_contacts c2 ON c2.id = c.id OR (c.company_id IS NOT NULL AND c2.company_id = c.company_id)
+     JOIN crm_deals d ON d.contact_id = c2.id AND d.stage NOT IN ('ganho', 'perdido')
+     LEFT JOIN internal_users u ON u.id = d.owner_id
+     WHERE c.id = $1 AND c2.archived_at IS NULL AND d.owner_id IS NOT NULL AND d.owner_id IS DISTINCT FROM $2
+     ORDER BY (c2.id = c.id) DESC, d.updated_at DESC LIMIT 1`,
+    [contactId, ownerId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  await loadStageLabels(client);
+  return { kind: "deal", id: r.id, name: r.title, by: r.same ? "contact" : "company", ownerName: r.owner_name, situation: stageLabel(r.stage) };
+}
+
+/** Probabilidade de fechamento typed on a form: blank = follow the stage's. */
+function parseProbability(v: unknown): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = typeof v === "string" ? Number(v.replace("%", "").trim()) : v;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 100) throw new CrmInputError("Probabilidade inválida: use um número de 0 a 100.");
+  return n;
+}
 
 /** Creates an opportunity inside a caller's transaction; returns its id. */
 export async function createDealTx(client: PoolClient, input: NewDealInput, actor: CrmActor): Promise<string> {
@@ -255,11 +310,24 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
   let stage: CrmStage = "novo";
   if (input.stage !== undefined && input.stage !== null && input.stage !== "") {
     if (!isCrmStage(input.stage)) throw new CrmInputError("Etapa inválida.");
-    stage = input.stage;
+    stage = await requireOptionId(client, "stage", input.stage);
+    await loadStageLabels(client);
   }
   if (stage === "perdido") throw new CrmInputError("Uma oportunidade nova não pode começar como perdida.");
+  const probability = parseProbability(input.probability);
+  let wonResult: string | null = null;
+  if (stage === "ganho") {
+    if (!isWonResult(input.wonResult)) throw new CrmInputError("Informe o resultado da venda (venda realizada ou proposta aprovada).");
+    if (!cleanText(input.wonNote, 500)) throw new CrmInputError("Escreva uma observação sobre o fechamento.");
+    wonResult = input.wonResult;
+  }
   const ownerId = typeof input.ownerId === "string" ? input.ownerId || null : contact.owner_id;
   await ownerName(client, ownerId);
+  let parallel: CrmDuplicateInfo | null = null;
+  if (input.checkParallel) {
+    parallel = await parallelNegotiation(client, contactId, ownerId);
+    if (parallel && !input.allowParallel) throw new CrmDuplicateError(duplicateText(parallel), parallel);
+  }
   const valueCents = parseValue(input.value);
   const negotiatedCents = parseValue(input.negotiatedValue, "Valor negociado");
   // Serviço starts as the contact's interest; origem as the contact's origin.
@@ -273,8 +341,9 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
   const id = randomUUID();
   await client.query(
     `INSERT INTO crm_deals (id, contact_id, title, value_cents, stage, owner_id, expected_close_at, closed_at, created_by,
-                            service, negotiated_cents, source, temperature, won_reason, won_note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+                            service, negotiated_cents, source, temperature, won_reason, won_note,
+                            probability, won_result, close_group, closed_by, closed_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
     [
       id,
       contactId,
@@ -291,9 +360,20 @@ export async function createDealTx(client: PoolClient, input: NewDealInput, acto
       temperature,
       wonReason,
       stage === "ganho" ? cleanText(input.wonNote, 500) : null,
+      probability,
+      wonResult,
+      stage === "ganho" ? "positivo" : null,
+      stage === "ganho" ? actor?.userId ?? null : null,
+      stage === "ganho" ? actor?.userName ?? null : null,
     ]
   );
-  await addEvent(client, contactId, "deal", { action: "created", dealId: id, title, valueCents, stage }, actor);
+  await addEvent(
+    client,
+    contactId,
+    "deal",
+    { action: "created", dealId: id, title, valueCents, stage, ...(parallel ? { parallelTo: parallel.id, parallelTitle: parallel.name, authorizedBy: actor?.userName ?? null } : {}) },
+    actor
+  );
   if (stage !== "novo") await afterDealStage(client, id, stage);
   await syncContactStage(client, contactId);
   return id;
@@ -317,11 +397,18 @@ export type DealPatch = {
   temperature?: unknown;
   wonReason?: unknown;
   wonNote?: unknown;
+  /** Tabulação positiva: venda_realizada | proposta_aprovada. */
+  wonResult?: unknown;
+  /** Oportunidade futura: when to pick it up again ("YYYY-MM-DD"). */
+  returnOn?: unknown;
+  /** Reabrir (or change the result of) a closed opportunity needs a justification. */
+  reopenReason?: unknown;
+  probability?: unknown;
 };
 
 /**
- * Applies whatever is present. Moving to "Perdido" requires a loss reason;
- * "Proposta enviada" and "Ganho" require the fields in STAGE_REQUIREMENTS
+ * Applies whatever is present. Closing (Venda fechada / Venda perdida) requires the tabulação;
+ * stages require the fields in STAGE_REQUIREMENTS
  * (moves the system makes on its own are exempt — they only go to "Em
  * conversa"); a field an opportunity's stage requires can't be emptied.
  * Entering won/lost stamps closed_at and reopening clears it (and the
@@ -333,7 +420,8 @@ export async function updateDealTx(
   id: string,
   patch: DealPatch,
   actor: CrmActor,
-  opts: { auto?: boolean } = {}
+  /** auto = a move the system makes itself; legacy = the old contact-level stage call (no tabulação form). */
+  opts: { auto?: boolean; legacy?: boolean } = {}
 ): Promise<{ contactId: string; stage: CrmStage; title: string } | null> {
   const { rows } = await client.query<DealRow>(`SELECT ${DEAL_COLS} FROM ${DEAL_FROM} WHERE d.id = $1 FOR UPDATE OF d`, [id]);
   const current = rows[0];
@@ -404,6 +492,13 @@ export async function updateDealTx(
     if ((d?.toISOString() ?? null) !== before) changes.push({ field: "Previsão de fechamento", from: before, to: d?.toISOString() ?? null });
     set("expected_close_at", d);
   }
+  if (patch.probability !== undefined) {
+    const p = parseProbability(patch.probability);
+    if (p !== current.probability) {
+      changes.push({ field: "Probabilidade", from: current.probability === null ? null : `${current.probability}%`, to: p === null ? "da etapa" : `${p}%` });
+      set("probability", p);
+    }
+  }
   if (patch.ownerId !== undefined) {
     const ownerId = typeof patch.ownerId === "string" && patch.ownerId ? patch.ownerId : null;
     if (ownerId !== current.owner_id) {
@@ -413,32 +508,77 @@ export async function updateDealTx(
     }
   }
 
-  let stage = (isCrmStage(current.stage) ? current.stage : "novo") as CrmStage;
+  let stage = (current.stage || "novo") as CrmStage;
+  const human = !opts.auto && !opts.legacy;
+  let reopenReason: string | null = null;
+  // Tabulação (evolução v1.0, item 5): what is recorded when an opportunity is closed.
+  const tab: { group: string | null; returnOn: string | null; wonResult: string | null } = { group: null, returnOn: null, wonResult: null };
   if (patch.stage !== undefined && patch.stage !== current.stage) {
     if (!isCrmStage(patch.stage)) throw new CrmInputError("Etapa inválida.");
-    stage = patch.stage;
+    stage = await requireOptionId(client, "stage", patch.stage, current.stage);
+    await loadStageLabels(client);
+    // Reopening (or changing the result of) a closed opportunity needs a reason, kept in the history.
+    if (isClosedStage(current.stage) && human) {
+      reopenReason = cleanText(patch.reopenReason, 500);
+      if (!reopenReason) throw new CrmInputError("Para reabrir uma oportunidade encerrada, escreva a justificativa.");
+    }
     set("stage", stage);
     sets.push("stage_changed_at = now()");
-    if (isClosedStage(stage) && !isClosedStage(current.stage)) sets.push("closed_at = now()");
-    if (!isClosedStage(stage)) sets.push("closed_at = NULL");
+    if (isClosedStage(stage)) {
+      sets.push("closed_at = now()");
+      set("closed_by", actor?.userId ?? null);
+      set("closed_by_name", actor?.userName ?? null);
+    }
+    if (!isClosedStage(stage)) {
+      sets.push("closed_at = NULL");
+      for (const c of ["close_group", "closed_by", "closed_by_name", "return_on", "won_result"]) set(c, null);
+    }
   }
-  // Loss reason: required to be lost; cleared when the opportunity is reopened.
+  const closing = stage !== current.stage && isClosedStage(stage);
+  // Encerrar sem venda: reason (with its group), observation and — for an oportunidade futura — the date to pick it up again.
   if (stage === "perdido") {
     const reason = patch.lostReason !== undefined ? patch.lostReason : current.lost_reason;
-    if (typeof reason !== "string" || !reason) throw new CrmInputError("Informe o motivo da perda.");
-    if (patch.lostReason !== undefined) set("lost_reason", await requireOptionId(client, "lost_reason", reason, current.lost_reason));
-    if (patch.lostNote !== undefined) set("lost_note", cleanText(patch.lostNote, 500));
+    if (typeof reason !== "string" || !reason) throw new CrmInputError("Informe o motivo do encerramento.");
+    if (patch.lostReason !== undefined || closing) {
+      const id = await requireOptionId(client, "lost_reason", reason, current.lost_reason);
+      set("lost_reason", id);
+      const g = await client.query<{ grp: string | null }>(`SELECT meta->>'group' AS grp FROM crm_options WHERE kind = 'lost_reason' AND id = $1`, [id]);
+      tab.group = isLostCloseGroup(g.rows[0]?.grp) ? g.rows[0]!.grp : "negativo";
+      set("close_group", tab.group);
+    }
+    const note = patch.lostNote !== undefined ? cleanText(patch.lostNote, 500) : closing ? null : current.lost_note;
+    if (closing && human && !note) throw new CrmInputError("Escreva uma observação sobre o encerramento.");
+    if (patch.lostNote !== undefined) set("lost_note", note);
+    if (tab.group === "futuro") {
+      const d = typeof patch.returnOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(patch.returnOn) ? patch.returnOn : null;
+      if (!d && human) throw new CrmInputError("Para uma oportunidade futura, informe a data para retomar.");
+      tab.returnOn = d;
+      set("return_on", d);
+    } else if (tab.group) set("return_on", null);
   } else if (current.stage === "perdido") {
     set("lost_reason", null);
     set("lost_note", null);
   }
-  // Win reason: part of what "Ganho" requires; cleared when the opportunity leaves it.
+  // Venda fechada: result, reason (part of what the stage requires) and observation.
+  let wonProblem: string | null = null;
   if (stage === "ganho") {
     if (patch.wonReason !== undefined && (patch.wonReason || null) !== current.won_reason) {
       next.wonReason = absent(patch.wonReason) ? null : await requireOptionId(client, "won_reason", patch.wonReason, current.won_reason);
       set("won_reason", next.wonReason);
     }
-    if (patch.wonNote !== undefined) set("won_note", cleanText(patch.wonNote, 500));
+    const note = patch.wonNote !== undefined ? cleanText(patch.wonNote, 500) : closing ? null : current.won_note;
+    if (patch.wonNote !== undefined) set("won_note", note);
+    if (closing && human) {
+      // Checked after what the stage requires (below), so the first message is about the missing fields.
+      if (!isWonResult(patch.wonResult)) wonProblem = "Informe o resultado: venda realizada ou proposta aprovada.";
+      else if (!note) wonProblem = "Escreva uma observação sobre o fechamento.";
+    }
+    if (patch.wonResult !== undefined || closing) {
+      tab.wonResult = isWonResult(patch.wonResult) ? patch.wonResult : current.won_result ?? "venda_realizada";
+      set("won_result", tab.wonResult);
+      set("close_group", "positivo");
+      tab.group = "positivo";
+    }
   } else if (current.stage === "ganho") {
     set("won_reason", null);
     set("won_note", null);
@@ -456,6 +596,7 @@ export async function updateDealTx(
   else if (emptied.length > 0) {
     throw new CrmInputError(`Em "${stageLabel(stage)}" a oportunidade precisa de ${joinPt(emptied.map((m) => STAGE_REQUIREMENT_LABEL[m]))}.`);
   }
+  if (wonProblem) throw new CrmInputError(wonProblem);
 
   if (stage !== current.stage) {
     await afterDealStage(client, id, stage);
@@ -469,9 +610,18 @@ export async function updateDealTx(
         dealId: id,
         dealTitle: title,
         ...(opts.auto ? { auto: true } : {}),
-        ...(stage === "perdido" ? { lostReason: patch.lostReason ?? current.lost_reason, lostNote: cleanText(patch.lostNote, 500) } : {}),
+        ...(reopenReason ? { reopenReason, previous: { group: current.close_group, lostReason: current.lost_reason, wonResult: current.won_result } } : {}),
+        ...(stage === "perdido"
+          ? { lostReason: patch.lostReason ?? current.lost_reason, lostNote: cleanText(patch.lostNote, 500), group: tab.group, ...(tab.returnOn ? { returnOn: tab.returnOn } : {}) }
+          : {}),
         ...(stage === "ganho"
-          ? { wonReason: next.wonReason, wonNote: patch.wonNote !== undefined ? cleanText(patch.wonNote, 500) : current.won_note, valueCents: next.negotiatedCents }
+          ? {
+              wonReason: next.wonReason,
+              wonNote: patch.wonNote !== undefined ? cleanText(patch.wonNote, 500) : current.won_note,
+              valueCents: next.negotiatedCents,
+              wonResult: tab.wonResult,
+              group: "positivo",
+            }
           : {}),
       },
       actor
@@ -484,6 +634,25 @@ export async function updateDealTx(
     values.push(id);
     await client.query(`UPDATE crm_deals SET ${sets.join(", ")} WHERE id = $${values.length}`, values);
     await syncContactStage(client, current.contact_id);
+  }
+  // Oportunidade futura: the date to pick it up again goes on the agenda of whoever owns it.
+  if (closing && stage === "perdido" && tab.group === "futuro" && tab.returnOn) {
+    const kind = await client.query(`SELECT 1 FROM crm_options WHERE kind = 'task_kind' AND id = 'follow_up' AND archived_at IS NULL`);
+    const deal = await client.query<{ owner_id: string | null; lost_reason: string | null }>(`SELECT owner_id, lost_reason FROM crm_deals WHERE id = $1`, [id]);
+    const reason = deal.rows[0]?.lost_reason ? await optionLabel(client, "lost_reason", deal.rows[0].lost_reason) : null;
+    await createTaskTx(
+      client,
+      {
+        contactId: current.contact_id,
+        dealId: id,
+        kind: kind.rows.length ? "follow_up" : "tarefa",
+        title: `Retomar: ${title}`,
+        description: `Oportunidade futura${reason ? ` (${reason})` : ""}. Para retomar, reabra a oportunidade.`,
+        dueDate: tab.returnOn,
+        ownerId: deal.rows[0]?.owner_id ?? actor?.userId ?? "",
+      },
+      actor
+    );
   }
   return { contactId: current.contact_id, stage, title };
 }
@@ -503,7 +672,7 @@ export async function setContactStageTx(client: PoolClient, contactId: string, s
     [contactId]
   );
   if (rows[0]) {
-    await updateDealTx(client, rows[0].id, stage === "perdido" ? { stage, lostReason: "outro" } : { stage }, actor);
+    await updateDealTx(client, rows[0].id, stage === "perdido" ? { stage, lostReason: "outro" } : { stage }, actor, { legacy: true });
   } else {
     await createDealTx(client, { contactId, stage: stage === "perdido" ? "novo" : stage }, actor);
     if (stage === "perdido") await setContactStageTx(client, contactId, stage, actor);

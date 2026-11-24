@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  CRM_STAGES,
   CRM_TEMPERATURES,
   formatPhone,
   stageLabel,
@@ -11,13 +10,13 @@ import {
   type CrmPage,
   type CrmTeamMember,
 } from "@/lib/crm-types";
-import { CONSENT_BADGE, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT, CRM_TD, CRM_TH, STAGE_DOT } from "./crm-styles";
+import { CONSENT_BADGE, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_FILTER, CRM_INPUT, CRM_TD, CRM_TH } from "./crm-styles";
 import { TASK_STATE_TONE, relativeTime, taskDueLabel, taskState, todaySp } from "./crm-format";
 import { TemperatureChip, brDay } from "./crm-fields";
 import CrmAssignDialog from "./CrmAssignDialog";
 import { Mascot } from "./crm-brand";
 import { OwnerAvatar } from "./CrmOwnerAvatar";
-import { TagChips, useCatalog } from "./crm-catalog-context";
+import { StageDot, TagChips, useCatalog } from "./crm-catalog-context";
 
 const PAGE_SIZE = 25;
 
@@ -49,7 +48,7 @@ function FollowUp({ c, now }: { c: CrmContactCard; now: number }) {
 function StageTag({ stage }: { stage: CrmContactCard["stage"] }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className={`h-2 w-2 rounded-full ${STAGE_DOT[stage]}`} aria-hidden="true" />
+      <StageDot stage={stage} className="h-2 w-2" />
       {stageLabel(stage)}
     </span>
   );
@@ -75,7 +74,7 @@ export default function CrmContactsView({
   canAssign?: boolean;
   onNew: () => void;
 }) {
-  const { label, options, tagGroups } = useCatalog();
+  const { label, options, tagGroups, stages } = useCatalog();
   const [query, setQuery] = useState("");
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("");
@@ -203,7 +202,7 @@ export default function CrmContactsView({
         <div className={`${showFilters ? "flex" : "hidden"} md:contents flex-wrap items-center gap-2 w-full`}>
         <select value={stage} onChange={(e) => resetPage(setStage)(e.target.value)} aria-label="Etapa" className={CRM_FILTER}>
           <option value="">Todas as etapas</option>
-          {CRM_STAGES.map((s) => (
+          {stages().map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
             </option>

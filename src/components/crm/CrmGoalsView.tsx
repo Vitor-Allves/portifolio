@@ -348,11 +348,17 @@ function GoalsSection({ currentUserId, canEdit, canExport, version, now }: { cur
 }
 
 const PROD_COLUMNS: { key: keyof CrmProductivityNumbers; label: string; title?: string }[] = [
-  { key: "leads", label: "Leads" },
+  { key: "leads", label: "Leads", title: "Leads cadastrados no período" },
+  { key: "worked", label: "Trabalhados", title: "Leads com mensagem, tarefa concluída ou registro da equipe no período" },
+  { key: "assigned", label: "Atribuídos", title: "Leads de que a pessoa é responsável agora" },
   { key: "meetings", label: "Reuniões" },
-  { key: "proposals", label: "Propostas" },
+  { key: "followUps", label: "Follow-ups", title: "Tarefas de follow-up e retorno comercial concluídas" },
+  { key: "proposals", label: "Propostas", title: "Oportunidades que chegaram a Proposta enviada" },
+  { key: "proposalsApproved", label: "Aprovadas", title: "Propostas aprovadas no período" },
   { key: "wonCount", label: "Ganhos" },
+  { key: "lostCount", label: "Perdidos" },
   { key: "wonValueCents", label: "Valor vendido" },
+  { key: "avgTicketCents", label: "Ticket médio", title: "Valor vendido ÷ ganhos" },
   { key: "conversion", label: "Conversão", title: "Ganhos ÷ (ganhos + perdidos) no período" },
   { key: "tasksDone", label: "Tarefas feitas" },
   { key: "tasksOverdue", label: "Atrasadas", title: "Tarefas e follow-ups atrasados agora" },
@@ -363,6 +369,7 @@ const PROD_COLUMNS: { key: keyof CrmProductivityNumbers; label: string; title?: 
 function cell(x: CrmProductivityNumbers, key: keyof CrmProductivityNumbers): string {
   const v = x[key];
   if (key === "wonValueCents") return brl(v as number);
+  if (key === "avgTicketCents") return v === null ? "—" : brl(v as number);
   if (key === "conversion") return pct(v as number | null);
   if (key === "avgResponseMinutes") return v === null ? "—" : `${minutesLabel(v as number)}${x.answered ? ` (${x.answered})` : ""}`;
   return String(v);

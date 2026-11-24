@@ -24,10 +24,13 @@ import { dateTime, todaySp } from "./crm-format";
 import { shiftMonth } from "./CrmFollowUpView";
 import { ClientStatusChip, clientEventText, contractDue, contractValue } from "./crm-client-ui";
 import ClientMediaSection from "./CrmClientMedia";
+import CrmFiles from "./CrmFiles";
+import CrmClientOperation from "./CrmClientOperation";
+import CrmContractDetails from "./CrmContractDetails";
 import CrmAnalysisDialog from "./CrmAnalysisDialog";
 
 type Form = { ownerId: string; status: string; endReason: string; startedOn: string; notes: string };
-export type ClientTab = "cliente" | "acompanhamento" | "historico";
+export type ClientTab = "cliente" | "operacao" | "acompanhamento" | "historico";
 
 async function send(url: string, method: string, body: unknown): Promise<{ client?: CrmClientDetail; error?: string }> {
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -69,7 +72,8 @@ export default function CrmClientPanel({
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [note, setNote] = useState("");
-  const canEdit = caps.editClients;
+  // Evolução v1.0: someone else's client is read-only for who works only on their own (a Comercial).
+  const canEdit = caps.editClients && (caps.actOnAllLeads || !client?.ownerId || client.ownerId === currentUserId);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/crm/clients/${clientId}/`);
@@ -188,6 +192,7 @@ export default function CrmClientPanel({
                   {(
                     [
                       ["cliente", "Cliente"],
+                      ["operacao", "Operação"],
                       ["acompanhamento", "Acompanhamento"],
                       ["historico", "Histórico"],
                     ] as [ClientTab, string][]
@@ -209,6 +214,8 @@ export default function CrmClientPanel({
                   {error}
                 </p>
               )}
+
+              {tab === "operacao" && <CrmClientOperation clientId={client.id} canEdit={canEdit} team={team} contracts={client.contracts} onChanged={onChanged} />}
 
               {tab === "acompanhamento" && (
                 <ReportsTab
@@ -364,6 +371,16 @@ export default function CrmClientPanel({
                                   Editar
                                 </button>
                               )}
+                              <CrmContractDetails
+                                clientId={client.id}
+                                contract={k}
+                                team={team}
+                                canEdit={canEdit}
+                                onSaved={(c) => {
+                                  setClient(c);
+                                  onChanged();
+                                }}
+                              />
                             </li>
                           )
                         )}
@@ -374,6 +391,7 @@ export default function CrmClientPanel({
                 </>
               )}
 
+              {tab === "historico" && <CrmFiles target={{ clientId: client.id }} canEdit={canEdit} title="Documentos do cliente" />}
               {tab === "historico" && (
                 <section className="space-y-2" aria-label="Histórico do cliente">
                   <h3 className={CRM_LABEL}>Histórico de relacionamento</h3>

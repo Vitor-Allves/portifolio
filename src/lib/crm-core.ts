@@ -23,6 +23,37 @@ export class CrmNotFoundError extends Error {}
 /** Someone else got there first (e.g. is already attending the conversation) (→ 409, message shown as-is). */
 export class CrmConflictError extends Error {}
 
+/** Evolução v1.0 (item 2.2): who already has this phone / e-mail / CNPJ, with the owner and the situation, so the screen can open it. */
+export type CrmDuplicateInfo = {
+  /** For "deal": an open negotiation someone else already has with this contact (by "contact") or its company (by "company"). */
+  kind: "contact" | "company" | "deal";
+  id: string;
+  name: string;
+  by: "phone" | "email" | "cnpj" | "name" | "contact" | "company";
+  ownerName: string | null;
+  situation: string | null;
+};
+export class CrmDuplicateError extends CrmConflictError {
+  constructor(
+    message: string,
+    public duplicate: CrmDuplicateInfo
+  ) {
+    super(message);
+  }
+}
+/** "Já existe um contato com esse telefone: Ana Ribeiro (responsável: Vitor · Em qualificação)." */
+export function duplicateText(d: CrmDuplicateInfo): string {
+  if (d.kind === "deal") {
+    return `Já existe uma negociação aberta com ${d.by === "company" ? "esta empresa" : "este contato"}: "${d.name}" (responsável: ${d.ownerName ?? "—"}${
+      d.situation ? ` · ${d.situation}` : ""
+    }). Uma segunda negociação independente só com autorização do Gestor; peça a transferência ou trabalhe na existente.`;
+  }
+  const by = { phone: "telefone", email: "e-mail", cnpj: "CNPJ", name: "nome", contact: "contato", company: "empresa" }[d.by];
+  const what = d.kind === "contact" ? `um contato com esse ${by}` : `uma empresa com esse ${by}`;
+  const extra = [d.ownerName ? `responsável: ${d.ownerName}` : "sem responsável", d.situation].filter(Boolean).join(" · ");
+  return `Já existe ${what}: ${d.name} (${extra}).`;
+}
+
 export function iso(d: Date | string | null): string | null {
   if (!d) return null;
   return d instanceof Date ? d.toISOString() : new Date(d).toISOString();

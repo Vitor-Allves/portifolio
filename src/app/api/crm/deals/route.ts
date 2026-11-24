@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
-import { requireCap, requireContact, requireOwnerChange, visibleTo } from "@/lib/crm-access";
+import { maskConversations, requireCap, requireContact, requireOwnerChange, visibleTo } from "@/lib/crm-access";
 import { createDeal, listBoardDeals, type NewDealInput } from "@/lib/crm-deals";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const actor = await crmActorFromRequest(req);
   if (actor instanceof NextResponse) return actor;
   try {
-    return NextResponse.json({ deals: await listBoardDeals(visibleTo(actor)) });
+    return NextResponse.json({ deals: await maskConversations(actor, await listBoardDeals(visibleTo(actor))) });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/deals GET");
   }
@@ -25,7 +25,9 @@ export async function POST(req: NextRequest) {
     const { ownerId } = await requireContact(actor, String(body.contactId ?? ""));
     requireCap(actor, "editPipeline");
     requireOwnerChange(actor, body.ownerId, ownerId);
-    return NextResponse.json({ id: await createDeal(body, actor) }, { status: 201 });
+    // A second independent negotiation with the same contact or company: only a Gestor authorizes it (allowParallel).
+    const input = { ...body, checkParallel: true, allowParallel: actor.caps.assignAnyOwner && (body as { allowParallel?: unknown }).allowParallel === true };
+    return NextResponse.json({ id: await createDeal(input, actor) }, { status: 201 });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/deals POST");
   }

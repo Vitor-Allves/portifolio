@@ -44,8 +44,16 @@ regras que valem para todas as fases. Atualizar a cada fase.
 - Logins só do CRM (Analista sem empresas no Intelligence) são criados,
   redefinidos e desativados no CRM pelo Administrador, sempre confirmando a
   própria senha; os demais continuam com o administrador geral.
-  Registro de outra pessoa, para o Comercial, responde como "não encontrado"
-  (alterar o id na URL não expõe nada).
+  Desde a evolução v1.0, o Comercial **vê** todos os leads, oportunidades,
+  clientes e históricos, mas só **mexe** nos seus e nos sem responsável:
+  toda checagem de registro no servidor (`requireContact`, `requireDeal`,
+  `requireTask` em `src/lib/crm-access.ts`) é "interagir" por padrão e só as
+  leituras declaram "ver" — uma rota nova que esquecer de dizer fica
+  fechada, nunca aberta. Interagir num lead de outra pessoa responde 403
+  (com a orientação de pedir transferência). As mensagens de WhatsApp de
+  leads de outros não saem do servidor para o Comercial (nem na lista, nem no
+  painel, nem a mídia). Quem tiver a exceção "ver todos os leads" retirada
+  volta a receber "não encontrado" para registros de outros.
 - Logins de clientes (Intelligence) nunca entram no CRM.
 
 ## Proteção técnica
@@ -70,6 +78,24 @@ regras que valem para todas as fases. Atualizar a cada fase.
   Enviar dados de leads e clientes para a Anthropic é tratamento de dados
   pessoais por um fornecedor: avalie e registre isso na política de
   privacidade antes de ligar a IA.
+- Link público de proposta (evolução v1.0): `/proposta/<código>` com 24
+  bytes aleatórios, fora do login (é para o cliente). Mostra só a versão
+  enviada daquela proposta, não é indexado (`noindex`) e não repassa o
+  endereço (`no-referrer`); o vendedor pode renovar (o antigo para de
+  funcionar) ou desativar. As rotas públicas têm limite de tentativas por IP;
+  quem está logado como equipe não marca "visualizada" nem responde pelo
+  cliente. A aprovação guarda nome, e-mail, documento, IP, navegador, versão
+  e a impressão digital (SHA-256) do conteúdo — evidência de aceite, não
+  assinatura eletrônica qualificada.
+- Documentos e anexos (evolução v1.0): até 4 MB, guardados no banco (com
+  `sha256`); só PDF, Office, imagens JPEG/PNG/WebP, texto e CSV, com o tipo
+  conferido pelos primeiros bytes do arquivo (um executável renomeado para
+  .pdf é recusado; HTML e SVG nunca são aceitos). O download só sai para
+  quem vê o registro, sempre como anexo (`Content-Disposition: attachment`,
+  `nosniff`, sem cache) — o navegador não abre o arquivo dentro do CRM.
+  Arquivar não apaga; os arquivos entram no backup do banco (o que aumenta
+  o tamanho dele: acompanhe o plano do Neon). Não há antivírus: quem baixa
+  deve tratar documentos de terceiros com o cuidado habitual.
 - Dependências: `npm audit` sem falhas em 23/11/2026 (Next.js 16.4.6). A
   verificação automática (CI) roda em todo PR.
 
@@ -135,8 +161,9 @@ inclusive valores e etapas das oportunidades.
 
 - Retenção: definir prazo para leads inativos (sugestão: anonimizar após 24
   meses sem interação, salvo cliente ativo).
-- Direitos dos titulares: hoje é possível corrigir, arquivar e exportar pela
-  tela; **falta** exportar tudo de um contato e anonimizar sob pedido.
+- Direitos dos titulares: corrigir, arquivar, exportar tudo de um contato
+  (JSON) e anonimizar sob pedido — painel do contato, Detalhes e histórico,
+  só Administrador, com auditoria (evolução v1.0).
 - Transferência internacional: dados processados nos EUA (Vercel `iad1`) e
   na região do Neon; documentar ou mover para São Paulo.
 
@@ -148,12 +175,12 @@ inclusive valores e etapas das oportunidades.
 | Prévias da Vercel podiam alterar o banco de produção | Crítica | **Corrigido**: trava em `db.ts`; falta banco próprio para prévias (decisão de infraestrutura) |
 | Outras dependências vulneráveis (`@vercel/functions`, `sharp`, `zod`…) | Alta | **Corrigido** (`npm audit` zerado) |
 | Testes fora do repositório, sem verificação automática | Alta | **Corrigido**: `tests/` + CI |
-| Sem execução agendada no servidor (automações, filas) | Alta | Em parte: `/api/cron/automations` pronto, só aceita `Bearer <CRON_SECRET>` e fica desligado sem a variável; falta aprovar o agendamento diário na Vercel e criar `CRON_SECRET` |
+| Sem execução agendada no servidor (automações, filas) | Alta | Em parte: `/api/cron/automations` e `/api/cron/scheduled-messages` prontos, só aceitam `Bearer <CRON_SECRET>` e ficam desligados sem a variável; falta aprovar o agendamento na Vercel e criar `CRON_SECRET`. Mensagens agendadas também saem pela consulta do sino de quem estiver com o CRM aberto |
 | Plano Hobby da Vercel é para uso não comercial | Alta | Pendente: decisão de plano |
 | 2FA não obrigatório para Administrador/Gestor do CRM | Média | **Corrigido** para Administradores (Fase 2); Gestor fica opcional |
-| Código 2FA pode ser reutilizado dentro da mesma janela de 30s | Baixa | Pendente (guardar o último código aceito) |
+| Código 2FA pode ser reutilizado dentro da mesma janela de 30s | Baixa | **Corrigido** (evolução v1.0): último passo aceito guardado por pessoa (v28) |
 | Limite de tentativas por instância, não global | Média | Pendente (exige Redis/Upstash) |
 | Recuperação de senha só pelo administrador | Média | Depende do e-mail (Fase 4) |
 | Backups dependentes do plano Free do Neon | Média | Pendente: decisão de plano + rotina própria |
-| LGPD sem registro formal; sem exportar/anonimizar titular | Média | Rascunho acima; ferramenta planejada |
+| LGPD sem registro formal; sem exportar/anonimizar titular | Média | Em parte (evolução v1.0): exportar e anonimizar o titular no painel do contato (Administrador, auditado); falta validar o registro com o jurídico |
 | Apagar contato apaga em cascata seu histórico | Baixa | Só "desfazer importação" apaga, e só contatos não trabalhados |

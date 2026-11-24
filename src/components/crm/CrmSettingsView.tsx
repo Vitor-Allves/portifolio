@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  CLOSE_GROUPS,
   COLORED_KINDS,
   OPTION_KINDS,
+  reasonGroup,
+  serviceMeta,
+  stageMeta,
+  type LostCloseGroup,
   TAG_CATEGORIES,
   TAG_COLORS,
   usageKey,
@@ -16,9 +21,11 @@ import {
   type TagColor,
 } from "@/lib/crm-catalog";
 import { CRM_ALERT, CRM_BTN_OUTLINE, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL, CRM_LINK_BTN, crmSegment } from "./crm-styles";
+import { CRM_CONTRACT_BILLINGS, formatBRL } from "@/lib/crm-types";
 import { TAG_DOT, TagChip, useCatalog } from "./crm-catalog-context";
+import CrmProposalSettings from "./CrmProposalSettings";
 
-type Tab = OptionKind | "tags";
+type Tab = OptionKind | "tags" | "proposals";
 
 async function call(url: string, method: string, body?: unknown): Promise<string | null> {
   const res = await fetch(url, {
@@ -72,7 +79,7 @@ export default function CrmSettingsView() {
     [app]
   );
 
-  const tabs: { id: Tab; label: string }[] = [...OPTION_KINDS.map((k) => ({ id: k.id as Tab, label: k.label })), { id: "tags", label: "Etiquetas" }];
+  const tabs: { id: Tab; label: string }[] = [...OPTION_KINDS.map((k) => ({ id: k.id as Tab, label: k.label })), { id: "tags", label: "Etiquetas" }, { id: "proposals", label: "Propostas" }];
 
   return (
     <section aria-label="Personalização do CRM" className="space-y-4 max-w-4xl">
@@ -95,6 +102,8 @@ export default function CrmSettingsView() {
       )}
       {!data ? (
         !error && <p className="text-[12.5px] text-crm-dim">Carregando...</p>
+      ) : tab === "proposals" ? (
+        <CrmProposalSettings run={run} />
       ) : tab === "tags" ? (
         <TagsPanel catalog={data.catalog} usage={data.usage} run={run} />
       ) : (
@@ -128,11 +137,27 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
   const active = all.filter((o) => !o.archived);
   const archived = all.filter((o) => o.archived);
   const colored = COLORED_KINDS.includes(kind);
+  // Etapas carry a probability; motivos de encerramento, their tabulação group.
+  const isStage = kind === "stage";
+  const isReason = kind === "lost_reason";
+  const newWord = /^(origem|etapa|prioridade)$/.test(meta.singular) ? "Nova" : "Novo";
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ label: string; description: string; color: TagColor }>({ label: "", description: "", color: "cinza" });
+  const isService = kind === "service";
+  const [draft, setDraft] = useState<{ label: string; description: string; color: TagColor; probability: string; group: LostCloseGroup; service: ServiceDraft }>({
+    label: "",
+    description: "",
+    color: "cinza",
+    probability: "",
+    group: "negativo",
+    service: EMPTY_SERVICE,
+  });
   const [newLabel, setNewLabel] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newColor, setNewColor] = useState<TagColor>("azul");
+  const [newProbability, setNewProbability] = useState("");
+  const [newGroup, setNewGroup] = useState<LostCloseGroup>("negativo");
+  const metaOf = (probability: string, group: LostCloseGroup) =>
+    isStage ? (probability.trim() ? { meta: { probability: probability.trim() } } : {}) : isReason ? { meta: { group } } : {};
   const [showArchived, setShowArchived] = useState(false);
   const base = "/api/crm/catalog/options/";
 
@@ -160,6 +185,11 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               className={CRM_INPUT}
             />
             {colored && <ColorSelect value={draft.color} onChange={(color) => setDraft({ ...draft, color })} label={`Cor de ${o.label}`} />}
+            {isStage && stageMeta(o).outcome === "open" && (
+              <ProbabilityInput value={draft.probability} onChange={(probability) => setDraft({ ...draft, probability })} label={`Probabilidade de ${o.label}`} />
+            )}
+            {isReason && <GroupSelect value={draft.group} onChange={(group) => setDraft({ ...draft, group })} label={`Grupo de ${o.label}`} />}
+            {isService && <ServiceFields value={draft.service} onChange={(service) => setDraft({ ...draft, service })} name={o.label} />}
             {kind === "segment" && used > 0 && draft.label.trim() !== o.label && (
               <p className="text-[11.5px] text-crm-amber">O novo nome também vai para as {used} empresas/contatos que usam este segmento.</p>
             )}
@@ -168,7 +198,13 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
                 type="button"
                 className={CRM_BTN_PRIMARY}
                 onClick={async () => {
-                  const body = colored ? draft : { label: draft.label, description: draft.description };
+                  const body = {
+                    label: draft.label,
+                    description: draft.description,
+                    ...(colored ? { color: draft.color } : {}),
+                    ...(isStage && stageMeta(o).outcome !== "open" ? {} : metaOf(draft.probability, draft.group)),
+                    ...(isService ? { meta: draft.service } : {}),
+                  };
                   if (await run(() => call(`${base}${kind}/${o.id}/`, "PATCH", body), "Alteração salva.")) setEditing(null);
                 }}
               >
@@ -181,14 +217,17 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            {!o.archived && <MoveButtons index={i} count={list.length} onMove={(to) => move(i, to)} label={o.label} />}
+            {!o.archived && !(isStage && o.locked) && <MoveButtons index={i} count={list.length} onMove={(to) => move(i, to)} label={o.label} />}
             {colored && o.color && <span className={`h-3 w-3 shrink-0 rounded-full ${TAG_DOT[o.color]}`} title={`Cor: ${TAG_COLORS.find((c) => c.id === o.color)?.label ?? o.color}`} aria-hidden="true" />}
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold break-words">
                 {o.label}
-                {o.locked && <span className="ml-2 text-[10.5px] font-normal text-crm-faint">padrão</span>}
+                {o.locked && <span className="ml-2 text-[10.5px] font-normal text-crm-faint">{isStage ? "fixa" : "padrão"}</span>}
               </p>
               <p className="text-[11.5px] text-crm-faint">
+                {isStage ? `${stageMeta(o).probability}% de probabilidade · ` : ""}
+                {isReason ? `${CLOSE_GROUPS.find((g) => g.id === reasonGroup(o))?.label} · ` : ""}
+                {isService ? serviceSummary(o) : ""}
                 {o.description ? `${o.description} · ` : ""}
                 {usedLabel(used)}
               </p>
@@ -198,7 +237,14 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
               className={CRM_LINK_BTN}
               onClick={() => {
                 setEditing(o.id);
-                setDraft({ label: o.label, description: o.description ?? "", color: o.color ?? "cinza" });
+                setDraft({
+                  label: o.label,
+                  description: o.description ?? "",
+                  color: o.color ?? "cinza",
+                  probability: String(stageMeta(o).probability),
+                  group: reasonGroup(o),
+                  service: serviceDraft(o),
+                });
               }}
               aria-label={`Editar ${o.label}`}
             >
@@ -232,19 +278,28 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
           </ul>
         )}
         <form
-          className={`border-t border-crm-line px-3.5 py-3 grid gap-2 ${colored ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]" : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"}`}
+          className={`border-t border-crm-line px-3.5 py-3 grid gap-2 ${
+            colored && isStage
+              ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto]"
+              : colored || isReason
+                ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
+                : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+          }`}
           onSubmit={async (e) => {
             e.preventDefault();
-            const body = { kind, label: newLabel, description: newDescription, ...(colored ? { color: newColor } : {}) };
+            const body = { kind, label: newLabel, description: newDescription, ...(colored ? { color: newColor } : {}), ...metaOf(newProbability, newGroup) };
             if (await run(() => call(base, "POST", body), `"${newLabel.trim()}" adicionada.`)) {
               setNewLabel("");
               setNewDescription("");
+              setNewProbability("");
             }
           }}
         >
-          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={`Novo ${meta.singular}`} aria-label={`Novo ${meta.singular}`} maxLength={80} className={CRM_INPUT} />
+          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={`${newWord} ${meta.singular}`} aria-label={`${newWord} ${meta.singular}`} maxLength={80} className={CRM_INPUT} />
           <input value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Descrição (opcional)" aria-label="Descrição" maxLength={300} className={CRM_INPUT} />
-          {colored && <ColorSelect value={newColor} onChange={setNewColor} label={`Cor do novo ${meta.singular}`} />}
+          {colored && <ColorSelect value={newColor} onChange={setNewColor} label={`Cor ${newWord === "Nova" ? "da nova" : "do novo"} ${meta.singular}`} />}
+          {isStage && <ProbabilityInput value={newProbability} onChange={setNewProbability} label="Probabilidade da nova etapa" />}
+          {isReason && <GroupSelect value={newGroup} onChange={setNewGroup} label="Grupo do novo motivo" />}
           <button type="submit" disabled={!newLabel.trim()} className={CRM_BTN_PRIMARY}>
             Adicionar
           </button>
@@ -263,6 +318,91 @@ function OptionsPanel({ kind, catalog, usage, run }: { kind: OptionKind; catalog
         </div>
       )}
     </div>
+  );
+}
+
+/** Catálogo de serviços (evolução v1.0, item 3.2): what a proposal starts from. */
+type ServiceDraft = { scope: string; referenceValue: string; billing: string; deadline: string; conditions: string };
+const EMPTY_SERVICE: ServiceDraft = { scope: "", referenceValue: "", billing: "", deadline: "", conditions: "" };
+function serviceDraft(o: CrmOption): ServiceDraft {
+  const m = serviceMeta(o);
+  return {
+    scope: m.scope ?? "",
+    referenceValue: m.referenceCents === null ? "" : (m.referenceCents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+    billing: m.billing ?? "",
+    deadline: m.deadline ?? "",
+    conditions: m.conditions ?? "",
+  };
+}
+function serviceSummary(o: CrmOption): string {
+  const m = serviceMeta(o);
+  const parts = [
+    m.referenceCents !== null ? `${formatBRL(m.referenceCents)}${m.billing === "mensal" ? "/mês" : ""}` : null,
+    m.billing ? CRM_CONTRACT_BILLINGS.find((b) => b.id === m.billing)?.label : null,
+    m.deadline ? `prazo ${m.deadline}` : null,
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(" · ")} · ` : "sem detalhes no catálogo · ";
+}
+function ServiceFields({ value, onChange, name }: { value: ServiceDraft; onChange: (v: ServiceDraft) => void; name: string }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <textarea
+        value={value.scope}
+        onChange={(e) => onChange({ ...value, scope: e.target.value })}
+        rows={2}
+        aria-label={`Escopo de entrega de ${name}`}
+        placeholder="Escopo de entrega (o que está incluso)"
+        className={`${CRM_INPUT} sm:col-span-3 resize-y`}
+      />
+      <input value={value.referenceValue} onChange={(e) => onChange({ ...value, referenceValue: e.target.value })} inputMode="decimal" aria-label={`Valor de referência de ${name}`} placeholder="Valor de referência (R$)" className={CRM_INPUT} />
+      <select value={value.billing} onChange={(e) => onChange({ ...value, billing: e.target.value })} aria-label={`Modelo de cobrança de ${name}`} className={CRM_INPUT}>
+        <option value="">Modelo de cobrança</option>
+        {CRM_CONTRACT_BILLINGS.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.label}
+          </option>
+        ))}
+      </select>
+      <input value={value.deadline} onChange={(e) => onChange({ ...value, deadline: e.target.value })} aria-label={`Prazo estimado de ${name}`} placeholder="Prazo estimado (ex.: 30 dias)" className={CRM_INPUT} />
+      <textarea
+        value={value.conditions}
+        onChange={(e) => onChange({ ...value, conditions: e.target.value })}
+        rows={2}
+        aria-label={`Condições específicas de ${name}`}
+        placeholder="Condições específicas (fidelidade, investimento mínimo em mídia…)"
+        className={`${CRM_INPUT} sm:col-span-3 resize-y`}
+      />
+    </div>
+  );
+}
+
+/** 0–100, in whole numbers. */
+function ProbabilityInput({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+        inputMode="numeric"
+        aria-label={label}
+        placeholder="Prob."
+        className={`${CRM_INPUT} !w-[72px]`}
+      />
+      <span className="text-[12px] text-crm-dim">%</span>
+    </span>
+  );
+}
+
+/** The tabulação group of a closing reason. */
+function GroupSelect({ value, onChange, label }: { value: LostCloseGroup; onChange: (g: LostCloseGroup) => void; label: string }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value as LostCloseGroup)} aria-label={label} className={`${CRM_INPUT} sm:!w-auto`}>
+      {CLOSE_GROUPS.filter((g) => g.id !== "positivo").map((g) => (
+        <option key={g.id} value={g.id}>
+          {g.label}
+        </option>
+      ))}
+    </select>
   );
 }
 

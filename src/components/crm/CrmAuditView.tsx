@@ -45,6 +45,17 @@ const ACTION_LABEL: Record<string, string> = {
   "crm.goals_change": "Mudou as metas",
   "crm.intelligence_link": "Ligou cliente ao Intelligence",
   "crm.ai_request": "Pediu análise à IA",
+  "crm.transfer_request": "Pediu transferência de lead",
+  "crm.lgpd_export": "Exportou dados de titular (LGPD)",
+  "crm.lgpd_anonymize": "Anonimizou titular (LGPD)",
+  "crm.transfer_decision": "Decidiu transferência de lead",
+  "crm.proposal_change": "Criou ou mudou proposta",
+  "crm.proposal_send": "Registrou envio de proposta",
+  "crm.proposal_status": "Mudou a situação de proposta",
+  "crm.proposal_discount": "Autorizou desconto de proposta",
+  "crm.proposal_link": "Mudou o link de proposta",
+  "crm.proposal_settings": "Mudou modelos de proposta",
+  "crm.commission_rule": "Mudou regra de comissão",
 };
 
 const AUTOMATION_STATUS_LABEL: Record<string, string> = { ativa: "ativa", pausada: "pausada", desativada: "desativada" };
@@ -117,8 +128,18 @@ function details(r: AdminRow): string {
           .map((v) => `${n(v.ok, "ação feita", "ações feitas")}${v.failed ? `, ${n(v.failed, "falha", "falhas")}` : ""}`)
           .join(" · ") || "nada ativo para rodar"
       );
+    case "crm.lgpd_export":
+      return `${n(m.messages, "mensagem", "mensagens")} · ${n(m.history, "registro", "registros")} · ${n(m.files, "documento", "documentos")}`;
+    case "crm.lgpd_anonymize":
+      return `${String(m.reason ?? "")} · ${n(m.messages, "mensagem limpa", "mensagens limpas")} · ${n(m.documents, "documento apagado", "documentos apagados")}`;
+    case "crm.transfer_request":
+      return `${String(m.contact ?? "")}: ${String(m.from ?? "sem responsável")} → ${String(m.to ?? "")} · ${String(m.reason ?? "")}`;
+    case "crm.transfer_decision":
+      return `${String(m.contact ?? "")}: ${m.status === "aprovada" ? "aprovada" : m.status === "recusada" ? "recusada" : String(m.status ?? "")} (${String(m.from ?? "sem responsável")} → ${String(m.to ?? "")}, pedida por ${String(m.requestedBy ?? "")})${m.note ? ` · ${String(m.note)}` : ""}`;
     case "crm.report_export":
-      return `${String(m.what ?? "")} · ${String(m.from ?? "")} a ${String(m.to ?? "")}${m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""}`;
+      return `${String(m.what ?? "")}${m.format ? ` (${m.format === "pdf" ? "PDF" : "planilha"})` : ""}${m.from ? ` · ${String(m.from)} a ${String(m.to ?? "")}` : ""}${
+        m.rows !== undefined ? ` · ${n(m.rows, "linha", "linhas")}` : ""
+      }`;
     case "crm.ai_request":
       return `${String(m.kindLabel ?? m.kind ?? "")} · ${String(m.status ?? "")}${typeof m.outputTokens === "number" ? ` · ${m.inputTokens} + ${m.outputTokens} tokens` : ""}`;
     case "crm.intelligence_link":
@@ -209,7 +230,7 @@ export default function CrmAuditView({ team, onOpenContact }: { team: CrmTeamMem
           ))}
         </select>
         {tab === "admin" ? (
-          <select value={action} onChange={(e) => reset(setAction)(e.target.value)} aria-label="Ação" className={CRM_FILTER}>
+          <select value={action} onChange={(e) => reset(setAction)(e.target.value)} aria-label="Ação" className={`${CRM_FILTER} max-w-full`}>
             <option value="">Todas as ações</option>
             {Object.entries(ACTION_LABEL).map(([id, text]) => (
               <option key={id} value={id}>

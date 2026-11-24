@@ -72,6 +72,24 @@ export function verifyTotpCode(secretEnc: string, token: string): boolean {
   return totp.validate({ token: cleaned, window: 1 }) !== null;
 }
 
+/**
+ * The 30-second time step the code belongs to (same ±1 window), or null.
+ * The login keeps the last accepted step per person and refuses that one and
+ * any older one, so a code can't be used twice (replay within its window).
+ */
+export function matchTotpStep(secretEnc: string, token: string, now = Date.now()): number | null {
+  const cleaned = token.trim().replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(cleaned)) return null;
+  let base32: string;
+  try {
+    base32 = decryptSecret(secretEnc);
+  } catch {
+    return null;
+  }
+  const delta = buildTotp(Secret.fromBase32(base32), "verify").validate({ token: cleaned, window: 1, timestamp: now });
+  return delta === null ? null : Math.floor(now / 30_000) + delta;
+}
+
 /** Returns the index of the matched hash (for the caller to remove — single use) or -1. */
 export function verifyRecoveryCode(candidate: string, hashes: string[]): number {
   const h = hashRecoveryCode(candidate);

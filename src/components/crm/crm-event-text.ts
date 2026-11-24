@@ -2,7 +2,7 @@
 // by the contact panel, the Auditoria screen and each person's activity.
 
 import { formatBRL, stageLabel, type CrmEvent } from "@/lib/crm-types";
-import { TAG_VIA, type OptionKind } from "@/lib/crm-catalog";
+import { TAG_VIA, WON_RESULTS, closeGroupLabel, isLostCloseGroup, isWonResult, type OptionKind } from "@/lib/crm-catalog";
 import { shortDate, timeOfDay } from "./crm-format";
 
 export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kind: OptionKind, id: string) => string): string {
@@ -14,11 +14,53 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
     case "stage":
       return `Etapa${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${stageLabel(String(p.from))} → ${stageLabel(String(p.to))}${
         p.auto ? " (automático, o lead respondeu)" : ""
+      }${p.reopenReason ? ` · reaberta: ${String(p.reopenReason)}` : ""}${
+        p.to === "perdido" && isLostCloseGroup(p.group) ? ` · ${closeGroupLabel(p.group)}` : ""
       }${p.lostReason ? ` · motivo: ${label("lost_reason", String(p.lostReason))}${p.lostNote ? ` (${String(p.lostNote)})` : ""}` : ""}${
+        p.returnOn ? ` · retomar em ${String(p.returnOn).split("-").reverse().join("/")}` : ""
+      }${p.to === "ganho" && isWonResult(p.wonResult) ? ` · ${WON_RESULTS.find((r) => r.id === p.wonResult)!.label}` : ""}${
         p.wonReason ? ` · motivo: ${label("won_reason", String(p.wonReason))}${p.wonNote ? ` (${String(p.wonNote)})` : ""}` : ""
       }${p.to === "ganho" && typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
     case "owner":
-      return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}${p.via === "carteira" ? " (carteira)" : ""}`;
+      return `Responsável${p.dealTitle ? ` de "${String(p.dealTitle)}"` : ""}: ${p.from ?? "ninguém"} → ${p.to ?? "ninguém"}${p.via === "carteira" ? " (carteira)" : p.via === "transferencia" ? " (transferência aprovada)" : ""}`;
+    case "diagnosis":
+      return `Diagnóstico comercial (versão ${String(p.version ?? "")}): ${String(p.need ?? "")}`;
+    case "proposal": {
+      const n = `Proposta nº ${String(p.number ?? "").padStart(4, "0")}`;
+      const ch = { link: "link", whatsapp: "WhatsApp", email: "e-mail", pdf: "PDF", presencial: "em reunião" }[String(p.channel)] ?? String(p.channel ?? "");
+      if (p.action === "created") return `${n} criada${typeof p.totalCents === "number" && p.totalCents > 0 ? ` (${formatBRL(p.totalCents)})` : ""}`;
+      if (p.action === "version") return `${n}: versão ${String(p.version)} — ${String(p.reason ?? "")}`;
+      if (p.action === "sent") return `${n} enviada (versão ${String(p.version)}, por ${ch})${typeof p.totalCents === "number" ? ` · ${formatBRL(p.totalCents)}` : ""}`;
+      if (p.action === "resent") return `${n} reenviada (versão ${String(p.version)}, por ${ch})`;
+      if (p.action === "viewed") return `${n} visualizada pelo cliente`;
+      if (p.action === "discount") return `${n}: desconto de ${String(p.pct)}% autorizado`;
+      if (p.action === "expired") return `${n} expirou (passou da validade)`;
+      if (p.action === "aprovada" || p.action === "recusada")
+        return `${n} ${String(p.action)}${p.via === "cliente" ? ` pelo cliente${p.name ? ` (${String(p.name)})` : ""}, online` : ` (registrada pela equipe)${p.reason ? `: ${String(p.reason)}` : ""}`}`;
+      if (p.action === "em_negociacao") return `${n} em negociação`;
+      if (p.action === "cancelada") return `${n} cancelada${p.reason ? `: ${String(p.reason)}` : ""}`;
+      if (p.action === "formalized") return `${n} formalizada: contrato nº ${String(p.contractNumber ?? "").padStart(4, "0")}`;
+      return n;
+    }
+    case "lgpd":
+      return "Dados pessoais anonimizados a pedido do titular (LGPD)";
+    case "scheduled_message": {
+      const at = p.sendAt ? `${shortDate(String(p.sendAt))} às ${timeOfDay(String(p.sendAt))}` : "";
+      const what = p.kind === "template" ? `Modelo "${String(p.templateName ?? "")}"` : "Mensagem";
+      if (p.action === "scheduled") return `${what} agendado${p.kind === "template" ? "" : "a"} para ${at}`;
+      if (p.action === "canceled") return `Mensagem agendada para ${at} cancelada`;
+      if (p.action === "sent") return `Mensagem agendada para ${at} enviada`;
+      return `Mensagem agendada para ${at} não enviada: ${String(p.error ?? "")}`;
+    }
+    case "file":
+      return p.action === "archived" ? `Documento arquivado: ${String(p.name ?? "")}` : `Documento anexado: ${String(p.name ?? "")}`;
+    case "transfer": {
+      const who = `${p.from ? String(p.from) : "sem responsável"} → ${String(p.to ?? "")}`;
+      if (p.action === "requested") return `Transferência pedida por ${String(p.requestedBy ?? "")} (${who}): ${String(p.reason ?? "")}`;
+      if (p.action === "aprovada") return `Transferência aprovada (${who})${p.note ? `: ${String(p.note)}` : ""}`;
+      if (p.action === "recusada") return `Transferência recusada (${who})${p.note ? `: ${String(p.note)}` : ""}`;
+      return `Pedido de transferência cancelado (${who})`;
+    }
     case "next_action":
       return p.text || p.at ? `Próxima ação: ${p.text ?? "sem descrição"}${p.at ? ` · ${shortDate(String(p.at))}` : ""}` : "Próxima ação removida";
     case "note":
@@ -37,7 +79,10 @@ export function describeEvent(e: Pick<CrmEvent, "kind" | "payload">, label: (kin
     case "restored":
       return p.auto ? "Voltou ao funil (mandou mensagem)" : "Contato restaurado";
     case "deal": {
-      if (p.action === "created") return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}`;
+      if (p.action === "created")
+        return `Nova oportunidade: ${String(p.title)}${typeof p.valueCents === "number" ? ` · ${formatBRL(p.valueCents)}` : ""}${
+          p.parallelTo ? ` · segunda negociação (além de "${String(p.parallelTitle ?? "")}") autorizada por ${String(p.authorizedBy ?? "")}` : ""
+        }`;
       const changes = Array.isArray(p.changes) ? (p.changes as { field: string; from: string | null; to: string | null }[]) : [];
       const show = (c: { field: string }, v: string | null) =>
         v === null

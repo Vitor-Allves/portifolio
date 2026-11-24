@@ -39,7 +39,7 @@ ok((await report(vitor, rib, { month })).status === 400, "an empty acompanhament
 ok((await report(vitor, rib, { month: next, results: "x" })).status === 400, "a month that hasn't started is refused");
 ok((await report(vitor, rib, { month: "2026-13", results: "x" })).status === 400, "invalid month refused");
 ok((await report(maria, rib, { month, results: "x" })).status === 403, "Marketing can't register it");
-ok((await report(joao, rib, { month, results: "x" })).status === 404, "a Comercial can't touch someone else's client");
+ok((await report(joao, rib, { month, results: "x" })).status === 403, "a Comercial can't touch someone else's client (he sees it)");
 ok((await report(vitor, rib, { month, services: ["nope"], results: "x" })).status === 400, "only services from Personalização");
 r = await report(vitor, rib, {
   month,
@@ -72,7 +72,7 @@ ok((await report(joao, souza, { month, ownerId: "u-vitor", results: "x" })).stat
 let f = await followup(vitor, month);
 ok(f.month === month && f.rows.map((x) => x.companyName).join() === "Souza Pet,Ribeiro Odonto", "pending first: Souza Pet, then Ribeiro Odonto");
 ok(f.rows[0].report === null && f.rows[1].report.updatedByName === "Vitor" && f.rows[1].report.attention === "Orçamento acaba dia 20", "…with who updated it and the points of attention");
-ok((await followup(joao, month)).rows.map((x) => x.companyName).join() === "Souza Pet", "a Comercial sees only theirs");
+ok((await followup(joao, month)).rows.map((x) => x.companyName).join() === "Souza Pet,Ribeiro Odonto", "a Comercial sees the team's clients too (evolução v1.0)");
 f = await followup(vitor, prev);
 ok(f.rows.map((x) => x.companyName).join() === "Ribeiro Odonto", "last month: only who was already a client then");
 ok((await followup(vitor, "lixo")).month === month, "an invalid month falls back to this one");
@@ -80,7 +80,7 @@ ok((await json(await maria.get(`${BASE}/api/crm/clients/followup/?month=${month}
 
 // ---- 7. won opportunity → client in Onboarding + task ----
 ok((await set("cliente_onboarding", { status: "ativa" })).status === 200, "automation 7 turned on");
-const won = async (id) => json(await vitor.patch(`${BASE}/api/crm/deals/${id}/`, { data: { stage: "ganho", service: "social", negotiatedValue: "1.500", wonReason: "resultado" } }));
+const won = async (id) => json(await vitor.patch(`${BASE}/api/crm/deals/${id}/`, { data: { stage: "ganho", service: "social", negotiatedValue: "1.500", wonReason: "resultado", wonResult: "venda_realizada", wonNote: "Fechou o social" } }));
 ok((await won("d6")).status === 200, "Ana's second opportunity (Ribeiro Odonto, already a client) is won");
 ok(/contrato novo no cliente Ribeiro Odonto/.test(await lastRun("cliente_onboarding")), "…it becomes a new contract of the client, no onboarding");
 ok((await sql(`SELECT count(*) FROM crm_contracts WHERE client_id = $1 AND deal_id = 'd6'`, [rib])) === "1", "…the contract is there");
@@ -100,7 +100,7 @@ await json(await vitor.patch(`${BASE}/api/crm/deals/${d9}/`, { data: { stage: "p
 await won(d9);
 ok((await sql(`SELECT count(*) FROM crm_clients WHERE company_id = 'co-lima'`)) === "1" && (await sql(`SELECT count(*) FROM crm_tasks WHERE company_id = 'co-lima'`)) === "1", "won again: nothing twice");
 await sql(`UPDATE crm_deals SET service = 'trafego', value_cents = 100000 WHERE id = 'd5'`);
-ok((await json(await vitor.patch(`${BASE}/api/crm/deals/d5/`, { data: { stage: "ganho", negotiatedValue: "900", wonReason: "preco" } }))).status === 200, "Eva's opportunity (no company) is won");
+ok((await json(await vitor.patch(`${BASE}/api/crm/deals/d5/`, { data: { stage: "ganho", negotiatedValue: "900", wonReason: "preco", wonResult: "proposta_aprovada", wonNote: "Aprovou a proposta" } }))).status === 200, "Eva's opportunity (no company) is won");
 ok(/^ignorada: .*Eva Prado não tem empresa/.test(await lastRun("cliente_onboarding")), "…nothing is created without a company (run says why)");
 
 // ---- 8. contract near its end ----

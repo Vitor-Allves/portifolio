@@ -81,6 +81,7 @@ export default function CrmTasksView({
   currentUserId,
   now,
   canComplete,
+  onlyOwn = false,
   version,
   onOpenContact,
   onOpenTask,
@@ -94,6 +95,8 @@ export default function CrmTasksView({
   now: number;
   /** Profiles that can't touch the funnel (Marketing) see tasks without the "concluir" box. */
   canComplete: boolean;
+  /** Evolução v1.0: who works only on their own leads (Comercial) sees the team's tasks but completes only theirs; the list starts on "Minhas tarefas". */
+  onlyOwn?: boolean;
   version: number;
   onOpenContact: (contactId: string, tab?: "conversa" | "negocio") => void;
   onOpenTask: (taskId: string) => void;
@@ -101,7 +104,7 @@ export default function CrmTasksView({
   onChanged: () => void;
 }) {
   const { options } = useCatalog();
-  const [owner, setOwner] = useState("all");
+  const [owner, setOwner] = useState(onlyOwn ? "mine" : "all");
   const [kind, setKind] = useState("");
   const [priority, setPriority] = useState("");
   const [status, setStatus] = useState<"pending" | "em_andamento" | "done">("pending");
@@ -267,7 +270,7 @@ export default function CrmTasksView({
               <ul className="divide-y divide-crm-line">
                 {items.map((t) => (
                   <li key={t.id} className="hover:bg-crm-hover transition-colors">
-                    <TaskRow task={t} now={now} busy={busy === t.id} onDone={canComplete ? () => void complete(t) : undefined} onOpen={() => onOpenTask(t.id)} />
+                    <TaskRow task={t} now={now} busy={busy === t.id} onDone={canComplete && (!onlyOwn || t.ownerId === currentUserId) ? () => void complete(t) : undefined} onOpen={() => onOpenTask(t.id)} />
                   </li>
                 ))}
               </ul>

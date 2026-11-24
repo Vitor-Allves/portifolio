@@ -54,13 +54,99 @@ async function structure(name) {
   const cons = await query(name, `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`);
   return JSON.stringify({ cols, idx, cons });
 }
-const LATEST = 20;
+const LATEST = 28;
 
 // The task types v9 seeded (the rest of DEFAULT_OPTIONS.task_kind came with v13).
 const V9_TASK_KINDS = ["ligacao", "reuniao", "whatsapp", "email", "tarefa"];
 
-// Back to v19: undo exactly what v20 (ligação com o Intelligence) added.
+// The closing reasons v21 added, and the v9 names of the ones it renamed.
+const V21_REASONS = ["preco", "desistencia", "sem_interesse", "contato_invalido", "desqualificado", "duplicado", "retornar", "aguardando_decisao", "aguardando_orcamento", "retomar_data"];
+const V9_REASON_LABELS = { sem_orcamento: "Sem orçamento", concorrente: "Escolheu outra empresa", sem_resposta: "Parou de responder", sem_perfil: "Sem perfil para o serviço", adiou: "Adiou o projeto", outro: "Outro" };
+
+// Back to v27: undo exactly what v28 (2FA e LGPD) added.
+async function downgradeToV27(name) {
+  await query(name, `ALTER TABLE internal_users DROP COLUMN totp_last_step; ALTER TABLE crm_contacts DROP COLUMN anonymized_at; DELETE FROM schema_migrations WHERE version = 28;`);
+}
+
+// Back to v26: undo exactly what v28 and v27 (automações e mensagens agendadas) added.
+async function downgradeToV26(name) {
+  await downgradeToV27(name);
+  await query(
+    name,
+    `DROP TABLE crm_scheduled_messages;
+     DELETE FROM crm_automations WHERE id IN ('proposta_vencendo', 'retorno_agendado', 'diagnostico_realizado', 'oportunidade_sem_responsavel', 'transferencia_solicitada', 'proposta_aprovada');
+     DELETE FROM schema_migrations WHERE version = 27;`
+  );
+}
+
+// Back to v25: undo exactly what v27 and v26 (financeiro) added.
+async function downgradeToV25(name) {
+  await downgradeToV26(name);
+  await query(name, `DROP TABLE crm_commission_rules; ALTER TABLE crm_contracts DROP COLUMN status_changed_at; DELETE FROM schema_migrations WHERE version = 26;`);
+}
+
+// Back to v24: undo exactly what v26 and v25 (contratos e operação) added.
+async function downgradeToV24(name) {
+  await downgradeToV25(name);
+  await query(
+    name,
+    `DROP TABLE crm_client_satisfaction; DROP TABLE crm_client_deliverables; DROP TABLE crm_client_onboarding;
+     ALTER TABLE crm_contracts DROP COLUMN number, DROP COLUMN proposal_id, DROP COLUMN one_time_cents, DROP COLUMN payment_terms, DROP COLUMN due_day,
+       DROP COLUMN term_months, DROP COLUMN renewal, DROP COLUMN cancellation_rules, DROP COLUMN sales_owner_id, DROP COLUMN ops_owner_id,
+       DROP COLUMN signed_file_id, DROP COLUMN signed_on;
+     DROP SEQUENCE crm_contract_number_seq;
+     DELETE FROM schema_migrations WHERE version = 25;`
+  );
+}
+
+// Back to v23: undo exactly what v25 and v24 (propostas) added.
+async function downgradeToV23(name) {
+  await downgradeToV24(name);
+  await query(
+    name,
+    `DROP TABLE crm_proposal_approvals; DROP TABLE crm_proposal_events; DROP TABLE crm_proposal_versions; DROP TABLE crm_proposals;
+     DROP TABLE crm_proposal_templates; DROP TABLE crm_settings; DROP SEQUENCE crm_proposal_number_seq;
+     DELETE FROM schema_migrations WHERE version = 24;`
+  );
+}
+
+// Back to v22: undo exactly what v24 and v23 (cadastros, diagnóstico, documentos) added.
+async function downgradeToV22(name) {
+  await downgradeToV23(name);
+  await query(
+    name,
+    `DROP TABLE crm_files; DROP TABLE crm_diagnostics;
+     ALTER TABLE crm_companies DROP COLUMN phone, DROP COLUMN email;
+     ALTER TABLE crm_contacts DROP COLUMN alt_phone, DROP COLUMN potential, DROP COLUMN need;
+     DELETE FROM schema_migrations WHERE version = 23;`
+  );
+}
+
+// Back to v21: undo exactly what v23 and v22 (solicitações de transferência) added.
+async function downgradeToV21(name) {
+  await downgradeToV22(name);
+  await query(name, `DROP TABLE crm_transfer_requests; DELETE FROM schema_migrations WHERE version = 22;`);
+}
+
+// Back to v20: undo exactly what v22 and v21 (funil configurável e tabulação) added.
+async function downgradeToV20(name) {
+  await downgradeToV21(name);
+  await query(
+    name,
+    `DROP INDEX crm_deals_close_idx;
+     ALTER TABLE crm_deals DROP COLUMN probability, DROP COLUMN won_result, DROP COLUMN close_group, DROP COLUMN closed_by, DROP COLUMN closed_by_name, DROP COLUMN return_on;
+     DELETE FROM crm_options WHERE kind = 'stage' OR (kind = 'lost_reason' AND id = ANY('{${V21_REASONS.join(",")}}'));
+     ${Object.entries(V9_REASON_LABELS)
+       .map(([id, label]) => `UPDATE crm_options SET label = '${label}' WHERE kind = 'lost_reason' AND id = '${id}';`)
+       .join("\n     ")}
+     ALTER TABLE crm_options DROP COLUMN meta;
+     DELETE FROM schema_migrations WHERE version = 21;`
+  );
+}
+
+// Back to v19: undo exactly what v21 and v20 (ligação com o Intelligence) added.
 async function downgradeToV19(name) {
+  await downgradeToV20(name);
   await query(
     name,
     `DROP TABLE crm_media_syncs; DROP INDEX crm_clients_client_access_idx; ALTER TABLE crm_clients DROP COLUMN client_access_id;
@@ -219,10 +305,15 @@ ok(added.every((r) => r.sort > 4), "…after the existing ones");
 ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind = 'task_kind' AND color IS NULL`))[0].n === 0, "v13: every task type has a color");
 const priorities = (await query(B, `SELECT id, label, locked, color FROM crm_options WHERE kind = 'priority' ORDER BY sort`)).map((r) => `${r.label}${r.locked ? "*" : ""}:${r.color}`).join(",");
 ok(priorities === "Alta:vermelho,Média*:amarelo,Baixa:cinza", `v13: priorities seeded, Média is the fallback (${priorities})`);
-ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_options WHERE kind NOT IN ('task_kind', 'priority', 'stage') AND color IS NOT NULL`))[0].n === 0, "v13: other lists get no color");
 // v14 (Fase 3, entrega 2): the ten automations, every one off — nothing changes until an Administrador turns one on.
+// v27 adds six; the two that only take over notices the CRM already gave start on.
 const autos = await query(B, `SELECT id, status FROM crm_automations ORDER BY id`);
-ok(autos.length === 10 && autos.every((r) => r.status === "desativada"), `v14: ten automations, all desativadas (${autos.map((r) => r.status).join(",")})`);
+const onByDefault = ["proposta_aprovada", "transferencia_solicitada"];
+ok(
+  autos.length === 16 && autos.every((r) => (r.status === "ativa") === onByDefault.includes(r.id)),
+  `v14 + v27: sixteen automations, all off but the two notices (${autos.map((r) => `${r.id}:${r.status}`).join(",")})`
+);
 ok((await query(B, `SELECT (SELECT count(*) FROM crm_automation_runs) + (SELECT count(*) FROM crm_notifications) AS n`))[0].n === "0", "v14: no runs and no notices yet");
 // v15 (Fase 4, entrega 1): Atendimento tags; no conversation starts with someone attending it.
 const attendanceTags = (await query(B, `SELECT label FROM crm_tags WHERE category = 'atendimento' ORDER BY sort`)).map((r) => r.label).join(",");
@@ -241,6 +332,133 @@ ok(
   (await query(B, `SELECT (SELECT count(*) FROM crm_clients WHERE client_access_id IS NOT NULL) + (SELECT count(*) FROM crm_media_syncs) AS n`))[0].n === "0",
   "v20: nothing linked to the Intelligence, nothing synced"
 );
+
+// v21 (evolução v1.0): from a v20 database with closed opportunities, a reason the team renamed and one they created.
+await downgradeToV20(B);
+ok((await query(B, `SELECT max(version) AS v FROM schema_migrations`))[0].v === 20, "back at v20");
+await query(
+  B,
+  `UPDATE crm_options SET label = 'Cliente sem verba' WHERE kind = 'lost_reason' AND id = 'sem_orcamento';
+   INSERT INTO crm_options (kind, id, label, sort) VALUES ('lost_reason', 'faliu', 'Empresa fechou', 9);
+   INSERT INTO crm_deals (id, contact_id, title, stage, won_reason, closed_at) VALUES ('d-won', 'keep-me', 'Ganho antigo', 'ganho', NULL, now());
+   INSERT INTO crm_deals (id, contact_id, title, stage, lost_reason, closed_at) VALUES ('d-silent', 'keep-me', 'Sumiu', 'perdido', 'sem_resposta', now());
+   INSERT INTO crm_deals (id, contact_id, title, stage, lost_reason, closed_at) VALUES ('d-custom', 'keep-me', 'Fechou as portas', 'perdido', 'faliu', now());`
+);
+ok(migrate(B, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v20 → v${LATEST}`);
+ok((await structure(B)) === target, "…structure identical to a fresh one");
+const stagesV21 = await query(B, `SELECT id, label, locked, color, meta FROM crm_options WHERE kind = 'stage' ORDER BY sort`);
+ok(
+  stagesV21.map((r) => `${r.id}=${r.label}:${r.meta.probability}`).join(",") ===
+    "novo=Novo lead:5,conversa=Primeiro contato:10,reuniao=Em qualificação:20,diagnostico=Diagnóstico realizado:35,elaboracao=Proposta em elaboração:45,proposta=Proposta enviada:55,negociacao=Em negociação:70,aprovacao=Aguardando aprovação:85,ganho=Venda fechada:100,perdido=Venda perdida:0",
+  `v21: the ten stages, old codes kept and renamed, with probabilities (${stagesV21.map((r) => r.id).join(",")})`
+);
+ok(stagesV21.filter((r) => r.locked).map((r) => r.id).join(",") === "novo,ganho,perdido" && stagesV21.every((r) => r.color), "v21: Novo lead, Venda fechada and Venda perdida are fixed; every stage has a color");
+const reasonsV21 = Object.fromEntries((await query(B, `SELECT id, label, meta->>'group' AS g FROM crm_options WHERE kind = 'lost_reason'`)).map((r) => [r.id, r]));
+ok(Object.keys(reasonsV21).length === 17, `v21: sixteen closing reasons plus the team's own (${Object.keys(reasonsV21).length})`);
+ok(reasonsV21.sem_orcamento.label === "Cliente sem verba" && reasonsV21.concorrente.label === "Fechamento com concorrente", "v21: a reason the team renamed keeps its name; the others take the spec's");
+ok(reasonsV21.sem_resposta.g === "sem_conversao" && reasonsV21.retornar.g === "futuro" && reasonsV21.preco.g === "negativo" && reasonsV21.faliu.g === "negativo", "v21: every reason has its tabulação group (the team's own: perda comercial)");
+const closedV21 = Object.fromEntries((await query(B, `SELECT id, stage, close_group, probability, closed_by, won_result FROM crm_deals WHERE id IN ('d-won', 'd-silent', 'd-custom', 'keep-deal')`)).map((r) => [r.id, r]));
+ok(closedV21["d-won"].close_group === "positivo" && closedV21["d-silent"].close_group === "sem_conversao" && closedV21["d-custom"].close_group === "negativo", "v21: closed opportunities get the group of their reason");
+ok(Object.values(closedV21).every((r) => r.probability === null && r.closed_by === null && r.won_result === null), "v21: nothing invented (probability from the stage, no closer, no result)");
+ok(closedV21["keep-deal"].stage === "proposta" && closedV21["keep-deal"].close_group === null, "v21: an open opportunity keeps its stage and has no tabulação");
+// v22: no transfer requests until someone asks; owners unchanged.
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_transfer_requests`))[0].n === 0, "v22: no transfer requests yet");
+ok((await query(B, `SELECT owner_id FROM crm_contacts WHERE id = 'keep-me'`))[0].owner_id === null, "v22: nobody's lead changes hands by itself");
+// v23: the new cadastro fields start empty (nothing invented); no diagnoses or files yet; the limits hold.
+const keepV23 = (await query(B, `SELECT alt_phone, potential, need FROM crm_contacts WHERE id = 'keep-me'`))[0];
+ok(keepV23.alt_phone === null && keepV23.potential === null && keepV23.need === null, "v23: existing contacts get empty new fields");
+ok((await query(B, `SELECT count(*)::int AS n FROM crm_companies WHERE phone IS NOT NULL OR email IS NOT NULL`))[0].n === 0, "v23: existing companies get no phone or e-mail invented");
+ok((await query(B, `SELECT (SELECT count(*) FROM crm_diagnostics) + (SELECT count(*) FROM crm_files) AS n`))[0].n === "0", "v23: no diagnoses or files yet");
+let refusedPotential = false;
+try {
+  await query(B, `UPDATE crm_contacts SET potential = 'enorme' WHERE id = 'keep-me'`);
+} catch {
+  refusedPotential = true;
+}
+ok(refusedPotential, "v23: potencial comercial only alto, medio or baixo");
+let refusedTwoTargets = false;
+try {
+  await query(B, `INSERT INTO crm_companies (id, name, name_key) VALUES ('co-v23', 'Empresa v23', 'empresa v23')`);
+  await query(B, `INSERT INTO crm_files (id, contact_id, company_id, name, mime, size_bytes, sha256, content) VALUES ('f2', 'keep-me', 'co-v23', 'a.txt', 'text/plain', 1, 'x', 'a'::bytea)`);
+} catch {
+  refusedTwoTargets = true;
+}
+ok(refusedTwoTargets, "v23: a file belongs to exactly one record");
+let refusedBig = false;
+try {
+  await query(B, `INSERT INTO crm_files (id, contact_id, name, mime, size_bytes, sha256, content) VALUES ('f3', 'keep-me', 'a.txt', 'text/plain', 5000000, 'x', 'a'::bytea)`);
+} catch {
+  refusedBig = true;
+}
+ok(refusedBig, "v23: files over 4 MB are refused by the database too");
+// v24: proposals start empty, numbered from 1; a status outside the list is refused.
+ok((await query(B, `SELECT (SELECT count(*) FROM crm_proposals) + (SELECT count(*) FROM crm_proposal_templates) + (SELECT count(*) FROM crm_settings) AS n`))[0].n === "0", "v24: no proposals, templates or settings yet");
+await query(B, `INSERT INTO crm_proposals (id, deal_id, contact_id, title, issue_date, valid_until) VALUES ('pr1', 'keep-deal', 'keep-me', 'Teste', now()::date, now()::date + 10)`);
+ok((await query(B, `SELECT number FROM crm_proposals WHERE id = 'pr1'`))[0].number === 1 && (await query(B, `SELECT status FROM crm_proposals WHERE id = 'pr1'`))[0].status === "em_elaboracao", "v24: the first proposal is number 1, em elaboração");
+let refusedStatus = false;
+try {
+  await query(B, `UPDATE crm_proposals SET status = 'fechada' WHERE id = 'pr1'`);
+} catch {
+  refusedStatus = true;
+}
+ok(refusedStatus, "v24: only the eight proposal statuses");
+// v25: existing contracts numbered in creation order; the next one continues; the new tables start empty.
+const db25 = "crm_schema_v25";
+await freshDb(db25);
+migrate(db25);
+await downgradeToV24(db25);
+await query(db25, `INSERT INTO crm_companies (id, name, name_key) VALUES ('co1', 'Empresa Um', 'empresa um'), ('co2', 'Empresa Dois', 'empresa dois')`);
+await query(db25, `INSERT INTO crm_clients (id, company_id, status) VALUES ('cl1', 'co1', 'ativo'), ('cl2', 'co2', 'ativo')`);
+await query(
+  db25,
+  `INSERT INTO crm_contracts (id, client_id, starts_on, value_cents, created_at) VALUES ('k-new', 'cl2', '2026-03-01', 1000, '2026-03-01'), ('k-old', 'cl1', '2025-01-01', 2000, '2025-01-01')`
+);
+ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v24 → v${LATEST}`);
+const nums = await query(db25, `SELECT id, number FROM crm_contracts ORDER BY number`);
+ok(nums.map((r) => `${r.id}:${r.number}`).join() === "k-old:1,k-new:2", `v25: contracts numbered by creation (${nums.map((r) => `${r.id}:${r.number}`).join()})`);
+await query(db25, `INSERT INTO crm_contracts (id, client_id, starts_on) VALUES ('k-3', 'cl1', '2026-11-01')`);
+ok((await query(db25, `SELECT number FROM crm_contracts WHERE id = 'k-3'`))[0].number === 3, "v25: the next contract is number 3");
+ok((await query(db25, `SELECT value_cents, payment_terms, renewal FROM crm_contracts WHERE id = 'k-old'`))[0].value_cents === "2000", "v25: existing contract values untouched");
+ok((await query(db25, `SELECT (SELECT count(*) FROM crm_client_onboarding) + (SELECT count(*) FROM crm_client_deliverables) + (SELECT count(*) FROM crm_client_satisfaction) AS n`))[0].n === "0", "v25: no checklist, deliverables or satisfaction invented for existing clients");
+let refusedScore = false;
+try {
+  await query(db25, `INSERT INTO crm_client_satisfaction (id, client_id, score) VALUES ('s1', 'cl1', 11)`);
+} catch {
+  refusedScore = true;
+}
+ok(refusedScore, "v25: satisfaction from 0 to 10");
+// v26: a contract already cancelled takes its last update as the date it left "vigente"; vigente ones have none.
+await downgradeToV25(db25);
+await query(db25, `UPDATE crm_contracts SET status = 'cancelado', updated_at = '2026-06-15T12:00:00Z' WHERE id = 'k-old'`);
+ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v25 → v${LATEST}`);
+const changed = await query(db25, `SELECT id, status_changed_at IS NOT NULL AS has FROM crm_contracts ORDER BY id`);
+ok(changed.map((r) => `${r.id}:${r.has}`).join() === "k-3:false,k-new:false,k-old:true", "v26: only the cancelled contract gets the date (its last update)");
+ok((await query(db25, `SELECT count(*)::int AS n FROM crm_commission_rules`))[0].n === 0, "v26: no commission rules invented");
+// v27: the six new rules join; an Administrador's choice made before is never overridden; nothing is scheduled.
+await downgradeToV26(db25);
+await query(db25, `UPDATE crm_automations SET status = 'ativa', updated_by = NULL WHERE id = 'novo_lead'`);
+await query(db25, `INSERT INTO crm_automations (id, status, updated_by) VALUES ('proposta_aprovada', 'desativada', NULL)`);
+await query(db25, `INSERT INTO internal_users (id, name, email, username, role, password_hash) VALUES ('u-adm', 'Adm', 'adm@x.com', 'adm', 'administrador_geral', 'x')`);
+await query(db25, `UPDATE crm_automations SET updated_by = 'u-adm' WHERE id = 'proposta_aprovada'`);
+ok(migrate(db25, { VERCEL_ENV: "production" }).version === LATEST, `production upgrades v26 → v${LATEST}`);
+const v27 = Object.fromEntries((await query(db25, `SELECT id, status FROM crm_automations`)).map((r) => [r.id, r.status]));
+ok(Object.keys(v27).length === 16, "v27: sixteen rules");
+ok(v27.transferencia_solicitada === "ativa" && v27.proposta_aprovada === "desativada", "v27: the transfer notice starts on; the approval one an Administrador had turned off stays off");
+ok(v27.novo_lead === "ativa" && v27.proposta_vencendo === "desativada" && v27.oportunidade_sem_responsavel === "desativada", "v27: existing choices kept; the other new rules start off");
+ok((await query(db25, `SELECT count(*)::int AS n FROM crm_scheduled_messages`))[0].n === 0, "v27: no scheduled messages");
+let refusedKind = false;
+try {
+  await query(db25, `INSERT INTO crm_scheduled_messages (id, contact_id, kind, body, send_at) VALUES ('m1', 'nao-existe', 'audio', 'x', now())`);
+} catch {
+  refusedKind = true;
+}
+ok(refusedKind, "v27: a scheduled message is a text or a template, of an existing contact");
+// v28: nobody's 2FA step is known yet and no contact is anonymized.
+ok(
+  (await query(db25, `SELECT (SELECT count(*) FROM internal_users WHERE totp_last_step IS NOT NULL) + (SELECT count(*) FROM crm_contacts WHERE anonymized_at IS NOT NULL) AS n`))[0].n === "0",
+  "v28: no 2FA step kept, no contact anonymized"
+);
+await admin(`DROP DATABASE IF EXISTS ${db25} WITH (FORCE)`);
 
 await admin(`DROP DATABASE IF EXISTS ${A} WITH (FORCE)`);
 await admin(`DROP DATABASE IF EXISTS ${B} WITH (FORCE)`);

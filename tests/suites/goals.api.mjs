@@ -110,6 +110,13 @@ ok(
   p.team.leads === dash.current.newLeads && p.team.tasksDone === dash.current.tasksDone && p.team.wonCount === dash.current.wonCount && p.team.answered === 2 && p.team.avgResponseMinutes === 75,
   `team totals = the Painel's; 2 answered, 75 min on average (${JSON.stringify(p.team)})`
 );
+// Evolução v1.0 (item 12): the individual indicators.
+ok(p.team.worked === dash.current.workedLeads && p.team.proposalsApproved === dash.current.proposalsApproved, "leads trabalhados and approved proposals add up to the Painel's");
+ok(
+  p.rows.reduce((acc, r) => acc + r.assigned, 0) === Number(await sql(`SELECT count(*) FROM crm_contacts WHERE archived_at IS NULL`)),
+  "every lead is assigned to one line (a person or Sem responsável)"
+);
+ok(pv.avgTicketCents === 500000 && pj.avgTicketCents === null && pj.followUps === 0, "ticket médio per person; no follow-ups done");
 p = (await prod(joao)).body.productivity;
 ok(p.rows.length === 1 && p.rows[0].name === "João" && p.team === null, "a Comercial sees only their own productivity");
 ok((await prod(vitor, "from=2026-10-31&to=2026-10-01")).status === 400 && (await prod(vitor, "from=2025-01-01&to=2026-10-31")).status === 400, "invalid or too long period refused");

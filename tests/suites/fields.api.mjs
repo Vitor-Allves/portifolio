@@ -93,6 +93,8 @@ ok(r.status === 400 && r.body.error.includes("valor negociado e motivo do ganho"
 await json(await admin.patch(`${opts}won_reason/preco/`, { data: { archived: true } }));
 ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "ganho", negotiatedValue: "3.200", wonReason: "preco" } }))).status === 400, "archived win reason refused");
 r = await json(await gestor.patch(dealUrl("d5"), { data: { stage: "ganho", negotiatedValue: "3.200,50", wonReason: "resultado", wonNote: "plano anual" } }));
+ok(r.status === 400 && /resultado/.test(r.body.error), `…and the tabulação asks for the result (${r.body?.error})`);
+r = await json(await gestor.patch(dealUrl("d5"), { data: { stage: "ganho", negotiatedValue: "3.200,50", wonReason: "resultado", wonNote: "plano anual", wonResult: "venda_realizada" } }));
 ok(r.status === 200 && r.body.stage === "ganho", "Ganho with negotiated value and reason accepted");
 let row = (await sql(`SELECT negotiated_cents || '|' || won_reason || '|' || won_note || '|' || value_cents FROM crm_deals WHERE id = 'd5'`));
 ok(row === "320050|resultado|plano anual|350000", `negotiated and estimated values kept apart (${row})`);
@@ -104,7 +106,8 @@ ok(valueEdit.some((x) => x.field === "Valor negociado" && x.to === "320050") && 
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 const dash = (await json(await gestor.get(`${BASE}/api/crm/dashboard/?from=${today}&to=${today}`))).body;
 ok(dash.dashboard?.current.wonValueCents === 320050, `Painel counts a won deal by its negotiated value (${JSON.stringify(dash.dashboard?.current ?? dash)})`);
-ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "proposta" } }))).status === 200, "reopened to Proposta (service and value already there)");
+ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "proposta" } }))).status === 400, "reopening a closed opportunity asks for the justification");
+ok((await json(await gestor.patch(dealUrl("d5"), { data: { stage: "proposta", reopenReason: "Cliente pediu outra versão" } }))).status === 200, "reopened to Proposta (service and value already there)");
 ok((await sql(`SELECT COALESCE(won_reason, 'none') FROM crm_deals WHERE id = 'd5'`)) === "none", "leaving Ganho clears the win reason");
 ok((await json(await gestor.post(`${BASE}/api/crm/deals/`, { data: { contactId: lia, stage: "ganho" } }))).status === 400, "a new opportunity can't start in Ganho without what Ganho requires");
 r = await json(await gestor.post(`${BASE}/api/crm/deals/`, { data: { contactId: lia, stage: "proposta", value: "1.000" } }));
@@ -126,12 +129,12 @@ ok(r.status === 201, "company created with CNPJ");
 const sorriso = r.body.id;
 ok((await sql(`SELECT cnpj || '|' || state || '|' || status FROM crm_companies WHERE id = '${sorriso}'`)) === "11222333000181|SP|prospeccao", "CNPJ stored without punctuation, UF upper-cased, starts in Prospecção");
 r = await json(await gestor.post(companies, { data: { name: "Outra Clínica", cnpj: "11222333000181" } }));
-ok(r.status === 400 && r.body.error.includes("Clínica Sorriso"), "same CNPJ refused, naming the company that has it");
+ok(r.status === 409 && r.body.error.includes("Clínica Sorriso") && r.body.duplicate?.by === "cnpj", "same CNPJ refused, naming the company that has it");
 ok((await json(await gestor.post(companies, { data: { name: "Inválida", cnpj: "11.222.333/0001-80" } }))).status === 400, "invalid CNPJ refused");
 r = await json(await gestor.post(companies, { data: { name: "Nova Era Tech", cnpj: "12.ABC.345/01DE-35" } }));
 ok(r.status === 201, "alphanumeric CNPJ accepted");
 const novaEra = r.body.id;
-ok((await json(await gestor.patch(`${companies}${novaEra}/`, { data: { cnpj: "11.222.333/0001-81" } }))).status === 400, "editing onto another company's CNPJ refused");
+ok((await json(await gestor.patch(`${companies}${novaEra}/`, { data: { cnpj: "11.222.333/0001-81" } }))).status === 409, "editing onto another company's CNPJ refused");
 ok((await json(await gestor.patch(`${companies}${sorriso}/`, { data: { state: "XX" } }))).status === 400, "unknown UF refused");
 ok((await json(await gestor.patch(`${companies}${sorriso}/`, { data: { status: "fechada" } }))).status === 400, "unknown situação refused");
 r = await json(
@@ -159,11 +162,12 @@ ok((await companyList("state=SP")).join() === "Clínica Sorriso", "filter by UF"
 ok((await companyList(`tag=${tagId}`)).join() === "Clínica Sorriso", "filter by tag");
 ok((await companyList("q=11.222.333")).join() === "Clínica Sorriso" && (await companyList("q=Odontologia LTDA")).join() === "Clínica Sorriso", "search by CNPJ or razão social");
 ok((await json(await gestor.delete(`${companies}${sorriso}/tags/?tagId=${tagId}`))).body.removed === true, "company tag removed");
-// Comercial sees only their own (and unowned) contacts' opportunities in a company.
+// Evolução v1.0: the Comercial sees every contact and opportunity in a company (and works only on theirs).
 await json(await gestor.patch(contactUrl("c2"), { data: { company: "Clínica Sorriso" } }));
 await json(await gestor.patch(contactUrl(lia), { data: { ownerId: "u-vitor" } }));
 const coJoao = (await json(await comercial.get(`${companies}${sorriso}/`))).body.company;
-ok(coJoao.contacts.map((x) => x.name).join() === "Bruno Souza" && coJoao.deals.every((d) => d.contactName === "Bruno Souza"), "Comercial sees only their own contacts' opportunities in the company");
+ok(coJoao.contacts.map((x) => x.name).sort().join() === "Bruno Souza,Lia Quente", `Comercial sees every contact of the company (${coJoao.contacts.map((x) => x.name).join()})`);
+ok((await json(await comercial.patch(contactUrl(lia), { data: { jobTitle: "Diretora" } }))).status === 403, "…but can't edit someone else's");
 
 // ---- import with CNPJ ----
 const rows = [

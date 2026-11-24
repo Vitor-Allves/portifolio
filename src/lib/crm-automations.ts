@@ -16,7 +16,7 @@ import type { PoolClient } from "pg";
 import { getDb, onCommit, withTransaction } from "./db";
 import { CrmInputError, CrmNotFoundError, addEvent, cleanText, iso, type CrmActor, type CrmWriter } from "./crm-core";
 import { addTaskEvent, createTaskTx, remindAt } from "./crm-tasks";
-import { requireOptionId } from "./crm-options";
+import { loadStageLabels, requireOptionId } from "./crm-options";
 import { crmCapabilities, effectiveCrmAccess } from "./crm-permissions";
 import { auditClientCreated, createClientTx, currentMonthBr, todayBr, type ClientActor } from "./crm-clients";
 import { CAMPAIGN_REPLY_WINDOW } from "./crm-campaign-rules";
@@ -169,6 +169,14 @@ async function cleanConfig(q: Q, def: AutomationDef, input: unknown, current: Au
       case "notifyOwner":
         if (typeof v !== "boolean") throw new CrmInputError("Configuração inválida.");
         out.notifyOwner = v;
+        break;
+      case "notifyManagers":
+        if (typeof v !== "boolean") throw new CrmInputError("Configuração inválida.");
+        out.notifyManagers = v;
+        break;
+      case "createTask":
+        if (typeof v !== "boolean") throw new CrmInputError("Configuração inválida.");
+        out.createTask = v;
         break;
       case "sources": {
         if (!Array.isArray(v)) throw new CrmInputError("Origens inválidas.");
@@ -557,6 +565,7 @@ async function checkStalledDeals(cfg: AutomationConfig): Promise<AutomationRunSu
      LIMIT ${SCHEDULED_BATCH + 1}`,
     [days]
   );
+  await loadStageLabels(db);
   const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: rows.length > SCHEDULED_BATCH };
   for (const d of rows.slice(0, SCHEDULED_BATCH)) {
     // One alert per stall: the key carries when the opportunity entered its stage (whole seconds, same as the query above).
@@ -689,11 +698,227 @@ async function checkMonthlyUpdates(cfg: AutomationConfig): Promise<AutomationRun
   return summary;
 }
 
+// ---------- evolução v1.0 (item 7) ----------
+
+/** Gestores and Administradores (who approve transfers and may reassign anything). */
+async function managers(q: Q): Promise<{ id: string; name: string }[]> {
+  const { approvers } = await import("./crm-transfers");
+  return approvers(q);
+}
+
+function tally(summary: AutomationRunSummary, r: "ok" | "ignorada" | "duplicada" | "falha") {
+  if (r === "ok") summary.ok++;
+  else if (r === "ignorada") summary.ignored++;
+  else if (r === "falha") summary.failed++;
+}
+
+/** 11. Proposta perto do vencimento: aviso ao responsável, uma vez para cada validade. */
+async function checkExpiringProposals(cfg: AutomationConfig): Promise<AutomationRunSummary> {
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; number: number; title: string; valid_until: string; days_left: number; contact_id: string; deal_id: string; owner_id: string | null; contact_name: string }>(
+    `SELECT p.id, p.number, p.title, p.valid_until::text AS valid_until, p.valid_until - (now() AT TIME ZONE 'America/Sao_Paulo')::date AS days_left,
+            p.contact_id, p.deal_id, COALESCE(d.owner_id, c.owner_id) AS owner_id, c.name AS contact_name
+     FROM crm_proposals p JOIN crm_deals d ON d.id = p.deal_id JOIN crm_contacts c ON c.id = p.contact_id
+     WHERE p.status IN ('enviada', 'visualizada', 'em_negociacao')
+       AND p.valid_until BETWEEN (now() AT TIME ZONE 'America/Sao_Paulo')::date AND (now() AT TIME ZONE 'America/Sao_Paulo')::date + $1::int
+       AND NOT EXISTS (SELECT 1 FROM crm_automation_runs r WHERE r.automation_id = 'proposta_vencendo' AND r.dedupe_key = 'proposta:' || p.id || ':validade:' || p.valid_until::text)
+     ORDER BY p.valid_until, p.id LIMIT ${SCHEDULED_BATCH + 1}`,
+    [cfg.days ?? 3]
+  );
+  const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: rows.length > SCHEDULED_BATCH };
+  for (const p of rows.slice(0, SCHEDULED_BATCH)) {
+    const r = await runOnce("proposta_vencendo", `proposta:${p.id}:validade:${p.valid_until}`, { contactId: p.contact_id, dealId: p.deal_id }, async (client) => {
+      const owner = (await activeUser(client, p.owner_id)) ?? (await activeUser(client, cfg.fallbackOwnerId ?? null));
+      const n = String(p.number).padStart(4, "0");
+      const end = p.valid_until.split("-").reverse().join("/");
+      if (!owner) return { status: "ignorada", detail: `Proposta nº ${n} vence em ${end}, sem responsável para avisar.` };
+      const when = p.days_left === 0 ? "hoje" : `em ${p.days_left} ${p.days_left === 1 ? "dia" : "dias"}`;
+      await notify(client, owner.id, "proposta_vencendo", {
+        kind: "alerta",
+        title: `Proposta nº ${n} vence ${when}`,
+        body: `${p.contact_name} · "${p.title}" vale até ${end}. Retome o contato ou ajuste a validade (nova versão).`,
+        contactId: p.contact_id,
+      });
+      return { detail: `Proposta nº ${n} (${p.contact_name}) vence em ${end} · aviso para ${owner.name}` };
+    });
+    tally(summary, r);
+  }
+  return summary;
+}
+
+/** 12. Retorno agendado: tarefa para a data combinada com o contato. */
+async function checkReturns(cfg: AutomationConfig): Promise<AutomationRunSummary> {
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; name: string; return_at: string; owner_id: string | null; deal_id: string | null }>(
+    `SELECT c.id, c.name, c.return_at::text AS return_at, c.owner_id,
+            (SELECT d.id FROM crm_deals d WHERE d.contact_id = c.id AND d.stage NOT IN ('ganho', 'perdido') ORDER BY d.created_at DESC LIMIT 1) AS deal_id
+     FROM crm_contacts c
+     WHERE c.archived_at IS NULL AND c.return_at IS NOT NULL
+       AND c.return_at BETWEEN (now() AT TIME ZONE 'America/Sao_Paulo')::date - 7 AND (now() AT TIME ZONE 'America/Sao_Paulo')::date + ($1::int - 1)
+       AND NOT EXISTS (SELECT 1 FROM crm_tasks t WHERE t.contact_id = c.id AND t.done_at IS NULL AND t.canceled_at IS NULL)
+       AND NOT EXISTS (SELECT 1 FROM crm_automation_runs r WHERE r.automation_id = 'retorno_agendado' AND r.dedupe_key = 'contato:' || c.id || ':retorno:' || c.return_at::text)
+     ORDER BY c.return_at, c.id LIMIT ${SCHEDULED_BATCH + 1}`,
+    [cfg.days ?? 1]
+  );
+  const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: rows.length > SCHEDULED_BATCH };
+  for (const c of rows.slice(0, SCHEDULED_BATCH)) {
+    const r = await runOnce("retorno_agendado", `contato:${c.id}:retorno:${c.return_at}`, { contactId: c.id, dealId: c.deal_id }, async (client) => {
+      const owner = await recipient(client, cfg, c.owner_id);
+      const due = c.return_at < todayBr() ? todayBr() : c.return_at;
+      const taskId = await createTaskTx(
+        client,
+        { contactId: c.id, dealId: c.deal_id, kind: cfg.taskKind, title: cfg.title, priority: cfg.priority, dueDate: due, ownerId: owner?.id ?? "" },
+        WRITER
+      );
+      return { detail: `${c.name}: retorno em ${c.return_at.split("-").reverse().join("/")} · tarefa para ${owner?.name ?? "ninguém (sem responsável)"}`, taskId };
+    });
+    tally(summary, r);
+  }
+  return summary;
+}
+
+/** 14. Oportunidade sem responsável: alerta, uma vez por oportunidade. */
+async function checkUnownedDeals(cfg: AutomationConfig): Promise<AutomationRunSummary> {
+  const db = await getDb();
+  const { rows } = await db.query<{ id: string; title: string; contact_id: string; contact_name: string }>(
+    `SELECT d.id, d.title, d.contact_id, c.name AS contact_name
+     FROM crm_deals d JOIN crm_contacts c ON c.id = d.contact_id
+     WHERE d.stage NOT IN ('ganho', 'perdido') AND d.owner_id IS NULL AND c.owner_id IS NULL AND c.archived_at IS NULL
+       AND d.created_at < now() - make_interval(days => $1::int)
+       AND NOT EXISTS (SELECT 1 FROM crm_automation_runs r WHERE r.automation_id = 'oportunidade_sem_responsavel' AND r.dedupe_key = 'oportunidade:' || d.id)
+     ORDER BY d.created_at, d.id LIMIT ${SCHEDULED_BATCH + 1}`,
+    [cfg.days ?? 1]
+  );
+  const summary: AutomationRunSummary = { ok: 0, ignored: 0, failed: 0, more: rows.length > SCHEDULED_BATCH };
+  for (const d of rows.slice(0, SCHEDULED_BATCH)) {
+    const r = await runOnce("oportunidade_sem_responsavel", `oportunidade:${d.id}`, { contactId: d.contact_id, dealId: d.id }, async (client) => {
+      const chosen = await activeUser(client, cfg.fallbackOwnerId ?? null);
+      const to = chosen ? [chosen] : await managers(client);
+      if (!to.length) return { status: "ignorada", detail: `"${d.title}" sem responsável, e ninguém para avisar.` };
+      for (const u of to) {
+        await notify(client, u.id, "oportunidade_sem_responsavel", {
+          kind: "alerta",
+          title: `Oportunidade sem responsável: ${d.contact_name}`,
+          body: `"${d.title}" está sem responsável. Distribua o lead.`,
+          contactId: d.contact_id,
+        });
+      }
+      return { detail: `"${d.title}" (${d.contact_name}) sem responsável · aviso para ${to.map((u) => u.name).join(", ")}` };
+    });
+    tally(summary, r);
+  }
+  return summary;
+}
+
+/** 13. Diagnóstico realizado: tarefa do próximo passo. */
+export async function onDiagnosis(contactId: string, diagnosisId: string): Promise<void> {
+  const cfg = await activeConfig("diagnostico_realizado");
+  if (!cfg) return;
+  const db = await getDb();
+  const pending = await db.query(`SELECT 1 FROM crm_tasks WHERE contact_id = $1 AND kind = $2 AND done_at IS NULL AND canceled_at IS NULL LIMIT 1`, [contactId, cfg.taskKind]);
+  if (pending.rows.length > 0) return;
+  const { rows } = await db.query<{ owner_id: string | null; deal_id: string | null; name: string }>(
+    `SELECT c.owner_id, c.name, COALESCE(g.deal_id, (SELECT d.id FROM crm_deals d WHERE d.contact_id = c.id AND d.stage NOT IN ('ganho', 'perdido') ORDER BY d.created_at DESC LIMIT 1)) AS deal_id
+     FROM crm_contacts c JOIN crm_diagnostics g ON g.contact_id = c.id WHERE c.id = $1 AND g.id = $2`,
+    [contactId, diagnosisId]
+  );
+  const c = rows[0];
+  if (!c) return;
+  await runOnce("diagnostico_realizado", `diagnostico:${diagnosisId}`, { contactId, dealId: c.deal_id }, async (client) => {
+    const dealOwner = c.deal_id ? (await client.query<{ owner_id: string | null }>(`SELECT owner_id FROM crm_deals WHERE id = $1`, [c.deal_id])).rows[0]?.owner_id : null;
+    const owner = await recipient(client, cfg, dealOwner ?? c.owner_id);
+    const taskId = await createTaskTx(
+      client,
+      { contactId, dealId: c.deal_id, kind: cfg.taskKind, title: cfg.title, priority: cfg.priority, dueDate: dayFromToday(cfg.dueDays ?? 2), ownerId: owner?.id ?? "" },
+      WRITER
+    );
+    return { detail: `${c.name}: diagnóstico salvo · tarefa "${cfg.title}" para ${owner?.name ?? "ninguém (sem responsável)"}`, taskId };
+  });
+}
+
+/** 15. Transferência solicitada: aviso a quem aprova (e ao responsável atual, se marcado). */
+export async function onTransferRequested(requestId: string): Promise<void> {
+  const cfg = await activeConfig("transferencia_solicitada");
+  if (!cfg) return;
+  const db = await getDb();
+  const { rows } = await db.query<{ contact_id: string; contact_name: string; from_owner_id: string | null; from_owner_name: string | null; to_owner_name: string; reason: string; requested_by: string | null; requested_by_name: string }>(
+    `SELECT t.contact_id, c.name AS contact_name, t.from_owner_id, t.from_owner_name, t.to_owner_name, t.reason, t.requested_by, t.requested_by_name
+     FROM crm_transfer_requests t JOIN crm_contacts c ON c.id = t.contact_id WHERE t.id = $1`,
+    [requestId]
+  );
+  const t = rows[0];
+  if (!t) return;
+  await runOnce("transferencia_solicitada", `pedido:${requestId}`, { contactId: t.contact_id }, async (client) => {
+    const to = (await managers(client)).filter((m) => m.id !== t.requested_by);
+    for (const m of to) {
+      await notify(client, m.id, "transferencia_solicitada", {
+        kind: "transferencia",
+        title: `Transferência solicitada: ${t.contact_name}`,
+        body: `${t.requested_by_name} pede ${t.contact_name} (${t.from_owner_name ?? "sem responsável"} → ${t.to_owner_name}): ${t.reason}`,
+        contactId: t.contact_id,
+      });
+    }
+    let owner = "";
+    if (cfg.notifyOwner && t.from_owner_id && t.from_owner_id !== t.requested_by && !to.some((m) => m.id === t.from_owner_id)) {
+      await notify(client, t.from_owner_id, "transferencia_solicitada", {
+        kind: "transferencia",
+        title: `Pedido de transferência: ${t.contact_name}`,
+        body: `${t.requested_by_name} pediu a transferência deste lead seu para ${t.to_owner_name}. Um Gestor vai decidir.`,
+        contactId: t.contact_id,
+      });
+      owner = ` e ${t.from_owner_name}`;
+    }
+    return { detail: `${t.contact_name}: pedido de ${t.requested_by_name} · aviso para ${to.length} ${to.length === 1 ? "pessoa que aprova" : "pessoas que aprovam"}${owner}` };
+  });
+}
+
+/** 16. Proposta aprovada: aviso ao responsável (e aos Gestores) e tarefa de formalização. */
+export async function onProposalApproved(proposalId: string): Promise<void> {
+  const cfg = await activeConfig("proposta_aprovada");
+  if (!cfg) return;
+  const db = await getDb();
+  const { rows } = await db.query<{ number: number; title: string; contact_id: string; deal_id: string; owner_id: string | null; contact_name: string; approver: string | null }>(
+    `SELECT p.number, p.title, p.contact_id, p.deal_id, COALESCE(d.owner_id, c.owner_id) AS owner_id, c.name AS contact_name,
+            (SELECT a.name FROM crm_proposal_approvals a WHERE a.proposal_id = p.id AND a.decision = 'aprovada' ORDER BY a.created_at DESC LIMIT 1) AS approver
+     FROM crm_proposals p JOIN crm_deals d ON d.id = p.deal_id JOIN crm_contacts c ON c.id = p.contact_id WHERE p.id = $1`,
+    [proposalId]
+  );
+  const p = rows[0];
+  if (!p) return;
+  await runOnce("proposta_aprovada", `proposta:${proposalId}:aprovada`, { contactId: p.contact_id, dealId: p.deal_id }, async (client) => {
+    const n = String(p.number).padStart(4, "0");
+    const owner = (await activeUser(client, p.owner_id)) ?? (await activeUser(client, cfg.fallbackOwnerId ?? null));
+    const told = new Set<string>();
+    const body = `${p.approver ?? p.contact_name} aprovou "${p.title}". Registre a venda e formalize o contrato.`;
+    if (owner) {
+      await notify(client, owner.id, "proposta_aprovada", { kind: "proposta", title: `Proposta nº ${n} aprovada`, body, contactId: p.contact_id });
+      told.add(owner.id);
+    }
+    if (cfg.notifyManagers) {
+      for (const m of await managers(client)) {
+        if (told.has(m.id)) continue;
+        await notify(client, m.id, "proposta_aprovada", { kind: "proposta", title: `Proposta nº ${n} aprovada`, body, contactId: p.contact_id });
+        told.add(m.id);
+      }
+    }
+    if (!cfg.createTask) return { detail: `Proposta nº ${n} (${p.contact_name}) aprovada · aviso para ${told.size}` };
+    const taskId = await createTaskTx(
+      client,
+      { contactId: p.contact_id, dealId: p.deal_id, kind: cfg.taskKind, title: cfg.title, priority: cfg.priority, dueDate: dayFromToday(cfg.dueDays ?? 1), ownerId: owner?.id ?? "" },
+      WRITER
+    );
+    return { detail: `Proposta nº ${n} (${p.contact_name}) aprovada · aviso para ${told.size} · tarefa "${cfg.title}" para ${owner?.name ?? "ninguém"}`, taskId };
+  });
+}
+
 const SCHEDULED: Partial<Record<AutomationId, (cfg: AutomationConfig) => Promise<AutomationRunSummary>>> = {
   lead_sem_movimentacao: checkStalledDeals,
   lead_sem_resposta: checkUnanswered,
   renovacao_contrato: checkContractEnds,
   cliente_sem_atualizacao: checkMonthlyUpdates,
+  proposta_vencendo: checkExpiringProposals,
+  retorno_agendado: checkReturns,
+  oportunidade_sem_responsavel: checkUnownedDeals,
 };
 
 /**

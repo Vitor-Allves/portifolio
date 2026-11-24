@@ -88,8 +88,8 @@ export async function transferConversation(s: CrmSession, contactId: string, toU
     if (cur.attendant_id && cur.attendant_id !== s.userId && !s.caps.assignAnyOwner) {
       throw new CrmForbiddenError(`${cur.attendant_name} está atendendo: só essa pessoa (ou um Gestor) transfere a conversa.`);
     }
-    if (!target.caps.seeAllLeads && cur.owner_id && cur.owner_id !== target.userId) {
-      throw new CrmInputError(`${target.userName} não vê este lead (está na carteira de outra pessoa). Troque o responsável do lead antes.`);
+    if (!target.caps.actOnAllLeads && cur.owner_id && cur.owner_id !== target.userId) {
+      throw new CrmInputError(`${target.userName} não trabalha neste lead (está na carteira de outra pessoa). Troque o responsável do lead antes.`);
     }
     if (cur.attendant_id === target.userId) return;
     await setAttendant(client, contactId, target.userId);

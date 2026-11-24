@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { CRM_CONSENT, type CrmSource, type CrmTeamMember } from "@/lib/crm-types";
+import { CRM_CONSENT, CRM_POTENTIALS, type CrmSource, type CrmTeamMember } from "@/lib/crm-types";
 import { CRM_ALERT, CRM_BTN_PRIMARY, CRM_INPUT, CRM_LABEL } from "./crm-styles";
 import { Mascot } from "./crm-brand";
 import CrmCompanyField from "./CrmCompanyField";
@@ -14,7 +14,15 @@ type CrmNewContactDialogProps = {
   currentUserId: string;
   onClose: () => void;
   onCreated: (id: string) => void;
+  /** Opens an existing record the duplicate check found (contact or company). */
+  onOpenExisting?: (d: Duplicate) => void;
+  /** Gestor / Administrador: may authorize a second negotiation with a company. */
+  canAuthorizeParallel?: boolean;
 };
+
+/** What /api/crm/duplicates (and a refused save) say already exists (evolução v1.0, item 2.2). */
+type Duplicate = { kind: "contact" | "company" | "deal"; id: string; name: string; by: string; ownerName: string | null; situation: string | null };
+const BY: Record<string, string> = { phone: "WhatsApp", email: "e-mail", cnpj: "CNPJ", name: "nome" };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -26,7 +34,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 // Mounted only while open, so every opening starts from a clean form.
-function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewContactDialogProps, "open">) {
+function DialogBody({ team, currentUserId, onClose, onCreated, onOpenExisting, canAuthorizeParallel = false }: Omit<CrmNewContactDialogProps, "open">) {
   const { options } = useCatalog();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -42,10 +50,27 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
   const [ownerId, setOwnerId] = useState(team.some((m) => m.id === currentUserId) ? currentUserId : "");
   const [temperature, setTemperature] = useState("");
   const [serviceInterest, setServiceInterest] = useState("");
+  const [altPhone, setAltPhone] = useState("");
+  const [potential, setPotential] = useState("");
+  const [need, setNeed] = useState("");
   const [createDeal, setCreateDeal] = useState(true);
   const [dealValue, setDealValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [found, setFound] = useState<Duplicate[]>([]);
+  const [parallel, setParallel] = useState<Duplicate | null>(null);
+
+  // Duplicidade: checked as the fields are filled (saving checks again on the server).
+  async function check() {
+    const q = new URLSearchParams();
+    if (phone.replace(/\D/g, "").length >= 10) q.set("phone", phone);
+    if (email.includes("@")) q.set("email", email);
+    if (company.trim()) q.set("company", company);
+    if ([...q.keys()].length === 0) return setFound([]);
+    const res = await fetch(`/api/crm/duplicates/?${q}`).catch(() => null);
+    const body = res?.ok ? ((await res.json().catch(() => null)) as { duplicates?: Duplicate[] } | null) : null;
+    setFound(body?.duplicates ?? []);
+  }
 
   useEffect(() => {
     function onKey(e: globalThis.KeyboardEvent) {
@@ -55,10 +80,12 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function submit(e: FormEvent | null, { allowParallel = false, noDeal = false } = {}) {
+    const withDeal = createDeal && !noDeal;
+    e?.preventDefault();
     setSaving(true);
     setError(null);
+    setParallel(null);
     const res = await fetch("/api/crm/contacts/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -77,14 +104,20 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
         ownerId: ownerId || null,
         temperature: temperature || null,
         serviceInterest: serviceInterest || null,
-        createDeal,
-        dealValue: createDeal ? dealValue : "",
+        altPhone,
+        potential: potential || null,
+        need,
+        createDeal: withDeal,
+        dealValue: withDeal ? dealValue : "",
+        ...(allowParallel ? { allowParallel: true } : {}),
       }),
     });
     setSaving(false);
     if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      const body = (await res.json().catch(() => null)) as { error?: string; duplicate?: Duplicate } | null;
       setError(body?.error ?? "Não foi possível criar o contato.");
+      if (body?.duplicate?.kind === "deal") setParallel(body.duplicate);
+      else if (body?.duplicate) setFound([body.duplicate]);
       return;
     }
     const { id } = (await res.json()) as { id: string };
@@ -121,16 +154,16 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
             <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus placeholder="Ex.: Ana Ribeiro" className={CRM_INPUT} />
           </Field>
           <Field label="WhatsApp">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="(15) 99999-8888" className={CRM_INPUT} />
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={() => void check()} inputMode="tel" placeholder="(15) 99999-8888" className={CRM_INPUT} />
           </Field>
           <Field label="E-mail">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="nome@empresa.com.br" className={CRM_INPUT} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => void check()} type="email" placeholder="nome@empresa.com.br" className={CRM_INPUT} />
           </Field>
           <Field label="Cargo">
             <input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="Ex.: Sócia, Gerente comercial" className={CRM_INPUT} />
           </Field>
           <Field label="Empresa">
-            <CrmCompanyField value={company} onChange={setCompany} />
+            <CrmCompanyField value={company} onChange={setCompany} onBlur={() => void check()} />
           </Field>
           <Field label="Segmento">
             <SegmentSelect value={segment} onChange={setSegment} className={CRM_INPUT} />
@@ -166,7 +199,23 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
           <Field label="Serviço de interesse">
             <ServiceSelect value={serviceInterest} onChange={setServiceInterest} label="Serviço de interesse" emptyLabel="Não definido" className={CRM_INPUT} />
           </Field>
+          <Field label="Outro telefone">
+            <input value={altPhone} onChange={(e) => setAltPhone(e.target.value)} inputMode="tel" placeholder="Fixo, recado..." className={CRM_INPUT} />
+          </Field>
+          <Field label="Potencial comercial">
+            <select value={potential} onChange={(e) => setPotential(e.target.value)} className={CRM_INPUT}>
+              <option value="">Não avaliado</option>
+              {CRM_POTENTIALS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
+        <Field label="Necessidade identificada">
+          <textarea value={need} onChange={(e) => setNeed(e.target.value)} rows={2} placeholder="O que o lead precisa resolver" className={`${CRM_INPUT} resize-y`} />
+        </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Consentimento">
             <select value={consentStatus} onChange={(e) => setConsentStatus(e.target.value)} className={CRM_INPUT}>
@@ -196,7 +245,7 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
               onChange={(e) => setCreateDeal(e.target.checked)}
               className="h-4 w-4 accent-[var(--crm-accent)]"
             />
-            Criar oportunidade no funil (coluna Novo)
+            Criar oportunidade no funil (coluna Novo lead)
           </label>
           {createDeal && (
             <Field label="Valor estimado (opcional)">
@@ -215,10 +264,41 @@ function DialogBody({ team, currentUserId, onClose, onCreated }: Omit<CrmNewCont
           mensagem precisa ser um modelo aprovado.
         </p>
 
+        {found.length > 0 && (
+          <div role="status" aria-label="Cadastros parecidos" className="rounded-xl border border-crm-amber/35 bg-crm-amber/[0.07] px-3 py-2.5 space-y-1.5 text-[12.5px]">
+            {found.map((d) => (
+              <p key={`${d.kind}:${d.id}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  {d.kind === "contact" ? `Já existe um contato com esse ${BY[d.by] ?? d.by}: ` : `Empresa já cadastrada (${BY[d.by] ?? d.by}): `}
+                  <strong>{d.name}</strong> · {d.ownerName ? `responsável ${d.ownerName}` : "sem responsável"}
+                  {d.situation ? ` · ${d.situation}` : ""}
+                  {d.kind === "company" ? " — o contato fica vinculado a ela." : ""}
+                </span>
+                {onOpenExisting && d.kind !== "deal" && (
+                  <button type="button" onClick={() => onOpenExisting(d)} className="text-crm-accent font-semibold hover:opacity-80">
+                    Abrir {d.kind === "contact" ? "cadastro" : "empresa"}
+                  </button>
+                )}
+              </p>
+            ))}
+          </div>
+        )}
         {error && (
-          <p className={CRM_ALERT} role="alert">
-            {error}
-          </p>
+          <div className={CRM_ALERT} role="alert">
+            <p>{error}</p>
+            {parallel && (
+              <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+                {canAuthorizeParallel && (
+                  <button type="button" disabled={saving} onClick={() => void submit(null, { allowParallel: true })} className="font-semibold underline">
+                    Autorizar a segunda negociação e criar
+                  </button>
+                )}
+                <button type="button" disabled={saving} onClick={() => void submit(null, { noDeal: true })} className="font-semibold underline">
+                  Criar só o contato, sem oportunidade
+                </button>
+              </p>
+            )}
+          </div>
         )}
 
         <div className="flex justify-end gap-2 pt-1">

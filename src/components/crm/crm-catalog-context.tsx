@@ -7,6 +7,9 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { TAG_CATEGORIES, type CrmCatalog, type CrmOption, type CrmTag, type OptionKind, type TagColor } from "@/lib/crm-catalog";
+import { registerStageLabels, stagesOf } from "@/lib/crm-types";
+
+type StageInfo = ReturnType<typeof stagesOf>[number];
 
 type CatalogApi = {
   catalog: CrmCatalog;
@@ -17,6 +20,10 @@ type CatalogApi = {
   /** Color of an option of a colored list (task types, priorities); gray when unknown. */
   color: (kind: OptionKind, id: string | null | undefined) => TagColor;
   tag: (id: string) => CrmTag | undefined;
+  /** The funnel's stages in order (Personalização), with probability; `keep` adds a record's archived stage. */
+  stages: (keep?: string | readonly string[] | null) => StageInfo[];
+  /** Dot class of a stage's color. */
+  stageDot: (id: string | null | undefined) => string;
   /** Active tags grouped by category, in order. */
   tagGroups: { id: string; label: string; tags: CrmTag[] }[];
   refresh: () => Promise<void>;
@@ -33,6 +40,8 @@ export function CrmCatalogProvider({ initial, children }: { initial: CrmCatalog;
   }, []);
   const api = useMemo<CatalogApi>(() => {
     const byKey = new Map(catalog.options.map((o) => [`${o.kind}:${o.id}`, o]));
+    // stageLabel() anywhere on the screens follows the names as renamed.
+    registerStageLabels(catalog.options.filter((o) => o.kind === "stage"));
     const tagById = new Map(catalog.tags.map((t) => [t.id, t]));
     return {
       catalog,
@@ -41,6 +50,8 @@ export function CrmCatalogProvider({ initial, children }: { initial: CrmCatalog;
       label: (kind, id) => (id ? byKey.get(`${kind}:${id}`)?.label ?? id : ""),
       color: (kind, id) => (id ? byKey.get(`${kind}:${id}`)?.color ?? "cinza" : "cinza"),
       tag: (id) => tagById.get(id),
+      stages: (keep) => stagesOf(catalog, keep),
+      stageDot: (id) => TAG_DOT[(id ? byKey.get(`stage:${id}`)?.color : null) ?? "cinza"],
       tagGroups: TAG_CATEGORIES.map((c) => ({
         id: c.id,
         label: c.label,
@@ -79,6 +90,12 @@ export const TAG_DOT: Record<TagColor, string> = {
   turquesa: "bg-crm-chart-2",
   cinza: "bg-crm-line-strong",
 };
+
+/** The colored dot of a funnel stage (its color in Personalização). */
+export function StageDot({ stage, className = "h-2 w-2" }: { stage: string | null | undefined; className?: string }) {
+  const { stageDot } = useCatalog();
+  return <span className={`${className} rounded-full ${stageDot(stage)}`} aria-hidden="true" />;
+}
 
 export function TagChip({ tag, onRemove, title, small }: { tag: CrmTag; onRemove?: () => void; title?: string; small?: boolean }) {
   return (

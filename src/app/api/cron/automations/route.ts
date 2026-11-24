@@ -1,25 +1,22 @@
-import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { runScheduled } from "@/lib/crm-automations";
+import { dispatchDueMessages } from "@/lib/crm-scheduled-messages";
+import { cronDenied } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 
 /**
  * The daily check of the time automations (Fase 3), called by the server's
- * scheduler — not by people, so there's no session: it needs the
- * Authorization header "Bearer <CRON_SECRET>" (Vercel Cron sends it when the
- * project has that environment variable). Without CRON_SECRET it stays off.
+ * scheduler with CRON_SECRET (see cron-auth). It also sends any scheduled
+ * message that is due (evolução v1.0).
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return NextResponse.json({ error: "Verificação diária não configurada." }, { status: 503 });
-  const got = Buffer.from(req.headers.get("authorization") ?? "");
-  const want = Buffer.from(`Bearer ${secret}`);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) {
-    return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
-  }
+  const denied = cronDenied(req, "Verificação diária não configurada.");
+  if (denied) return denied;
   try {
-    return NextResponse.json({ results: await runScheduled() }, { headers: { "Cache-Control": "no-store" } });
+    const results = await runScheduled();
+    const scheduledMessages = await dispatchDueMessages();
+    return NextResponse.json({ results, scheduledMessages }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     console.error("[cron/automations] failed", err);
     return NextResponse.json({ error: "Falha na verificação diária." }, { status: 500 });

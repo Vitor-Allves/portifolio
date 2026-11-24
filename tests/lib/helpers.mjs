@@ -13,9 +13,23 @@ export const PASSWORD = "crm-teste-123";
 /** Test-only TOTP secret of the fixture's Administrador (CRM Administradores log in with 2FA since Fase 2). */
 export const TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 
-/** The current 6-digit code for TEST_TOTP_SECRET. */
-export function totpCode() {
-  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(TEST_TOTP_SECRET) }).generate();
+let lastTotpStep = -1;
+/**
+ * A 6-digit code for TEST_TOTP_SECRET the server hasn't accepted yet: it
+ * refuses a code used before (v28), so a second login in the same 30 s uses
+ * the next step (the ±1 window takes it); a third waits for the clock.
+ */
+export async function totpCode() {
+  const totp = new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(TEST_TOTP_SECRET) });
+  for (;;) {
+    const now = Math.floor(Date.now() / 30_000);
+    const step = Math.max(now, lastTotpStep + 1);
+    if (step <= now + 1) {
+      lastTotpStep = step;
+      return totp.generate({ timestamp: step * 30_000 });
+    }
+    await new Promise((done) => setTimeout(done, 1000));
+  }
 }
 
 /** Logs a request context in; completes the 2FA step when the account has it. */
@@ -23,7 +37,7 @@ export async function loginRequest(request, username, password = PASSWORD) {
   const res = await request.post(`${BASE}/api/analise/login/`, { data: { username, password } });
   if (!res.ok()) return res;
   const body = await res.json().catch(() => ({}));
-  if (body.stage === "verify") return request.post(`${BASE}/api/analise/login/totp/`, { data: { code: totpCode() } });
+  if (body.stage === "verify") return request.post(`${BASE}/api/analise/login/totp/`, { data: { code: await totpCode() } });
   return res;
 }
 

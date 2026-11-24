@@ -38,7 +38,10 @@ ok(r.body.rows.length === 0 && r.body.page === 2 && r.body.pageSize === 50, "pag
 ok((await members(joao, { source: "bni" })).status === 403, "a Comercial can't see campaign audiences");
 await sql(`UPDATE internal_users SET crm_permissions = '{"editCampaigns": true}'::jsonb WHERE id = 'u-joao'`);
 r = await members(joao, { source: "bni" });
-ok(r.status === 200 && r.body.rows.map((m) => m.id).join() === "k2,k6", `…given the campaigns screen, he lists only the leads he sees (${r.body?.rows?.map((m) => m.id)})`);
+ok(r.status === 200 && r.body.rows.map((m) => m.id).join() === "k1,k2,k6", `…given the campaigns screen, he lists every lead he sees (${r.body?.rows?.map((m) => m.id)})`);
+await sql(`UPDATE internal_users SET crm_permissions = '{"editCampaigns": true, "seeAllLeads": false}'::jsonb WHERE id = 'u-joao'`);
+r = await members(joao, { source: "bni" });
+ok(r.status === 200 && r.body.rows.map((m) => m.id).join() === "k2,k6", `…and without "ver todos os leads", only his own and the unowned (${r.body?.rows?.map((m) => m.id)})`);
 await sql(`UPDATE internal_users SET crm_permissions = '{}'::jsonb WHERE id = 'u-joao'`);
 
 // ---- sign-up period, in Brasília days ----

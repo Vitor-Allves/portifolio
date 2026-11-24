@@ -24,7 +24,13 @@ export type AutomationId =
   | "cliente_onboarding"
   | "renovacao_contrato"
   | "cliente_sem_atualizacao"
-  | "resposta_campanha";
+  | "resposta_campanha"
+  | "proposta_vencendo"
+  | "retorno_agendado"
+  | "diagnostico_realizado"
+  | "oportunidade_sem_responsavel"
+  | "transferencia_solicitada"
+  | "proposta_aprovada";
 
 /** Every adjustable parameter; each automation uses some of them (`fields`). */
 export type AutomationConfig = {
@@ -48,6 +54,10 @@ export type AutomationConfig = {
   /** Temperature to set on a campaign reply ("" = leave as is). */
   temperature?: string;
   notifyOwner?: boolean;
+  /** Also tell the Gestores and Administradores. */
+  notifyManagers?: boolean;
+  /** Also create the task (rules whose main action is a notice). */
+  createTask?: boolean;
   /** Only leads from these origins ([] = all). */
   sources?: string[];
 };
@@ -192,7 +202,94 @@ export const AUTOMATION_DEFS: AutomationDef[] = [
     fields: ["temperature", "notifyOwner"],
     defaults: { temperature: "quente", notifyOwner: true },
   },
+  // Evolução v1.0 (item 7).
+  {
+    id: "proposta_vencendo",
+    number: 11,
+    name: "Proposta perto do vencimento: aviso",
+    trigger: "Verificação diária.",
+    condition: "Proposta enviada (ou visualizada, em negociação) que vence nos próximos X dias.",
+    action: "Aviso no sino do responsável, uma vez para cada data de validade.",
+    scheduled: true,
+    available: true,
+    fields: ["days", "fallbackOwnerId"],
+    defaults: { days: 3, fallbackOwnerId: null },
+  },
+  {
+    id: "retorno_agendado",
+    number: 12,
+    name: "Retorno agendado: tarefa",
+    trigger: "Verificação diária.",
+    condition: "Contato com data de retorno chegando (X dias antes; 1 = no dia) e sem tarefa pendente.",
+    action: "Cria a tarefa de retorno para a data combinada, uma vez para cada data.",
+    scheduled: true,
+    available: true,
+    fields: ["days", "taskKind", "title", "priority", "owner", "fallbackOwnerId"],
+    defaults: { days: 1, taskKind: "retorno_comercial", title: "Retornar o contato (data combinada)", priority: "media", owner: "lead", fallbackOwnerId: null },
+  },
+  {
+    id: "diagnostico_realizado",
+    number: 13,
+    name: "Diagnóstico realizado: tarefa",
+    trigger: "Um diagnóstico comercial é salvo (cada versão).",
+    condition: "O lead não tem uma tarefa pendente desse tipo.",
+    action: "Cria a tarefa do próximo passo (por exemplo, preparar a proposta) para daqui a X dias.",
+    scheduled: false,
+    available: true,
+    fields: ["taskKind", "title", "dueDays", "priority", "owner", "fallbackOwnerId"],
+    defaults: { taskKind: "preparacao_proposta", title: "Preparar a proposta", dueDays: 2, priority: "media", owner: "lead", fallbackOwnerId: null },
+  },
+  {
+    id: "oportunidade_sem_responsavel",
+    number: 14,
+    name: "Oportunidade sem responsável: alerta",
+    trigger: "Verificação diária.",
+    condition: "Oportunidade aberta, sem responsável (nem no lead), criada há X dias ou mais.",
+    action: "Aviso no sino de quem foi escolhido (sem escolha: Gestores e Administradores), uma vez por oportunidade.",
+    scheduled: true,
+    available: true,
+    fields: ["days", "fallbackOwnerId"],
+    defaults: { days: 1, fallbackOwnerId: null },
+  },
+  {
+    id: "transferencia_solicitada",
+    number: 15,
+    name: "Transferência solicitada: aviso",
+    trigger: "Alguém pede a transferência de um lead.",
+    condition: "Não avisa quem pediu.",
+    action: "Aviso no sino de quem aprova (Gestores e Administradores) e, se marcado, do responsável atual do lead.",
+    scheduled: false,
+    available: true,
+    fields: ["notifyOwner"],
+    defaults: { notifyOwner: true },
+  },
+  {
+    id: "proposta_aprovada",
+    number: 16,
+    name: "Proposta aprovada: aviso e formalização",
+    trigger: "O cliente aprova a proposta pelo link (ou a equipe registra a aprovação).",
+    condition: "Uma vez por proposta.",
+    action: "Aviso no sino do responsável (e, se marcado, dos Gestores) e, se marcado, tarefa para formalizar o contrato.",
+    scheduled: false,
+    available: true,
+    fields: ["notifyManagers", "createTask", "taskKind", "title", "dueDays", "priority", "fallbackOwnerId"],
+    defaults: {
+      notifyManagers: true,
+      createTask: false,
+      taskKind: "tarefa",
+      title: "Formalizar o contrato da proposta aprovada",
+      dueDays: 1,
+      priority: "alta",
+      fallbackOwnerId: null,
+    },
+  },
 ];
+
+/**
+ * Rules that start on: as they come (createTask off), they only give the
+ * notices the CRM already gave before them.
+ */
+export const AUTOMATIONS_ON_BY_DEFAULT: AutomationId[] = ["transferencia_solicitada", "proposta_aprovada"];
 
 export function automationDef(id: string): AutomationDef | undefined {
   return AUTOMATION_DEFS.find((a) => a.id === id);

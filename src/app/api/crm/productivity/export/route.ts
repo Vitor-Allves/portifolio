@@ -26,6 +26,11 @@ const cells = (x: CrmProductivityNumbers) => [
   String(x.conversations),
   String(x.answered),
   x.avgResponseMinutes === null ? "" : String(x.avgResponseMinutes),
+  String(x.assigned),
+  String(x.worked),
+  String(x.followUps),
+  String(x.proposalsApproved),
+  x.avgTicketCents === null ? "" : money(x.avgTicketCents),
 ];
 
 /** ?from&to → each person's productivity in the period, as CSV. "Exportar relatórios"; goes to the audit trail. */
@@ -54,6 +59,11 @@ export async function GET(req: NextRequest) {
         "Conversas atendidas",
         "Respostas a quem esperava",
         "Tempo médio de resposta (min)",
+        "Leads atribuídos (agora)",
+        "Leads trabalhados",
+        "Follow-ups concluídos",
+        "Propostas aprovadas",
+        "Ticket médio (R$)",
         "Última atividade",
       ],
       ...d.rows.map((r) => [r.name, ...cells(r), dateTime(r.lastActivityAt)]),

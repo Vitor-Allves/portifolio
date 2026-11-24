@@ -6,8 +6,8 @@ import { randomUUID } from "crypto";
 import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import { companyKey as crmCompanyKey } from "./crm-types";
-import { DEFAULT_OPTIONS, DEFAULT_TAGS } from "./crm-catalog";
-import { AUTOMATION_DEFS } from "./crm-automation-defs";
+import { DEFAULT_OPTIONS, DEFAULT_TAGS, LOST_REASON_OLD_LABELS } from "./crm-catalog";
+import { AUTOMATIONS_ON_BY_DEFAULT, AUTOMATION_DEFS } from "./crm-automation-defs";
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -54,7 +54,7 @@ export function withExplicitSslMode(connectionString: string): string {
 // — on Vercel Hobby's 10s function timeout, running the whole sequence on
 // every cold start was enough by itself to time out requests (observed in
 // production as 504s on GET /analise/, no code involved past getDb()).
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 28;
 
 /**
  * Whether this deployment may change the database structure. Vercel preview
@@ -905,7 +905,8 @@ async function ensureSchema(): Promise<void> {
       )
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS crm_notifications_unread_idx ON crm_notifications (user_id, created_at DESC) WHERE read_at IS NULL`);
-    for (const a of AUTOMATION_DEFS) {
+    // The ten rules of the first version (v27 adds the others).
+    for (const a of AUTOMATION_DEFS.filter((d) => d.number <= 10)) {
       await db.query(`INSERT INTO crm_automations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [a.id]);
     }
 
@@ -1113,6 +1114,417 @@ async function ensureSchema(): Promise<void> {
     await db.query(`CREATE INDEX IF NOT EXISTS crm_media_syncs_client_idx ON crm_media_syncs (client_id, month, synced_at DESC)`);
 
     await done(20);
+  }
+
+  if (current < 21) {
+    // v21 — Evolução v1.0 (funil e tabulação): the funnel's stages become a
+    // list in Personalização (10 stages; the six old codes are kept and only
+    // renamed, so no opportunity or history row is rewritten), each option
+    // may carry attributes (meta: a stage's probability, a reason's group),
+    // and closing an opportunity records its tabulação. New column values
+    // only describe what was already there.
+    await db.query(`ALTER TABLE crm_options ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    for (const [i, o] of DEFAULT_OPTIONS.stage.entries()) {
+      await db.query(
+        `INSERT INTO crm_options (kind, id, label, sort, locked, color, meta) VALUES ('stage', $1, $2, $3, $4, $5, $6)
+         ON CONFLICT (kind, id) DO UPDATE SET sort = EXCLUDED.sort, locked = EXCLUDED.locked, meta = EXCLUDED.meta, color = COALESCE(crm_options.color, EXCLUDED.color)`,
+        [o.id, o.label, i, o.locked ?? false, o.color ?? null, JSON.stringify(o.meta ?? {})]
+      );
+    }
+    for (const o of DEFAULT_OPTIONS.lost_reason) {
+      await db.query(
+        `INSERT INTO crm_options (kind, id, label, locked, meta, sort)
+         VALUES ('lost_reason', $1, $2, $3, $4, (SELECT COALESCE(max(sort), -1) + 1 FROM crm_options WHERE kind = 'lost_reason'))
+         ON CONFLICT (kind, id) DO UPDATE SET meta = EXCLUDED.meta,
+           label = CASE WHEN crm_options.label = $5 THEN EXCLUDED.label ELSE crm_options.label END`,
+        [o.id, o.label, o.locked ?? false, JSON.stringify(o.meta ?? {}), LOST_REASON_OLD_LABELS[o.id] ?? o.label]
+      );
+    }
+    // Reasons the team created themselves count as a commercial loss.
+    await db.query(`UPDATE crm_options SET meta = meta || '{"group": "negativo"}'::jsonb WHERE kind = 'lost_reason' AND NOT (meta ? 'group')`);
+    await db.query(`
+      ALTER TABLE crm_deals
+        ADD COLUMN IF NOT EXISTS probability SMALLINT CHECK (probability BETWEEN 0 AND 100),
+        ADD COLUMN IF NOT EXISTS won_result TEXT,
+        ADD COLUMN IF NOT EXISTS close_group TEXT,
+        ADD COLUMN IF NOT EXISTS closed_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS closed_by_name TEXT,
+        ADD COLUMN IF NOT EXISTS return_on DATE
+    `);
+    // Closed opportunities get the group their reason now belongs to.
+    await db.query(`UPDATE crm_deals SET close_group = 'positivo' WHERE stage = 'ganho' AND close_group IS NULL`);
+    await db.query(
+      `UPDATE crm_deals d SET close_group = COALESCE((SELECT o.meta->>'group' FROM crm_options o WHERE o.kind = 'lost_reason' AND o.id = d.lost_reason), 'negativo')
+       WHERE d.stage = 'perdido' AND d.close_group IS NULL`
+    );
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_deals_close_idx ON crm_deals (close_group, closed_at)`);
+
+    await done(21);
+  }
+
+  if (current < 22) {
+    // v22 — Evolução v1.0 (responsabilidades): a Comercial sees every lead but
+    // works only on their own; taking someone else's lead (or handing one's
+    // own to a colleague) is a request a Gestor approves or refuses. New
+    // table only: who asked, from whom to whom, why, who decided, when.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_transfer_requests (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        from_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        from_owner_name TEXT,
+        to_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        to_owner_name TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'aprovada', 'recusada', 'cancelada')),
+        requested_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        requested_by_name TEXT NOT NULL,
+        requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        decided_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        decided_by_name TEXT,
+        decided_at TIMESTAMPTZ,
+        decision_note TEXT
+      )
+    `);
+    // One open request per lead at a time.
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_transfer_requests_pending_idx ON crm_transfer_requests (contact_id) WHERE status = 'pendente'`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_transfer_requests_status_idx ON crm_transfer_requests (status, requested_at DESC)`);
+    await done(22);
+  }
+
+  if (current < 23) {
+    // v23 — Evolução v1.0 (cadastros, item 2): more of what the spec asks a
+    // lead and a company to carry, the diagnóstico comercial (every save is a
+    // new version, the old ones stay) and documents attached to the records
+    // (kept in the database, up to 4 MB each). New columns are empty and new
+    // tables start empty: nothing existing is rewritten.
+    await db.query(`
+      ALTER TABLE crm_contacts
+        ADD COLUMN IF NOT EXISTS alt_phone TEXT,
+        ADD COLUMN IF NOT EXISTS potential TEXT CHECK (potential IN ('alto', 'medio', 'baixo')),
+        ADD COLUMN IF NOT EXISTS need TEXT
+    `);
+    await db.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS phone TEXT, ADD COLUMN IF NOT EXISTS email TEXT`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_diagnostics (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        version INTEGER NOT NULL,
+        data JSONB NOT NULL,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (contact_id, version)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_files (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        company_id TEXT REFERENCES crm_companies (id) ON DELETE CASCADE,
+        deal_id TEXT REFERENCES crm_deals (id) ON DELETE SET NULL,
+        client_id TEXT REFERENCES crm_clients (id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 4194304),
+        sha256 TEXT NOT NULL,
+        content BYTEA NOT NULL,
+        uploaded_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        uploaded_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        archived_at TIMESTAMPTZ,
+        archived_by_name TEXT,
+        CHECK (num_nonnulls(contact_id, company_id, client_id) = 1)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_files_contact_idx ON crm_files (contact_id, created_at DESC)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_files_company_idx ON crm_files (company_id, created_at DESC)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_files_client_idx ON crm_files (client_id, created_at DESC)`);
+    await done(23);
+  }
+
+  if (current < 24) {
+    // v24 — Evolução v1.0 (propostas, item 3): proposals with a sequential
+    // number, their versions (a sent version is never changed: editing makes
+    // the next one), the timeline (sent, viewed, link, PDF, status), the
+    // client's approvals / refusals with their evidence, templates, and a
+    // small settings table (the discount limit). All new and empty.
+    await db.query(`CREATE SEQUENCE IF NOT EXISTS crm_proposal_number_seq`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_settings (
+        key TEXT PRIMARY KEY,
+        value JSONB NOT NULL,
+        updated_by_name TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        intro TEXT,
+        payment_terms TEXT,
+        billing_period TEXT NOT NULL DEFAULT 'mensal' CHECK (billing_period IN ('mensal', 'trimestral', 'semestral', 'anual')),
+        execution_term TEXT,
+        notes TEXT,
+        valid_days INTEGER NOT NULL DEFAULT 15 CHECK (valid_days BETWEEN 1 AND 365),
+        service_ids TEXT[] NOT NULL DEFAULT '{}',
+        archived_at TIMESTAMPTZ,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposals (
+        id TEXT PRIMARY KEY,
+        number INTEGER NOT NULL UNIQUE DEFAULT nextval('crm_proposal_number_seq'),
+        deal_id TEXT NOT NULL REFERENCES crm_deals (id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        company_id TEXT REFERENCES crm_companies (id) ON DELETE SET NULL,
+        template_id TEXT REFERENCES crm_proposal_templates (id) ON DELETE SET NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'em_elaboracao'
+          CHECK (status IN ('em_elaboracao', 'enviada', 'visualizada', 'em_negociacao', 'aprovada', 'recusada', 'expirada', 'cancelada')),
+        version INTEGER NOT NULL DEFAULT 1,
+        sent_version INTEGER,
+        total_cents BIGINT NOT NULL DEFAULT 0,
+        monthly_cents BIGINT NOT NULL DEFAULT 0,
+        one_time_cents BIGINT NOT NULL DEFAULT 0,
+        discount_pct NUMERIC(5, 1) NOT NULL DEFAULT 0,
+        discount_authorized_pct NUMERIC(5, 1),
+        discount_authorized_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        discount_authorized_by_name TEXT,
+        discount_authorized_at TIMESTAMPTZ,
+        issue_date DATE NOT NULL,
+        valid_until DATE NOT NULL,
+        share_token TEXT UNIQUE,
+        share_token_at TIMESTAMPTZ,
+        sent_at TIMESTAMPTZ,
+        viewed_at TIMESTAMPTZ,
+        decided_at TIMESTAMPTZ,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposals_deal_idx ON crm_proposals (deal_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposals_contact_idx ON crm_proposals (contact_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposals_status_idx ON crm_proposals (status, valid_until)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_versions (
+        id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL REFERENCES crm_proposals (id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        content JSONB NOT NULL,
+        -- sha256 of the content (canonical JSON): what an approval refers to
+        content_hash TEXT NOT NULL,
+        reason TEXT,
+        changes JSONB NOT NULL DEFAULT '[]',
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        sent_at TIMESTAMPTZ,
+        UNIQUE (proposal_id, version)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_events (
+        id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL REFERENCES crm_proposals (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        version INTEGER,
+        payload JSONB NOT NULL DEFAULT '{}',
+        actor_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        actor_name TEXT,
+        ip TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposal_events_idx ON crm_proposal_events (proposal_id, created_at DESC)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_proposal_approvals (
+        id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL REFERENCES crm_proposals (id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('aprovada', 'recusada')),
+        name TEXT NOT NULL,
+        email TEXT,
+        document TEXT,
+        comment TEXT,
+        content_hash TEXT NOT NULL,
+        -- cliente = online, through the link; equipe = recorded in the CRM
+        via TEXT NOT NULL CHECK (via IN ('cliente', 'equipe')),
+        recorded_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        recorded_by_name TEXT,
+        ip TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_proposal_approvals_idx ON crm_proposal_approvals (proposal_id, created_at DESC)`);
+    await done(24);
+  }
+
+  if (current < 25) {
+    // v25 — Evolução v1.0 (contratos e operação, itens 8 e 9): contracts get a
+    // number (the existing ones numbered in the order they were created — the
+    // only change to existing rows), the proposal they came from, payment
+    // terms, due day, term, renewal, cancellation rules, sales and operations
+    // owners and the signed document; clients get the onboarding checklist,
+    // deliverables and satisfaction records (new tables, empty).
+    await db.query(`CREATE SEQUENCE IF NOT EXISTS crm_contract_number_seq`);
+    await db.query(`
+      ALTER TABLE crm_contracts
+        ADD COLUMN IF NOT EXISTS number INTEGER,
+        ADD COLUMN IF NOT EXISTS proposal_id TEXT REFERENCES crm_proposals (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS one_time_cents BIGINT,
+        ADD COLUMN IF NOT EXISTS payment_terms TEXT,
+        ADD COLUMN IF NOT EXISTS due_day SMALLINT CHECK (due_day BETWEEN 1 AND 31),
+        ADD COLUMN IF NOT EXISTS term_months SMALLINT CHECK (term_months BETWEEN 1 AND 120),
+        ADD COLUMN IF NOT EXISTS renewal TEXT CHECK (renewal IN ('automatica', 'manual', 'sem_renovacao')),
+        ADD COLUMN IF NOT EXISTS cancellation_rules TEXT,
+        ADD COLUMN IF NOT EXISTS sales_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS ops_owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS signed_file_id TEXT REFERENCES crm_files (id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS signed_on DATE
+    `);
+    await db.query(`
+      UPDATE crm_contracts k SET number = n.rn
+      FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) AS rn FROM crm_contracts) n
+      WHERE n.id = k.id AND k.number IS NULL
+    `);
+    await db.query(`SELECT setval('crm_contract_number_seq', GREATEST((SELECT COALESCE(max(number), 0) FROM crm_contracts), 1), (SELECT count(*) > 0 FROM crm_contracts))`);
+    await db.query(`ALTER TABLE crm_contracts ALTER COLUMN number SET DEFAULT nextval('crm_contract_number_seq')`);
+    await db.query(`ALTER TABLE crm_contracts ALTER COLUMN number SET NOT NULL`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_contracts_number_key ON crm_contracts (number)`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS crm_contracts_proposal_key ON crm_contracts (proposal_id) WHERE proposal_id IS NOT NULL`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_onboarding (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        item TEXT NOT NULL,
+        label TEXT NOT NULL,
+        sort SMALLINT NOT NULL DEFAULT 0,
+        owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        due_on DATE,
+        done_at TIMESTAMPTZ,
+        done_by_name TEXT,
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (client_id, item)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_deliverables (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        contract_id TEXT REFERENCES crm_contracts (id) ON DELETE SET NULL,
+        service TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        owner_id TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        due_on DATE,
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_andamento', 'entregue', 'cancelado')),
+        delivered_at TIMESTAMPTZ,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_deliverables_client_idx ON crm_client_deliverables (client_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_deliverables_due_idx ON crm_client_deliverables (status, due_on)`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_client_satisfaction (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES crm_clients (id) ON DELETE CASCADE,
+        score SMALLINT NOT NULL CHECK (score BETWEEN 0 AND 10),
+        comment TEXT,
+        recorded_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        recorded_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_client_satisfaction_idx ON crm_client_satisfaction (client_id, created_at DESC)`);
+    await done(25);
+  }
+
+  if (current < 26) {
+    // v26 — Evolução v1.0 (financeiro comercial, item 10): commission rules
+    // (new, empty) and when a contract left "vigente" (for the cancellations of
+    // a period). Contracts already cancelled or ended take their last update
+    // as that date — the best one recorded.
+    await db.query(`ALTER TABLE crm_contracts ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ`);
+    await db.query(`UPDATE crm_contracts SET status_changed_at = updated_at WHERE status <> 'vigente' AND status_changed_at IS NULL`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_commission_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        -- NULL = every salesperson / any service / both modalities
+        user_id TEXT REFERENCES internal_users (id) ON DELETE CASCADE,
+        service TEXT,
+        billing TEXT CHECK (billing IN ('mensal', 'unico')),
+        percent NUMERIC(5, 2) NOT NULL CHECK (percent >= 0 AND percent <= 100),
+        -- monthly part: how many monthly payments count
+        months SMALLINT NOT NULL DEFAULT 1 CHECK (months BETWEEN 1 AND 36),
+        archived_at TIMESTAMPTZ,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await done(26);
+  }
+
+  if (current < 27) {
+    // v27 — Evolução v1.0 (automações e comunicação, itens 7 e 11): the six new
+    // automation rules (two of them on from the start, because they only take
+    // over notices the CRM already gave: transfer requested, proposal
+    // approved) and the messages scheduled to be sent later.
+    for (const a of AUTOMATION_DEFS) {
+      await db.query(`INSERT INTO crm_automations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [a.id]);
+    }
+    await db.query(`UPDATE crm_automations SET status = 'ativa' WHERE id = ANY($1) AND updated_by IS NULL AND status = 'desativada'`, [AUTOMATIONS_ON_BY_DEFAULT]);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS crm_scheduled_messages (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+        -- text = free message (only inside the 24h window); template = an approved model.
+        kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'template')),
+        body TEXT,
+        template_name TEXT,
+        template_language TEXT,
+        template_params JSONB NOT NULL DEFAULT '[]'::jsonb,
+        send_at TIMESTAMPTZ NOT NULL,
+        -- pendente → enviando (claimed by one dispatcher) → enviada | falhou; or cancelada.
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'enviando', 'enviada', 'cancelada', 'falhou')),
+        claimed_at TIMESTAMPTZ,
+        error TEXT,
+        wa_message_id TEXT,
+        created_by TEXT REFERENCES internal_users (id) ON DELETE SET NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        sent_at TIMESTAMPTZ,
+        canceled_by_name TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_scheduled_messages_due_idx ON crm_scheduled_messages (send_at) WHERE status = 'pendente'`);
+    await db.query(`CREATE INDEX IF NOT EXISTS crm_scheduled_messages_contact_idx ON crm_scheduled_messages (contact_id, send_at DESC)`);
+    await done(27);
+  }
+
+  if (current < 28) {
+    // v28 — Evolução v1.0 (segurança e LGPD, item 13): the last 2FA time step
+    // accepted per person (a code can't be used twice), and when a contact's
+    // personal data was anonymized at the titular's request.
+    await db.query(`ALTER TABLE internal_users ADD COLUMN IF NOT EXISTS totp_last_step BIGINT`);
+    await db.query(`ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ`);
+    await done(28);
   }
 }
 
