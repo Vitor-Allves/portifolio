@@ -137,3 +137,12 @@ Exemplo de primeiro modelo:
 | "Configure WHATSAPP_BUSINESS_ACCOUNT_ID" ao enviar modelo | falta o ID da WABA |
 | Envio falha com "mais de 24 horas" | a janela fechou: use um modelo |
 | "Não foi possível falar com o WhatsApp agora" | a Meta não respondeu (rede/instabilidade); tente de novo |
+| Webhook verificado (GET 200 nos logs), mas nenhum POST chega | a conta do WhatsApp não está assinada pelo app (**Assinar webhooks** no cartão da conta), o campo **messages** não está assinado ou o app não foi publicado |
+
+**Para diagnosticar:** os Runtime Logs da Vercel mostram `[whatsapp/webhook]`
+em cada verificação e em cada entrega (só contagens: mensagens, status e
+ignoradas; nunca telefone nem texto), e um aviso quando a assinatura é
+recusada. O botão **Teste** ao lado de um campo do webhook, no app da Meta,
+manda um exemplo com um número fictício da Meta: o CRM responde 200 e o
+ignora (`ignoredOtherNumber`), sem criar contato. Serve para confirmar que a
+Meta consegue entregar e que a chave secreta está certa.
