@@ -16,14 +16,18 @@ export async function GET(req: NextRequest) {
   const challenge = req.nextUrl.searchParams.get("hub.challenge");
   const expected = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
   if (mode === "subscribe" && expected && token === expected && challenge) {
+    console.info("[whatsapp/webhook] verificação aceita");
     return new NextResponse(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
   }
+  // Never the tokens themselves: only what helps tell why it failed.
+  console.warn("[whatsapp/webhook] verificação recusada", { mode, configured: Boolean(expected), tokenSent: Boolean(token) });
   return NextResponse.json({ error: "Verificação inválida." }, { status: 403 });
 }
 
 export async function POST(req: NextRequest) {
   const raw = await req.text();
   if (!verifyWebhookSignature(raw, req.headers.get("x-hub-signature-256"))) {
+    console.warn("[whatsapp/webhook] assinatura inválida: confira WHATSAPP_APP_SECRET (chave secreta do app que envia o webhook)");
     return NextResponse.json({ error: "Assinatura inválida." }, { status: 401 });
   }
 
@@ -34,7 +38,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
 
-  const { messages, statuses } = parseWebhook(payload);
+  const { messages, statuses, ignored } = parseWebhook(payload, process.env.WHATSAPP_PHONE_NUMBER_ID);
+  // Counts only: no phone numbers or texts in the logs.
+  console.info("[whatsapp/webhook] entrega recebida", { messages: messages.length, statuses: statuses.length, ignoredOtherNumber: ignored });
   const optedOut: { contactId: string; phone: string }[] = [];
   try {
     // In order: a status for a message we just stored must find it.

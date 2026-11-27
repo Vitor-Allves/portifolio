@@ -5,7 +5,7 @@
 // transfer (with a notice; only to someone who can answer and see the lead)
 // and end; the new filters (atendimento, aguardando, etiqueta); response
 // times; everything in the contact's history.
-import { BASE, closeDb, fakeGraphSent, inbound, launchBrowser, login, ok, sql } from "../lib/helpers.mjs";
+import { BASE, closeDb, fakeGraphSent, inbound, launchBrowser, login, ok, sql, webhook } from "../lib/helpers.mjs";
 
 const browser = await launchBrowser();
 const json = async (r) => ({ status: r.status(), body: await r.json().catch(() => null) });
@@ -84,6 +84,20 @@ await inbound("5515990000005", "E o prazo?", "Eva");
 ok((await json(await vitor.get(`${BASE}/api/crm/conversations/stats/?days=7`))).body.waitingNow >= 1, "waiting now counts Eva's new question");
 const jstats = (await json(await joao.get(`${BASE}/api/crm/conversations/stats/?days=30`))).body;
 ok(jstats.days === 30 && jstats.team.answered === 2, `a Comercial's numbers only cover the leads he sees (Eva and Bruno, not Vitor's Ana: ${jstats.team.answered})`);
+
+// ---- a delivery for another number (Meta's "Teste" sample) is acknowledged and ignored ----
+const contactsBefore = await sql(`SELECT count(*) FROM crm_contacts`);
+const messagesBefore = await sql(`SELECT count(*) FROM crm_messages`);
+const sample = await webhook({
+  metadata: { display_phone_number: "16505551111", phone_number_id: "123456123" },
+  contacts: [{ wa_id: "16315551181", profile: { name: "test user name" } }],
+  messages: [{ from: "16315551181", id: "ABGGFlA5Fpa", timestamp: "1504902988", type: "text", text: { body: "this is a text message" } }],
+});
+ok(sample === 200, "Meta's sample for another number: 200, so Meta doesn't retry");
+ok(
+  (await sql(`SELECT count(*) FROM crm_contacts`)) === contactsBefore && (await sql(`SELECT count(*) FROM crm_messages`)) === messagesBefore,
+  "…and nothing is stored (no made-up contact)",
+);
 
 await closeDb();
 await browser.close();

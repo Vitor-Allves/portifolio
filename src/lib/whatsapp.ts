@@ -219,6 +219,7 @@ type WebhookPayload = {
     changes?: {
       field?: string;
       value?: {
+        metadata?: { phone_number_id?: string };
         contacts?: { wa_id?: string; profile?: { name?: string } }[];
         messages?: WebhookMessage[];
         statuses?: { id?: string; status?: string; errors?: { title?: string; message?: string; error_data?: { details?: string } }[] }[];
@@ -240,13 +241,28 @@ function messageContent(m: WebhookMessage): { body: string | null; mediaId: stri
   return { body, mediaId: media?.id ?? null, mediaMime: media?.mime_type ?? null };
 }
 
-export function parseWebhook(payload: unknown): { messages: InboundMessage[]; statuses: StatusUpdate[] } {
+/**
+ * The messages and statuses of a webhook delivery. A change addressed to
+ * another phone number than ours (`ownPhoneNumberId`) is skipped and counted
+ * in `ignored`: Meta's "Teste" button in the app dashboard sends a sample
+ * with its own fake number, which must not become a contact.
+ */
+export function parseWebhook(
+  payload: unknown,
+  ownPhoneNumberId?: string | null,
+): { messages: InboundMessage[]; statuses: StatusUpdate[]; ignored: number } {
   const messages: InboundMessage[] = [];
   const statuses: StatusUpdate[] = [];
+  let ignored = 0;
   for (const entry of (payload as WebhookPayload)?.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
+      const to = value.metadata?.phone_number_id;
+      if (ownPhoneNumberId && to && to !== ownPhoneNumberId) {
+        ignored += (value.messages?.length ?? 0) + (value.statuses?.length ?? 0);
+        continue;
+      }
       const names = new Map((value.contacts ?? []).map((c) => [c.wa_id ?? "", c.profile?.name ?? null]));
       for (const m of value.messages ?? []) {
         if (!m.id || !m.from) continue;
@@ -277,5 +293,5 @@ export function parseWebhook(payload: unknown): { messages: InboundMessage[]; st
       }
     }
   }
-  return { messages, statuses };
+  return { messages, statuses, ignored };
 }
