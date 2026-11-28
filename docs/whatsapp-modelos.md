@@ -6,8 +6,9 @@ botão **Enviar modelo** do CRM, com um campo para cada variável.
 
 **Como cadastrar:** [WhatsApp Manager](https://business.facebook.com/wa/manage/)
 → conta **Legado Enterprise** → **Modelos de mensagem → Criar modelo** →
-categoria → nome (exatamente como abaixo) → idioma **Português (BR)** → corpo
-→ um exemplo para cada variável → botões → **Enviar para análise**. A
+categoria → nome (exatamente como abaixo) → idioma **Português (BR)** → tipo
+de variável **Número** (para ficarem `{{1}}`, `{{2}}`…) → corpo → um exemplo
+para cada variável → botões → **Enviar para análise**. A
 aprovação costuma levar de minutos a algumas horas.
 
 Regras da Meta que já estão respeitadas nos textos: o corpo não começa nem
@@ -19,7 +20,7 @@ Utilidade para Marketing); isso só muda o preço por mensagem.
 
 Para retomar com um lead que conversou com a Legado e esfriou.
 
-> Olá, {{1}}! Aqui é o {{2}}, da Legado Enterprise. Conversamos sobre gerar
+> Olá, {{1}}! Aqui é {{2}}, da Legado Enterprise. Conversamos sobre gerar
 > demanda para o time comercial da {{3}}. Faz sentido retomarmos essa
 > conversa esta semana?
 
