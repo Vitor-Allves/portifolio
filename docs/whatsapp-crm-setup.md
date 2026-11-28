@@ -8,6 +8,11 @@ ligado à **API oficial do WhatsApp (Cloud API)** pelos passos abaixo.
 O número usado aqui é **exclusivo do CRM**: ele não fica instalado em nenhum
 celular, e todas as conversas acontecem pelo `/crm`.
 
+**Configuração atual (27/11/2026):** número +55 15 99665-7419, app da Meta
+"Legado CRM" (exclusivo do CRM), conta do WhatsApp "Legado Enterprise"
+(`1143191171647030`) no portfólio da Legado, usuário do sistema
+"CRMWhatsApp". O botão de WhatsApp do site aponta para esse número.
+
 ## 1. Antes de começar
 
 - **Chip novo**, que consiga receber SMS ou ligação para o código de
@@ -20,17 +25,27 @@ celular, e todas as conversas acontecem pelo `/crm`.
 ## 2. App da Meta com o produto WhatsApp
 
 1. Em [developers.facebook.com/apps](https://developers.facebook.com/apps),
-   abra o app que já é usado pelo Intelligence (ou crie um do tipo
-   **Empresa**) e adicione o produto **WhatsApp**.
-2. Quando pedir, vincule o app ao Business Manager da Legado. A Meta cria (ou
-   reaproveita) uma **Conta do WhatsApp Business (WABA)**.
+   crie um app **só para o CRM** (tipo **Empresa**, caso de uso "Conectar-se
+   com clientes pelo WhatsApp"). Separado do app do Intelligence: um problema
+   no WhatsApp não afeta o Intelligence.
+2. Escolha o portfólio **verificado** da Legado. O app fica preso a ele para
+   sempre (não dá para trocar depois). Confira o nome do portfólio no topo das
+   Configurações: há mais de um com nome parecido.
+3. Aceite os termos da plataforma do WhatsApp e clique em **Continuar**: a
+   Meta cria uma conta de teste ("Test WhatsApp Business Account", com um
+   número de teste dela), que não é usada pelo CRM.
 
 ## 3. Registrar o número
 
-1. No app: **WhatsApp → Configuração da API → Adicionar número de telefone**.
+1. No app: **Casos de uso → Conectar no WhatsApp → Personalizar → Etapa 2.
+   Configuração da produção → Adicionar número de telefone**. Em "Conta do
+   WhatsApp", **Criar uma conta do WhatsApp Business** (não a de teste).
 2. Preencha o **nome de exibição** (ex.: "Legado Enterprise"). Ele passa por
    uma revisão da Meta e aparece para quem recebe as mensagens.
-3. Confirme o código que chega por SMS ou ligação.
+3. Confirme o código que chega por SMS ou ligação. Antes, confira de outro
+   celular (`wa.me/55DDDNÚMERO`) que o número não tem WhatsApp, e se a ligação
+   não chegar, use SMS (chamadas de número internacional costumam ser
+   silenciadas pelo filtro de spam do celular).
 4. Anote os dois IDs que aparecem na mesma tela:
    - **Identificação do número de telefone** → `WHATSAPP_PHONE_NUMBER_ID`
    - **Identificação da conta do WhatsApp Business** → `WHATSAPP_BUSINESS_ACCOUNT_ID`
@@ -45,15 +60,23 @@ celular, e todas as conversas acontecem pelo `/crm`.
 O mesmo modelo do token do Intelligence: um usuário técnico do Business
 Manager, que não expira quando alguém troca de senha.
 
-1. Em [Business Settings](https://business.facebook.com/settings) →
-   **Usuários → Usuários do sistema**, use o usuário já existente ou crie um
-   (função **Admin**, porque ele vai enviar mensagens).
-2. **Adicionar ativos**:
-   - **Apps** → o app do passo 2, com controle total;
-   - **Contas do WhatsApp** → a WABA do passo 3, com controle total.
-3. **Gerar novo token** para esse app, expiração **Nunca**, com as permissões
-   `whatsapp_business_messaging` e `whatsapp_business_management`.
-4. Copie o token na hora (ele não aparece de novo) → `WHATSAPP_ACCESS_TOKEN`.
+1. Em [Business Settings](https://business.facebook.com/settings), **no
+   portfólio do app** → **Usuários → Usuários do sistema**, crie um usuário
+   **só para o CRM** ("CRMWhatsApp", função **Admin**). Não reaproveite o
+   usuário do sistema de outro cliente ou do Intelligence: se ele for removido,
+   o envio do CRM para junto.
+2. **Atribuir ativos**, com controle total:
+   - **Apps** → o app do passo 2;
+   - **Contas do WhatsApp** → a conta do passo 3 (confira o código dela).
+3. **Só depois de atribuir os dois**, **Gerar token** para esse app,
+   expiração **Nunca**, com as permissões `whatsapp_business_messaging` e
+   `whatsapp_business_management`. O token guarda os acessos do momento em que
+   foi gerado: se a conta do WhatsApp for atribuída depois, gere outro.
+4. Copie o token na hora (ele não aparece de novo, começa com `EAA` e tem uns
+   200 caracteres) → `WHATSAPP_ACCESS_TOKEN`.
+5. Para conferir: [Depurador de token](https://developers.facebook.com/tools/debug/accesstoken/)
+   → Tipo "System User", usuário "CRMWhatsApp", expira "Nunca", as duas
+   permissões.
 
 ## 5. Variáveis na Vercel
 
@@ -68,7 +91,9 @@ Em **Project → Settings → Environment Variables** (Production):
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | um texto longo e aleatório, inventado por você |
 
 Depois de salvar, faça um **Redeploy** — as variáveis só valem para deploys
-novos. O webhook precisa delas já no ar para o passo seguinte.
+novos. O webhook precisa delas já no ar para o passo seguinte: **espere o
+deploy ficar pronto** antes do "Verificar e salvar" (uma verificação feita
+contra o deploy antigo é recusada).
 
 ## 6. Webhook (mensagens chegando no CRM)
 
@@ -78,9 +103,33 @@ novos. O webhook precisa delas já no ar para o passo seguinte.
 3. **Verificar token**: o mesmo valor de `WHATSAPP_WEBHOOK_VERIFY_TOKEN`.
 4. **Verificar e salvar**. Em seguida, em **Campos do webhook**, assine
    **messages**.
-5. Coloque o app em modo **Ativo** (alternador no topo do painel; pede a URL
-   da política de privacidade do site). Em modo de desenvolvimento a Meta não
-   entrega as mensagens reais.
+5. No cartão da conta (Etapa 2 → Registre seu número), ligue **Assinar
+   webhooks**.
+6. **Publique o app** (ícone "Publicar" na barra da esquerda; pede a URL da
+   política de privacidade, `https://www.legadoenterprise.com.br/privacidade/`,
+   em Configurações do app → Básico). Em desenvolvimento a Meta só manda os
+   testes do painel, nunca as mensagens reais. Publicado, a página mostra o
+   botão "Tirar do ar".
+
+### 6.1 Se o "Teste" chega mas as mensagens reais não
+
+Foi o que aconteceu na primeira ligação (27/11/2026): tudo verde no painel,
+mas a tela não completou dois passos por trás. No
+[Explorador da Graph API](https://developers.facebook.com/tools/explorer/),
+com o app do CRM e um token com `whatsapp_business_management` e
+`whatsapp_business_messaging`:
+
+1. Registrar o número com um PIN de 6 dígitos (guarde-o; é a verificação em
+   duas etapas do número):
+   `POST {PHONE_NUMBER_ID}/register?messaging_product=whatsapp&pin=NNNNNN`
+2. Refazer a assinatura da conta: `DELETE {WABA_ID}/subscribed_apps` e depois
+   `POST {WABA_ID}/subscribed_apps` (cada um deve voltar `"success": true`).
+3. Para conferir: `GET {WABA_ID}/subscribed_apps` lista o app, e
+   `GET {PHONE_NUMBER_ID}?fields=status,platform_type,account_mode` mostra
+   `CONNECTED`, `CLOUD_API` e `LIVE`.
+
+A partir daí as entregas reais aparecem nos Runtime Logs da Vercel como
+`[whatsapp/webhook] entrega recebida`.
 
 Toda entrega é conferida pela assinatura `X-Hub-Signature-256` com a chave
 secreta do app. Sem `WHATSAPP_APP_SECRET`, ou com o valor errado, o webhook
@@ -97,6 +146,9 @@ Para **começar** uma conversa, ou falar com alguém que não respondeu nas
 3. A aprovação costuma levar de minutos a algumas horas. Os aprovados aparecem
    sozinhos no botão **Enviar modelo** do CRM.
 
+Os primeiros modelos da Legado, prontos para cadastrar, estão em
+[`docs/whatsapp-modelos.md`](./whatsapp-modelos.md).
+
 Exemplo de primeiro modelo:
 
 > Oi, {{1}}! Aqui é o {{2}}, da Legado Enterprise. Conversamos no {{3}} e
@@ -106,6 +158,7 @@ Exemplo de primeiro modelo:
 ## 8. Testar
 
 1. Do seu celular pessoal, mande uma mensagem para o número de prospecção.
+   Os Runtime Logs devem mostrar `entrega recebida { messages: 1 }`.
 2. Em até 10 segundos ela aparece no `/crm`, na coluna **Novo**, com o contador
    de não lidas e a janela de 24h aberta.
 3. Abra o card e responda pelo painel: a mensagem chega no seu celular e o
@@ -132,7 +185,10 @@ Exemplo de primeiro modelo:
 | Sintoma | Causa provável |
 | --- | --- |
 | "Verificar e salvar" falha | variáveis sem redeploy, URL sem a barra final ou verify token diferente |
-| Mensagens não chegam no CRM | campo **messages** não assinado, app em modo de desenvolvimento ou `WHATSAPP_APP_SECRET` errado (401 nos logs) |
+| Mensagens não chegam no CRM | campo **messages** não assinado, app não publicado, `WHATSAPP_APP_SECRET` errado (aviso "assinatura inválida" nos logs) ou o número/assinatura incompletos (seção 6.1) |
+| Enviar falha com "Authorization Error" | o token é de um usuário do sistema sem a conta do WhatsApp atribuída |
+| Enviar falha com "Object with ID … does not exist … missing permissions" | o token foi gerado antes de a conta do WhatsApp ser atribuída ao usuário do sistema: gere outro token |
+| O número não aparece no WhatsApp Manager | o WhatsApp Manager abriu em outro portfólio ou na conta de teste: troque no seletor do topo (conta "Legado Enterprise") |
 | Selo "WhatsApp ainda não conectado" no topo | falta `WHATSAPP_ACCESS_TOKEN` ou `WHATSAPP_PHONE_NUMBER_ID` |
 | "Configure WHATSAPP_BUSINESS_ACCOUNT_ID" ao enviar modelo | falta o ID da WABA |
 | Envio falha com "mais de 24 horas" | a janela fechou: use um modelo |

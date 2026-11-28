@@ -999,10 +999,17 @@ export default function CrmContactPanel({
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void sendText();
+                          // Enter sends, like WhatsApp Web; Shift+Enter breaks the line. Not while an
+                          // accent / IME composition is open, and not on a touch keyboard (no Shift
+                          // there: its Enter keeps breaking the line, and the Enviar button sends).
+                          if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                          if (!e.ctrlKey && !e.metaKey && window.matchMedia("(pointer: coarse)").matches) return;
+                          e.preventDefault();
+                          // Taking over someone else's conversation stays a click on "Assumir e responder".
+                          if (!sending && !attendedByOther) void sendText();
                         }}
                         rows={3}
-                        placeholder="Escreva a resposta (Ctrl+Enter envia)"
+                        placeholder="Escreva a resposta (Enter envia · Shift+Enter quebra a linha)"
                         aria-label="Mensagem"
                         className={CRM_INPUT}
                       />

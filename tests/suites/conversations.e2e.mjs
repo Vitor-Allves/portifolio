@@ -2,8 +2,9 @@
 // with the response-time strip, the "Aguardando" view and badge; answering
 // takes the conversation; Atendimento tag; transfer with a notice in the
 // other person's bell; "Assumir e responder"; + Tarefa / + Oportunidade from
-// the conversation; the atendimento filter; phone and dark theme.
-import { go, inbound, launchBrowser, login, ok, shot } from "../lib/helpers.mjs";
+// the conversation; Enter sends (Shift+Enter breaks the line, never a
+// takeover); the atendimento filter; phone and dark theme.
+import { go, inbound, launchBrowser, login, ok, shot, sql } from "../lib/helpers.mjs";
 
 const browser = await launchBrowser();
 const errors = [];
@@ -30,6 +31,19 @@ await panel.getByLabel("Mensagem", { exact: true }).fill("Fazemos sim! Posso te 
 await panel.getByRole("button", { name: "Enviar", exact: true }).click();
 await bar.getByText(/Você está atendendo desde/).waitFor();
 ok(true, "answering takes the conversation");
+
+// ---- Enter sends, Shift+Enter breaks the line ----
+const box = panel.getByLabel("Mensagem", { exact: true });
+const outbound = () => sql(`SELECT count(*) FROM crm_messages WHERE contact_id = 'c5' AND direction = 'out'`);
+const sentBefore = await outbound();
+await box.fill("Segue o horário:");
+await box.press("Shift+Enter");
+await box.pressSequentially("amanhã às 10h");
+ok((await box.inputValue()) === "Segue o horário:\namanhã às 10h", "Shift+Enter breaks the line");
+await box.press("Enter");
+await panel.getByText("amanhã às 10h").waitFor();
+await g.waitForFunction(() => document.querySelector('textarea[aria-label="Mensagem"]')?.value === ""); // cleared once sent
+ok(Number(await outbound()) === Number(sentBefore) + 1, "Enter sends the message (one message, with both lines)");
 await bar.getByLabel("Etiqueta de atendimento").selectOption({ label: "Dúvida" });
 await bar.getByText("Dúvida", { exact: true }).waitFor();
 await list.getByRole("button", { name: "Todas", exact: true }).click();
@@ -54,6 +68,11 @@ await go(g, "Conversas");
 await g.getByRole("region", { name: "Conversas" }).getByRole("button", { name: /Eva Prado/ }).click();
 await panel.getByText(/João está atendendo esta conversa\. Ao enviar, você assume/).waitFor();
 await panel.getByLabel("Mensagem", { exact: true }).fill("Oi Eva, aqui é o Vitor, gestor da conta");
+await panel.getByLabel("Mensagem", { exact: true }).press("Enter");
+ok(
+  (await panel.getByLabel("Mensagem", { exact: true }).inputValue()) === "Oi Eva, aqui é o Vitor, gestor da conta",
+  "Enter doesn't take over someone else's conversation: that stays a click",
+);
 await panel.getByRole("button", { name: "Assumir e responder" }).click();
 await bar.getByText(/Você está atendendo desde/).waitFor();
 ok(true, "\"Assumir e responder\" takes it over");
@@ -94,3 +113,4 @@ await shot(p, "f4e1-conversa-celular-escuro");
 ok(errors.length === 0, `no page errors (${errors.join(" | ")})`);
 await browser.close();
 console.log("CONVERSATIONS E2E PASSED");
+process.exit(0); // the sql pool would keep the process alive

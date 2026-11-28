@@ -20,7 +20,10 @@ export const BRAND = {
 };
 
 export const CONTACT = {
-  whatsapp: "5515991928585", // +55 15 99192-8585
+  // +55 15 99665-7419: the CRM's number (WhatsApp Cloud API), so every lead from
+  // the site lands in /crm → Conversas. The old one (+55 15 99192-8585) is still
+  // the general number of the Intelligence's "Falar com meu consultor" (clients).
+  whatsapp: "5515996657419",
   email: "vitor.santos@legadoenterprisemkt.com",
   whatsappMessage:
     "Olá! Quero entender onde estão as próximas oportunidades de crescimento da minha empresa.",
