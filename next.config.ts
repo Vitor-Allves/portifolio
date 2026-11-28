@@ -20,6 +20,20 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
+      {
+        // Bytes that come from outside (a WhatsApp lead's media, a file
+        // attached to a contact): a later rule wins, so these get a
+        // sandboxed policy instead of the one above — even if a browser
+        // rendered an HTML/SVG file, it would run in a sandbox with no
+        // scripts and no access to the team's session (see media-headers.ts).
+        source: "/api/crm/(media|files)/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+          },
+        ],
+      },
     ];
   },
 };
