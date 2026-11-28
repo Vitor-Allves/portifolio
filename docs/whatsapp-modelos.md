@@ -16,7 +16,44 @@ termina com uma variável, as variáveis são numeradas em ordem e cada uma tem
 um exemplo. A Meta pode mudar a categoria na análise (por exemplo, de
 Utilidade para Marketing); isso só muda o preço por mensagem.
 
-## 1. `retomada_contato` · Marketing
+## 1. `mensagem_inicial` · Marketing
+
+O primeiro contato, para disparos (campanhas) e para quem ainda não falou com
+a Legado.
+
+> Olá, {{1}}! Aqui é {{2}}, da Legado Enterprise. Ajudamos empresas a
+> transformar investimento em anúncios em demanda qualificada para o time
+> comercial. Posso te mostrar, numa conversa rápida, como isso funcionaria na
+> {{3}}?
+
+- Exemplos: {{1}} `Ana` · {{2}} `Vitor` · {{3}} `Clínica Exemplo`
+- Botões de resposta rápida: `Quero conhecer` · `Agora não` ·
+  `Não quero receber` (este descadastra o lead sozinho no CRM)
+
+## 2. `continuar_conversa` · Utilidade
+
+Genérica: para levar para o WhatsApp uma conversa que começou em outro lugar
+(ligação, reunião, evento, e-mail) e ter onde retornar.
+
+> Olá, {{1}}! Aqui é {{2}}, da Legado Enterprise. Podemos continuar nossa
+> conversa por aqui? Assim fica mais fácil te dar retorno.
+
+- Exemplos: {{1}} `Ana` · {{2}} `Vitor`
+- Botão de resposta rápida: `Sim, pode ser`
+
+## 3. `lembrete_reuniao` · Utilidade
+
+Para confirmar uma reunião já marcada.
+
+> Olá, {{1}}! Passando para lembrar da nossa reunião {{2}}, às {{3}}. Tudo
+> certo?
+
+- Exemplos: {{1}} `Ana` · {{2}} `amanhã (28/11)` · {{3}} `10h`
+- Botões de resposta rápida: `Tudo certo` · `Preciso remarcar`
+
+## Opcionais
+
+### `retomada_contato` · Marketing
 
 Para retomar com um lead que conversou com a Legado e esfriou.
 
@@ -27,7 +64,7 @@ Para retomar com um lead que conversou com a Legado e esfriou.
 - Exemplos: {{1}} `Ana` · {{2}} `Vitor` · {{3}} `Clínica Exemplo`
 - Botões de resposta rápida: `Sim, vamos conversar` · `Agora não`
 
-## 2. `retorno_proposta` · Utilidade
+### `retorno_proposta` · Utilidade
 
 Para acompanhar uma proposta que o lead pediu e ainda não respondeu.
 
@@ -38,20 +75,10 @@ Para acompanhar uma proposta que o lead pediu e ainda não respondeu.
 - Exemplos: {{1}} `Ana` · {{2}} `Clínica Exemplo`
 - Botões de resposta rápida: `Tenho dúvidas` · `Vamos marcar uma ligação`
 
-## 3. `lembrete_reuniao` · Utilidade
-
-Para confirmar uma reunião já marcada.
-
-> Olá, {{1}}! Lembrando da nossa reunião {{2}}, às {{3}}. Se precisar mudar o
-> horário, é só responder esta mensagem.
-
-- Exemplos: {{1}} `Ana` · {{2}} `amanhã (28/11)` · {{3}} `10h`
-- Botões de resposta rápida: `Confirmado` · `Preciso remarcar`
-
 ## Depois de aprovados
 
 - Só envie modelo de Marketing para quem aceitou ser contatado (campo
   "Consentimento" do contato). Denúncias derrubam a qualidade do número e o
   limite diário de conversas.
-- Quem responde "SAIR" é descadastrado sozinho e deixa de receber campanhas e
-  mensagens programadas.
+- Quem responde "SAIR" (ou toca em "Não quero receber") é descadastrado
+  sozinho e deixa de receber campanhas e mensagens programadas.
