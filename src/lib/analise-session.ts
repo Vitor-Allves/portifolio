@@ -68,6 +68,8 @@ export async function verifySessionToken(
       new TextDecoder().decode(base64UrlToBytes(payloadB64))
     ) as SessionTokenPayload;
     if (!Number.isFinite(payload.exp) || Date.now() > payload.exp) return null;
+    // Same shape check as the Node verifier: a 2FA "pending" token is never a session.
+    if ((payload.kind !== "staff" && payload.kind !== "client") || "stage" in payload) return null;
     return payload;
   } catch {
     return null;

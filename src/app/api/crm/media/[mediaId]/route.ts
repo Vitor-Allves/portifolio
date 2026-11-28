@@ -3,6 +3,7 @@ import { crmActorFromRequest, crmErrorResponse } from "@/lib/crm-auth";
 import { requireMedia } from "@/lib/crm-access";
 import { isKnownMedia } from "@/lib/crm";
 import { fetchMedia } from "@/lib/whatsapp";
+import { untrustedContentHeaders } from "@/lib/media-headers";
 
 export const runtime = "nodejs";
 
@@ -17,8 +18,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ medi
     await requireMedia(actor, mediaId);
     if (!(await isKnownMedia(mediaId))) return NextResponse.json({ error: "Mídia não encontrada." }, { status: 404 });
     const media = await fetchMedia(mediaId);
+    // The lead chose the file and its type: only photos/audio/video open inline, the rest downloads (see media-headers.ts).
     return new NextResponse(media.body, {
-      headers: { "Content-Type": media.mime, "Cache-Control": "private, max-age=3600" },
+      headers: { ...untrustedContentHeaders(media.mime, `whatsapp-${mediaId}`), "Cache-Control": "private, max-age=3600" },
     });
   } catch (err) {
     return crmErrorResponse(err, "api/crm/media GET");

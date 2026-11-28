@@ -24,6 +24,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         "Content-Length": String(f.bytes.length),
         "Content-Disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(f.name)}`,
         "Cache-Control": "private, no-store",
+        // Always a download; and sandboxed in case a browser renders it anyway (an uploaded .html/.svg must never run here).
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
       },
     });
   } catch (err) {

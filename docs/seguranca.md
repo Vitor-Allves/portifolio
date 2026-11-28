@@ -96,7 +96,19 @@ regras que valem para todas as fases. Atualizar a cada fase.
   Arquivar não apaga; os arquivos entram no backup do banco (o que aumenta
   o tamanho dele: acompanhe o plano do Neon). Não há antivírus: quem baixa
   deve tratar documentos de terceiros com o cuidado habitual.
-- Dependências: `npm audit` sem falhas em 23/11/2026 (Next.js 16.4.6). A
+- Mídia do WhatsApp (varredura de 28/11/2026): o tipo do arquivo é
+  escolhido por quem manda a mensagem, então só fotos, áudio e vídeo abrem
+  no navegador; HTML, SVG, PDF e o resto viram download
+  (`application/octet-stream`). Toda resposta de `/api/crm/media` e
+  `/api/crm/files` vai com `nosniff` e CSP `sandbox` (sem scripts, sem
+  acesso à sessão) — `src/lib/media-headers.ts`.
+- Exportações CSV: todas passam por `toCsvCell` (`src/lib/csv.ts`), que
+  neutraliza fórmulas de planilha (`= + - @`) com um `'` na frente.
+- Ataques automatizados: `tests/suites/pentest.api.mjs` roda em todo PR
+  (cookies forjados, troca de perfil, rotas sem login, mídia maliciosa,
+  CSV, webhook, cron, propostas). Relatório completo em
+  `docs/seguranca-varredura-2026-11-28.md`.
+- Dependências: `npm audit` sem falhas em 28/11/2026 (Next.js 16.4.6). A
   verificação automática (CI) roda em todo PR.
 
 ## Auditoria (registro de ações)
@@ -184,3 +196,7 @@ inclusive valores e etapas das oportunidades.
 | Backups dependentes do plano Free do Neon | Média | Pendente: decisão de plano + rotina própria |
 | LGPD sem registro formal; sem exportar/anonimizar titular | Média | Em parte (evolução v1.0): exportar e anonimizar o titular no painel do contato (Administrador, auditado); falta validar o registro com o jurídico |
 | Apagar contato apaga em cascata seu histórico | Baixa | Só "desfazer importação" apaga, e só contatos não trabalhados |
+| Arquivo HTML/SVG enviado por WhatsApp abria no CRM e podia rodar script com a sessão da equipe | Alta | **Corrigido** (varredura 28/11/2026): só foto, áudio e vídeo abrem; o resto é download, com CSP `sandbox` |
+| CSV do Financeiro sem proteção contra fórmulas de planilha | Média | **Corrigido** (varredura 28/11/2026): usa o mesmo `toCsvCell` das outras exportações |
+| Sem CSP completa nas páginas (só `frame-ancestors`) | Baixa | Pendente: CSP com `nonce` é um projeto à parte, com teste de cada tela |
+| HSTS sem `includeSubDomains`/`preload` | Baixa | Pendente: ativar depois de conferir HTTPS em todo subdomínio |

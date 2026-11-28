@@ -6,7 +6,7 @@ import { CONTACT, ROUTES } from "@/lib/site-config";
 export const metadata: Metadata = {
   title: "Política de Privacidade",
   description:
-    "Como a Legado Enterprise coleta, usa e protege os dados pessoais de quem visita o site e preenche o formulário de contato.",
+    "Como a Legado Enterprise coleta, usa e protege os dados pessoais de quem visita o site, preenche o formulário de contato ou conversa com a Legado pelo WhatsApp.",
   alternates: { canonical: ROUTES.privacy },
   robots: { index: true, follow: true },
 };
@@ -21,14 +21,14 @@ export default function PrivacidadePage() {
             <div className="lg-head">
               <span className="lg-eyebrow">Legal</span>
               <h1 className="lg-h2">Política de Privacidade</h1>
-              <p className="lg-lead">Última atualização: outubro de 2026.</p>
+              <p className="lg-lead">Última atualização: novembro de 2026.</p>
             </div>
 
             <div className="grid gap-8 text-[15px] leading-relaxed text-muted">
               <p>
                 Esta política explica como a Legado Enterprise coleta, usa, armazena e protege
-                os dados pessoais de quem visita este site ou preenche o formulário de contato,
-                em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018 —
+                os dados pessoais de quem visita este site, preenche o formulário de contato ou
+                conversa com a Legado pelo WhatsApp, em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018 —
                 LGPD).
               </p>
 
@@ -52,6 +52,12 @@ export default function PrivacidadePage() {
                   WhatsApp, empresa, faixa de faturamento aproximado e principal objetivo
                   informado.
                 </p>
+                <p className="mb-2">
+                  Quando você conversa com a Legado pelo WhatsApp, guardamos o seu número, o nome
+                  do seu perfil, o texto das mensagens trocadas, o registro dos arquivos enviados
+                  (fotos, áudios, documentos) e a data e a hora de cada mensagem, além das
+                  anotações que a nossa equipe faz sobre o atendimento.
+                </p>
                 <p>
                   Também coletamos automaticamente dados de navegação (páginas visitadas,
                   dispositivo, origem do acesso) por meio de ferramentas de analytics e pixels
@@ -65,7 +71,12 @@ export default function PrivacidadePage() {
                 </h2>
                 <ul className="list-disc pl-5 grid gap-1">
                   <li>Responder ao seu contato pelo WhatsApp;</li>
+                  <li>
+                    Manter o histórico da conversa e do atendimento, para que qualquer pessoa da
+                    equipe dê continuidade sem pedir tudo de novo;
+                  </li>
                   <li>Entender o cenário da sua empresa antes de uma conversa comercial;</li>
+                  <li>Preparar e acompanhar propostas e contratos, quando você pedir;</li>
                   <li>Medir e melhorar o desempenho do site e das campanhas de marketing;</li>
                   <li>Cumprir obrigações legais e regulatórias, quando aplicável.</li>
                 </ul>
@@ -73,35 +84,65 @@ export default function PrivacidadePage() {
 
               <section>
                 <h2 className="font-display text-xl text-navy mb-2">
-                  4. Com quem compartilhamos
+                  4. Conversas pelo WhatsApp e o nosso CRM
                 </h2>
+                <p className="mb-2">
+                  O WhatsApp comercial da Legado usa a plataforma oficial do WhatsApp para
+                  empresas (WhatsApp Business Platform, da Meta). As conversas ficam registradas
+                  no CRM da Legado, o sistema interno em que a equipe atende e acompanha cada
+                  contato. Só pessoas da equipe, com login individual, acessam esse histórico, e
+                  cada uma vê apenas o que o seu perfil de acesso permite.
+                </p>
+                <p className="mb-2">
+                  Tratamos esses dados para atender o pedido que você fez ao nos procurar e para
+                  as etapas que antecedem um contrato com a sua empresa, e no nosso legítimo
+                  interesse de manter o histórico do relacionamento comercial. Mensagens de
+                  divulgação só são enviadas a quem aceitou recebê-las.
+                </p>
                 <p>
-                  Os dados do formulário de contato são enviados diretamente pelo seu próprio
-                  WhatsApp para a equipe da Legado — não há envio a servidores de terceiros
-                  nessa etapa. Dados de navegação podem ser compartilhados com provedores de
-                  analytics e plataformas de anúncios (como Meta/Facebook e Google), sempre
-                  sob os termos de privacidade dessas plataformas.
+                  Se não quiser mais receber mensagens da Legado, responda <strong>SAIR</strong>{" "}
+                  no próprio WhatsApp: na hora, o seu número deixa de receber campanhas e
+                  mensagens programadas da Legado.
                 </p>
               </section>
 
               <section>
                 <h2 className="font-display text-xl text-navy mb-2">
-                  5. Clientes com acesso ao Legado Intelligence
+                  5. Com quem compartilhamos
                 </h2>
+                <p className="mb-2">
+                  As mensagens de WhatsApp passam pela Meta, que opera a plataforma do WhatsApp,
+                  e o CRM é mantido em provedores de hospedagem e banco de dados (Vercel e Neon).
+                  Esses provedores tratam os dados apenas para prestar o serviço à Legado, sob os
+                  seus próprios termos de privacidade, e podem armazená-los fora do Brasil.
+                </p>
                 <p>
-                  Para empresas que já são parceiras da Legado, os dados de campanhas e
-                  indicadores são tratados dentro do Legado Intelligence, sob um acordo
-                  comercial específico com cada cliente — essa política cobre apenas o site
-                  público e o formulário de contato.
+                  Dados de navegação podem ser compartilhados com provedores de analytics e
+                  plataformas de anúncios (como Meta/Facebook e Google), sempre sob os termos de
+                  privacidade dessas plataformas. Não vendemos dados pessoais.
                 </p>
               </section>
 
               <section>
-                <h2 className="font-display text-xl text-navy mb-2">6. Seus direitos</h2>
+                <h2 className="font-display text-xl text-navy mb-2">
+                  6. Clientes com acesso ao Legado Intelligence
+                </h2>
+                <p>
+                  Para empresas que já são parceiras da Legado, os dados de campanhas e
+                  indicadores são tratados dentro do Legado Intelligence, sob um acordo
+                  comercial específico com cada cliente — essa política cobre o site público, o
+                  formulário de contato e as conversas pelo WhatsApp.
+                </p>
+              </section>
+
+              <section>
+                <h2 className="font-display text-xl text-navy mb-2">7. Seus direitos</h2>
                 <p>
                   Nos termos da LGPD, você pode solicitar a qualquer momento: confirmação do
                   tratamento, acesso, correção, anonimização ou exclusão dos seus dados, e a
-                  revogação do seu consentimento. Para exercer esses direitos, escreva para{" "}
+                  revogação do seu consentimento. Isso inclui o histórico das conversas pelo
+                  WhatsApp guardado no CRM: podemos enviar uma cópia dele ou anonimizá-lo. Para
+                  exercer esses direitos, escreva para{" "}
                   <a href={`mailto:${CONTACT.email}`} className="text-navy underline">
                     {CONTACT.email}
                   </a>
@@ -111,18 +152,20 @@ export default function PrivacidadePage() {
 
               <section>
                 <h2 className="font-display text-xl text-navy mb-2">
-                  7. Armazenamento e segurança
+                  8. Armazenamento e segurança
                 </h2>
                 <p>
                   Adotamos medidas técnicas e organizacionais razoáveis para proteger os dados
-                  pessoais contra acesso não autorizado, perda ou uso indevido. Os dados são
+                  pessoais contra acesso não autorizado, perda ou uso indevido, como acesso
+                  individual por pessoa, perfis de permissão, verificação em duas etapas para
+                  administradores e registro das ações feitas no CRM. Os dados são
                   mantidos apenas pelo tempo necessário às finalidades descritas nesta
                   política ou conforme exigido por lei.
                 </p>
               </section>
 
               <section>
-                <h2 className="font-display text-xl text-navy mb-2">8. Cookies</h2>
+                <h2 className="font-display text-xl text-navy mb-2">9. Cookies</h2>
                 <p>
                   Este site pode usar cookies e tecnologias semelhantes para lembrar
                   preferências e medir o desempenho de páginas e campanhas. Você pode gerenciar
@@ -132,7 +175,7 @@ export default function PrivacidadePage() {
 
               <section>
                 <h2 className="font-display text-xl text-navy mb-2">
-                  9. Alterações nesta política
+                  10. Alterações nesta política
                 </h2>
                 <p>
                   Esta política pode ser atualizada periodicamente. A data da última

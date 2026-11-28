@@ -111,7 +111,25 @@ export function createSessionToken(kind: SessionKind, userId: string, sessionVer
 
 /** Verifies signature + expiry and returns the thin payload, or null if invalid/expired/missing. Callers needing the actual role/accountIds/permissions must hydrate via auth-context.ts — never trust a cached copy. */
 export function verifySessionToken(token: string | undefined | null): SessionTokenPayload | null {
-  return decode<SessionTokenPayload>(token);
+  return asSessionPayload(decode<SessionTokenPayload>(token));
+}
+
+/**
+ * Session and pending tokens share the signing key, so each verifier also
+ * checks the payload's shape: a pending token (password checked, 2FA not yet)
+ * pasted into the session cookie is never a session, and a session token is
+ * never accepted as a 2FA step.
+ */
+function asSessionPayload(p: SessionTokenPayload | null): SessionTokenPayload | null {
+  if (!p || (p.kind !== "staff" && p.kind !== "client")) return null;
+  if (typeof p.userId !== "string" || !p.userId || !Number.isInteger(p.sessionVersion) || "stage" in p) return null;
+  return p;
+}
+
+function asPendingPayload(p: PendingTokenPayload | null): PendingTokenPayload | null {
+  if (!p || (p.stage !== "enroll" && p.stage !== "verify")) return null;
+  if (typeof p.userId !== "string" || !p.userId || "kind" in p || "sessionVersion" in p) return null;
+  return p;
 }
 
 /** Creates the short-lived token that bridges "password verified" and "2FA confirmed" for an administrador_geral login. Never accepted by any data-serving route. */
@@ -120,5 +138,5 @@ export function createPendingToken(userId: string, stage: PendingStage, remember
 }
 
 export function verifyPendingToken(token: string | undefined | null): PendingTokenPayload | null {
-  return decode<PendingTokenPayload>(token);
+  return asPendingPayload(decode<PendingTokenPayload>(token));
 }

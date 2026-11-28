@@ -9,10 +9,13 @@
 // this dashboard — so a leading apostrophe forces the cell to render as
 // plain text instead of executing (standard CSV-injection mitigation).
 const FORMULA_TRIGGER_RE = /^[=+\-@\t\r]/;
+// A plain number ("-15,00", "+3.5") can't be a formula: it stays a number.
+const PLAIN_NUMBER_RE = /^[+-]?\d[\d.,]*$/;
 
-function toCsvCell(value: string): string {
-  const safeValue = FORMULA_TRIGGER_RE.test(value) ? `'${value}` : value;
-  if (/[",\n;]/.test(safeValue)) return `"${safeValue.replace(/"/g, '""')}"`;
+/** One CSV cell: formula-safe (see above) and quoted when it holds a separator, quote or line break. */
+export function toCsvCell(value: string): string {
+  const safeValue = FORMULA_TRIGGER_RE.test(value) && !PLAIN_NUMBER_RE.test(value) ? `'${value}` : value;
+  if (/[",\r\n;]/.test(safeValue)) return `"${safeValue.replace(/"/g, '""')}"`;
   return safeValue;
 }
 

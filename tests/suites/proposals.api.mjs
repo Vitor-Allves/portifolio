@@ -278,7 +278,7 @@ ok(r.status === 201 && (await get(vitor, p3)).content.items.length === 0, "a pro
 ok((await send(vitor, p3)).status === 400, "can't send without services");
 await json(await vitor.patch(`${P}${p3}/`, { data: { items: [{ name: "Consultoria", unitValue: "1.500", billing: "unico" }] } }));
 const token3 = (await send(vitor, p3)).body.token;
-await sql(`UPDATE crm_proposals SET valid_until = now()::date - 1 WHERE id = '${p3}'`);
+await sql(`UPDATE crm_proposals SET valid_until = (now() AT TIME ZONE 'America/Sao_Paulo')::date - 1 WHERE id = '${p3}'`);
 ok((await json(await vitor.get(`${P}?status=expirada`))).body.rows.map((x) => x.id).join() === p3, "past its validity: expirada");
 ok(
   (await pub(token3, "decision", { decision: "aprovar", name: "Ana Ribeiro", email: "ana@x.com", accept: true, version: 1 })).body.error.includes("expirou"),

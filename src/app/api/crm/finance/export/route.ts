@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/crm-access";
 import { writeAudit } from "@/lib/audit-log";
 import { financeParams, getFinance } from "@/lib/crm-finance";
 import { buildCrmPdf } from "@/lib/crm-pdf";
+import { toCsvCell } from "@/lib/csv";
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,6 @@ const money = (c: number) => (c / 100).toFixed(2).replace(".", ",");
 const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const day = (d: string) => d.split("-").reverse().join("/");
 const month = (m: string) => m.split("-").reverse().join("/");
-const csvCell = (v: string) => (/[";\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 /** The Financeiro as ?format=csv (planilha) or pdf, same filters as the screen; audited. */
 export async function GET(req: NextRequest) {
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
           money(i.cents),
         ]),
       ];
-      body = "\uFEFF" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n");
+      body = "\uFEFF" + rows.map((r) => r.map(toCsvCell).join(";")).join("\r\n");
       type = "text/csv; charset=utf-8";
       name = `financeiro-${f.from}-a-${f.to}.csv`;
     } else {
