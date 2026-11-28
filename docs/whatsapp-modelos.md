@@ -16,19 +16,21 @@ termina com uma variável, as variáveis são numeradas em ordem e cada uma tem
 um exemplo. A Meta pode mudar a categoria na análise (por exemplo, de
 Utilidade para Marketing); isso só muda o preço por mensagem.
 
-## 1. `mensagem_inicial` · Marketing
+## 1. `disparo_acao` · Marketing
 
-O primeiro contato, para disparos (campanhas) e para quem ainda não falou com
-a Legado.
+Genérico para qualquer ação (condição especial, evento, conteúdo, convite):
+o que muda a cada disparo vai inteiro no {{3}}.
 
-> Olá, {{1}}! Aqui é {{2}}, da Legado Enterprise. Ajudamos empresas a
-> transformar investimento em anúncios em demanda qualificada para o time
-> comercial. Posso te mostrar, numa conversa rápida, como isso funcionaria na
-> {{3}}?
+> Olá, {{1}}! Aqui é {{2}}, da Legado Enterprise. Passando para te contar
+> sobre {{3}}. Quer que eu te envie os detalhes por aqui?
 
-- Exemplos: {{1}} `Ana` · {{2}} `Vitor` · {{3}} `Clínica Exemplo`
-- Botões de resposta rápida: `Quero conhecer` · `Agora não` ·
+- Exemplos: {{1}} `Ana` · {{2}} `Vitor` · {{3}}
+  `uma condição especial para começar a anunciar em dezembro`
+- Botões de resposta rápida: `Quero saber mais` · `Agora não` ·
   `Não quero receber` (este descadastra o lead sozinho no CRM)
+- Na campanha do CRM: {{1}} = **Primeiro nome do contato**, {{2}} = **Nome do
+  responsável**, {{3}} = **Texto fixo** com a ação (até 200 caracteres, numa
+  linha só, completando a frase "Passando para te contar sobre…").
 
 ## 2. `continuar_conversa` · Utilidade
 
