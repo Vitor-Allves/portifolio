@@ -16,7 +16,19 @@ termina com uma variável, as variáveis são numeradas em ordem e cada uma tem
 um exemplo. A Meta pode mudar a categoria na análise (por exemplo, de
 Utilidade para Marketing); isso só muda o preço por mensagem.
 
-## 1. `disparo_acao` · Marketing
+## 1. `mensagem_inicial` · Marketing
+
+O primeiro contato com quem ainda não falou com a Legado.
+
+> Olá, {{1}}! Aqui é {{2}}, da Legado Enterprise. Ajudamos empresas a
+> transformar investimento em anúncios em demanda qualificada para o time
+> comercial. Posso te mostrar, numa conversa rápida, como isso funciona?
+
+- Exemplos: {{1}} `Ana` · {{2}} `Vitor`
+- Botões de resposta rápida: `Quero conhecer` · `Agora não` ·
+  `Não quero receber` (este descadastra o lead sozinho no CRM)
+
+## 2. `disparo_acao` · Marketing
 
 Genérico para qualquer ação (condição especial, evento, conteúdo, convite):
 o que muda a cada disparo vai inteiro no {{3}}.
@@ -32,7 +44,7 @@ o que muda a cada disparo vai inteiro no {{3}}.
   responsável**, {{3}} = **Texto fixo** com a ação (até 200 caracteres, numa
   linha só, completando a frase "Passando para te contar sobre…").
 
-## 2. `continuar_conversa` · Utilidade
+## 3. `continuar_conversa` · Utilidade
 
 Genérica: para levar para o WhatsApp uma conversa que começou em outro lugar
 (ligação, reunião, evento, e-mail) e ter onde retornar.
@@ -43,7 +55,7 @@ Genérica: para levar para o WhatsApp uma conversa que começou em outro lugar
 - Exemplos: {{1}} `Ana` · {{2}} `Vitor`
 - Botão de resposta rápida: `Sim, pode ser`
 
-## 3. `lembrete_reuniao` · Utilidade
+## 4. `lembrete_reuniao` · Utilidade
 
 Para confirmar uma reunião já marcada.
 
